@@ -1,9 +1,7 @@
-﻿spring:
+spring:
   datasource:
-    url: ${DB_URL}
-    username: ${DB_USER}
-    password: ${DB_PASSWORD}
-    driver-class-name: org.postgresql.Driver
+    url: jdbc:tc:postgresql:15:///testdb
+    driver-class-name: org.testcontainers.jdbc.ContainerDatabaseDriver
 
   jpa:
     hibernate:
@@ -19,7 +17,7 @@
 
 security:
   jwt:
-    secret: ${JWT_SECRET}
+    secret: integration-secret-key
 
 multitenancy:
   enabled: true
