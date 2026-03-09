@@ -5,20 +5,17 @@
 
 CREATE TABLE IF NOT EXISTS public.logs (
 
-    id UUID PRIMARY KEY,
+    id UUID NOT NULL,
 
     level VARCHAR(20) NOT NULL,
     action VARCHAR(100) NOT NULL,
     message TEXT NOT NULL,
 
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     user_id UUID,
 
-    CONSTRAINT fk_logs_user
-        FOREIGN KEY (user_id)
-        REFERENCES public.users(id)
-        ON DELETE SET NULL
+    CONSTRAINT pk_logs PRIMARY KEY (id)
 );
 
 
@@ -30,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.logs (
 CREATE INDEX IF NOT EXISTS idx_logs_created_at
     ON public.logs (created_at DESC);
 
--- Filtering logs by level (INFO / WARN / ERROR)
+-- Filtering logs by level
 CREATE INDEX IF NOT EXISTS idx_logs_level
     ON public.logs (level);
 
