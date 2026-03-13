@@ -2,9 +2,8 @@ package com.leadflow.backend.monitoring;
 
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
-import org.springframework.stereotype.Component;
 
-@Component
+// @Component // DESABILITADO: causava delay no boot
 public class AiHealthIndicator implements HealthIndicator {
 
     @Override

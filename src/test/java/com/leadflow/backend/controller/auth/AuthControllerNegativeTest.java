@@ -50,6 +50,8 @@ class AuthControllerNegativeTest {
     static class TestConfig {
     }
 
+    private static final String TENANT = "public";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -106,10 +108,12 @@ class AuthControllerNegativeTest {
                 new RegisterRequest(
                         "Valid Name",
                         "invalid-email",
+                        "ValidPassword123",
                         "ValidPassword123"
                 );
 
         mockMvc.perform(post("/auth/register")
+                        .header("X-Tenant-ID", TENANT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -123,10 +127,12 @@ class AuthControllerNegativeTest {
                 new RegisterRequest(
                         "Valid Name",
                         "valid@email.com",
+                        "short",
                         "short"
                 );
 
         mockMvc.perform(post("/auth/register")
+                        .header("X-Tenant-ID", TENANT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -140,14 +146,16 @@ class AuthControllerNegativeTest {
                 new RegisterRequest(
                         "Valid Name",
                         "valid@email.com",
+                        "ValidPassword123",
                         "ValidPassword123"
                 );
 
         doThrow(new IllegalArgumentException("Invalid data"))
                 .when(authService)
-                .registerUser(anyString(), anyString(), anyString());
+                .registerUser(anyString(), anyString(), anyString(), anyString());
 
         mockMvc.perform(post("/auth/register")
+                        .header("X-Tenant-ID", TENANT)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isBadRequest())
@@ -184,7 +192,7 @@ class AuthControllerNegativeTest {
 
         doThrow(new BadCredentialsException("Invalid credentials"))
                 .when(authService)
-                .authenticateUser(anyString(), anyString());
+                .authenticateUser(anyString(), anyString(), anyString());
 
         mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)

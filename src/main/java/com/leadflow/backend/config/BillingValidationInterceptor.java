@@ -30,6 +30,7 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
 
     // Paths that are exempt from subscription validation
     private static final String[] PUBLIC_PATHS = {
+        "/api/auth",
         "/api/v1/auth",
         "/api/v1/health",
         "/api/v1/public",

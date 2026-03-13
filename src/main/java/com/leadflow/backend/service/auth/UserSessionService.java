@@ -221,8 +221,8 @@ public class UserSessionService {
                 .stream()
                 .map(session -> new SessionResponse(
                         session.getId(),
-                        session.getIpAddress(),
-                        session.getUserAgent(),
+                        session.getIpAddress() != null ? session.getIpAddress() : "unknown",
+                        session.getUserAgent() != null ? session.getUserAgent() : "unknown",
                         session.getCreatedAt(),
                         currentTokenId != null &&
                                 currentTokenId.equals(session.getTokenId())

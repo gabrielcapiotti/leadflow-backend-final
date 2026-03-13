@@ -5,7 +5,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.stereotype.Component;
 
 /**
  * Health indicator for email (SMTP) service.
@@ -16,7 +15,7 @@ import org.springframework.stereotype.Component;
  * @version 1.0
  */
 @Slf4j
-@Component
+// @Component // DESABILITADO: causava delay no boot
 public class EmailHealthIndicator implements HealthIndicator {
 
     @Autowired(required = false)

@@ -60,6 +60,25 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        String path = request.getRequestURI();
+        boolean skip = path.equals("/auth/register")
+                || path.equals("/auth/login")
+                || path.equals("/auth/refresh")
+                || path.startsWith("/actuator")
+                || path.startsWith("/swagger")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/webhooks")
+                || path.startsWith("/billing/checkout")
+                || path.startsWith("/billing/webhook")
+                || path.startsWith("/stripe/webhook")
+                || path.startsWith("/payments/webhook");
+        
+        logger.info("JwtAuthenticationFilter.shouldNotFilter() - path: {}, skip: {}", path, skip);
+        return skip;
+    }
+
+    @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
             @NonNull HttpServletResponse response,
@@ -103,8 +122,13 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             UUID userId = customUser.getId();
             String tenant = TenantContext.getTenant();
-
-            if (tenant == null || tenant.isBlank()) {
+            
+            // For authenticated /auth/** endpoints, allow processing even without TenantContext
+            // The tenant will be extracted from the JWT or we skip and let it proceed
+            String requestPath = safeRequest.getRequestURI();
+            boolean isAuthEndpoint = requestPath.startsWith("/auth/");
+            
+            if ((tenant == null || tenant.isBlank()) && !isAuthEndpoint) {
                 safeFilterChain.doFilter(safeRequest, safeResponse);
                 return;
             }
@@ -127,14 +151,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             String tokenId = jwtService.extractTokenId(token);
-            UUID tenantId = tenantService.getTenantIdBySchema(tenant);
+            
+            // Only call userSessionService if tenant is available
+            if (tenant != null && !tenant.isBlank()) {
+                UUID tenantId = tenantService.getTenantIdBySchema(tenant);
 
-            userSessionService.processSessionActivity(
-                    tokenId,
-                    tenantId,
-                    safeRequest.getRemoteAddr(),
-                    safeRequest.getHeader("User-Agent")
-            );
+                userSessionService.processSessionActivity(
+                        tokenId,
+                        tenantId,
+                        safeRequest.getRemoteAddr(),
+                        safeRequest.getHeader("User-Agent")
+                );
+            }
 
             UsernamePasswordAuthenticationToken authToken =
                     new UsernamePasswordAuthenticationToken(
@@ -150,10 +178,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             SecurityContextHolder.getContext().setAuthentication(authToken);
 
         } catch (Exception ex) {
-
-                        logger.debug("JWT authentication failed: {}", LogSanitizer.sanitize(ex.getMessage()));
-
-            safeResponse.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            logger.debug("JWT authentication failed: {}", LogSanitizer.sanitize(ex.getMessage()));
+            // NÃO setamos 401 aqui - deixamos o filterChain prosseguir
+            // A autorização irá determinar se 401 é apropriado
         }
 
         safeFilterChain.doFilter(safeRequest, safeResponse);

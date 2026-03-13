@@ -2,7 +2,7 @@ package com.leadflow.backend.dto.error;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public final class ApiErrorResponse {
@@ -10,13 +10,13 @@ public final class ApiErrorResponse {
     private final int status;
     private final String error;
     private final String message;
-    private final LocalDateTime timestamp;
+    private final Instant timestamp;
 
     public ApiErrorResponse(int status, String error, String message) {
         this.status = status;
         this.error = error;
         this.message = message;
-        this.timestamp = LocalDateTime.now();
+        this.timestamp = Instant.now();
     }
 
     public int getStatus() {
@@ -31,7 +31,7 @@ public final class ApiErrorResponse {
         return message;
     }
 
-    public LocalDateTime getTimestamp() {
+    public Instant getTimestamp() {
         return timestamp;
     }
 }

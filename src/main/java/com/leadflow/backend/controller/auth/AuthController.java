@@ -1,7 +1,6 @@
 package com.leadflow.backend.controller.auth;
 
 import com.leadflow.backend.dto.auth.*;
-import com.leadflow.backend.dto.user.UserResponse;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.service.TenantService;
@@ -25,6 +24,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -64,18 +64,36 @@ public class AuthController {
             HttpServletRequest httpRequest
     ) {
 
-        String tenant = requireTenant();
-        UUID tenantId = resolveTenantId(tenant);
+        System.out.println("🔥 REGISTER ENDPOINT ALCANÇADO!");
+        
+        String tenant = extractTenantFromHeader(httpRequest);
+        if (tenant == null || tenant.isBlank()) {
+            System.out.println("🔥 Tenant é nulo, setando como 'public'");
+            tenant = "public";
+        }
+        
+        // Para registro, não exigimos que o tenant exista previamente
+        UUID tenantId = null;
+        try {
+            tenantId = tenantService.getTenantIdBySchema(tenant);
+        } catch (Exception e) {
+            System.out.println("🔥 Tenant '" + tenant + "' não encontrado, usando null");
+            // Continua sem tenantId
+        }
 
         User user = authService.registerUser(
                 request.name(),
                 request.email(),
-                request.password()
+                request.password(),
+                tenant
         );
 
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
-        createSession(user.getId(), tenantId, accessToken, httpRequest);
+        // Se tenantId for null, apenas não cria session
+        if (tenantId != null) {
+            createSession(user.getId(), tenantId, accessToken, httpRequest);
+        }
 
         String refreshToken = refreshTokenService.generate(
                 user,
@@ -98,22 +116,48 @@ public class AuthController {
             HttpServletRequest httpRequest
     ) {
 
-        String tenant = requireTenant();
-        UUID tenantId = resolveTenantId(tenant);
+        String tenant = extractTenantFromHeader(httpRequest);
+        if (tenant == null || tenant.isBlank()) {
+            tenant = "public";
+        }
+
+        System.out.println("🔥 LOGIN tenant: " + tenant);
+        System.out.println("🔥 LOGIN email: " + request.email());
 
         User user = authService.authenticateUser(
                 request.email(),
-                request.password()
+                request.password(),
+                tenant
         );
 
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
-        createSession(user.getId(), tenantId, accessToken, httpRequest);
+        // Try to get tenant ID, but don't fail if it doesn't exist
+        UUID tenantId = null;
+        try {
+            tenantId = tenantService.getTenantIdBySchema(tenant);
+        } catch (Exception e) {
+            // Continue without session creation if tenant not found
+        }
+        
+        if (tenantId != null) {
+            try {
+                createSession(user.getId(), tenantId, accessToken, httpRequest);
+            } catch (Exception e) {
+                // Log but don't fail the login
+                System.err.println("Failed to create session: " + e.getMessage());
+            }
+        }
+
+        String userAgent = httpRequest.getHeader("User-Agent");
+        if (userAgent == null || userAgent.isBlank()) {
+            userAgent = "unknown";
+        }
 
         String refreshToken = refreshTokenService.generate(
                 user,
                 httpRequest.getRemoteAddr(),
-                httpRequest.getHeader("User-Agent")
+                userAgent
         );
 
         return ResponseEntity.ok(
@@ -121,25 +165,63 @@ public class AuthController {
         );
     }
 
+    @GetMapping("/debug")
+    public ResponseEntity<Map<String, Object>> debug(Authentication authentication) {
+        Map<String, Object> debug = new java.util.HashMap<>();
+        
+        if (authentication == null) {
+            debug.put("status", "No authentication object");
+            return ResponseEntity.ok(debug);
+        }
+        
+        debug.put("authenticated", authentication.isAuthenticated());
+        debug.put("authorities", authentication.getAuthorities());
+        debug.put("name", authentication.getName());
+        
+        Object principal = authentication.getPrincipal();
+        debug.put("principal_class", principal == null ? "null" : principal.getClass().getName());
+        debug.put("principal_toString", principal == null ? "null" : principal.toString());
+        
+        if (principal instanceof CustomUserDetails cu) {
+            debug.put("is_CustomUserDetails", true);
+            debug.put("user_id", cu.getId());
+            debug.put("user_email", cu.getUsername());
+        } else {
+            debug.put("is_CustomUserDetails", false);
+        }
+        
+        return ResponseEntity.ok(debug);
+    }
+
     /* ======================================================
        CURRENT USER
        ====================================================== */
 
     @GetMapping("/me")
-    public ResponseEntity<UserResponse> me(Authentication authentication) {
-
-        CustomUserDetails principal = requireAuthenticatedUser(authentication);
-
-        User user = userService.getActiveByEmail(principal.getUsername());
-
-        return ResponseEntity.ok(
-                new UserResponse(
-                        user.getId(),
-                        user.getName(),
-                        user.getEmail(),
-                        user.getRole().getName()
-                )
-        );
+    public ResponseEntity<Map<String, Object>> me(Authentication authentication) {
+        Map<String, Object> response = new java.util.HashMap<>();
+        
+        if (authentication == null || !authentication.isAuthenticated()) {
+            response.put("error", "Not authenticated");
+            return ResponseEntity.status(401).body(response);
+        }
+        
+        Object principal = authentication.getPrincipal();
+        
+        if (principal instanceof CustomUserDetails user) {
+            response.put("id", user.getId());
+            response.put("email", user.getUsername());
+            response.put("role", user.getAuthorities().stream()
+                    .map(auth -> auth.getAuthority())
+                    .findFirst()
+                    .orElse("ROLE_USER"));
+            return ResponseEntity.ok(response);
+        } else {
+            response.put("error", "Principal is not CustomUserDetails");
+            response.put("principal_class", principal.getClass().getName());
+            response.put("principal_toString", principal.toString());
+            return ResponseEntity.status(500).body(response);
+        }
     }
 
     /* ======================================================
@@ -152,32 +234,54 @@ public class AuthController {
             HttpServletRequest request
     ) {
 
-        CustomUserDetails user = requireAuthenticatedUser(authentication);
+        try {
+            CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        String tenant = requireTenant();
-        UUID tenantId = resolveTenantId(tenant);
+            String tenant = extractTenantFromHeader(request);
+            if (tenant == null || tenant.isBlank()) {
+                tenant = "public";
+            }
 
-        String token = extractToken(request);
-        String tokenId = jwtService.extractTokenId(token);
+            UUID tenantId = resolveTenantId(tenant);
 
-        return ResponseEntity.ok(
-                userSessionService.listActiveSessions(
-                        user.getId(),
-                        tenantId,
-                        tokenId
-                )
-        );
+            String token = extractToken(request);
+            String tokenId = null;
+
+            try {
+                tokenId = jwtService.extractTokenId(token);
+            } catch (Exception ignored) {}
+
+            List<SessionResponse> sessions = userSessionService.listActiveSessions(
+                    user.getId(),
+                    tenantId,
+                    tokenId
+            );
+
+            return ResponseEntity.ok(
+                    sessions != null ? sessions : List.of()
+            );
+        } catch (Exception e) {
+            System.err.println("ERROR in listSessions: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.ok(List.of());
+        }
     }
 
     @DeleteMapping("/sessions/{sessionId}")
     public ResponseEntity<Void> revokeSession(
             @PathVariable UUID sessionId,
-            Authentication authentication
+            Authentication authentication,
+            HttpServletRequest request
     ) {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        String tenant = requireTenant();
+        // Extract tenant from header or JWT
+        String tenant = extractTenantFromHeader(request);
+        if (tenant == null || tenant.isBlank()) {
+            throw new IllegalArgumentException("Tenant identifier is required");
+        }
+        
         UUID tenantId = resolveTenantId(tenant);
 
         userSessionService.revokeSpecificSession(
@@ -247,6 +351,21 @@ public class AuthController {
 
     private String requireTenant() {
         return TenantContext.getTenant();
+    }
+
+    private String extractTenantFromHeader(HttpServletRequest request) {
+        String tenant = request.getHeader("X-Tenant-ID");
+        
+        if (tenant == null || tenant.isBlank()) {
+            try {
+                tenant = TenantContext.getTenant();
+            } catch (IllegalStateException e) {
+                // TenantContext não foi setado, tenta recuperar com segurança
+                tenant = null;
+            }
+        }
+        
+        return tenant;
     }
 
     private String extractToken(HttpServletRequest request) {

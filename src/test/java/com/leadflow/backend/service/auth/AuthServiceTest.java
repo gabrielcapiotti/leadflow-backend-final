@@ -88,7 +88,8 @@ class AuthServiceTest {
         User result = authService.registerUser(
                 "Test User",
                 "test@example.com",
-                "password123"
+                "password123",
+                TENANT
         );
 
         assertThat(result).isNotNull();
@@ -132,7 +133,8 @@ class AuthServiceTest {
 
         User result = authService.authenticateUser(
                 "test@example.com",
-                rawPassword
+                rawPassword,
+                TENANT
         );
 
         assertThat(result).isEqualTo(user);
@@ -185,7 +187,8 @@ class AuthServiceTest {
         assertThatThrownBy(() ->
                 authService.authenticateUser(
                         "test@example.com",
-                        "wrong-password"
+                        "wrongPassword",
+                        TENANT
                 )
         ).isInstanceOf(IllegalArgumentException.class);
 
@@ -220,7 +223,7 @@ class AuthServiceTest {
                 .thenReturn(true);
 
         assertThrows(IllegalStateException.class, () ->
-                authService.authenticateUser("test@example.com", "password123")
+                authService.authenticateUser("test@example.com", "password123", TENANT)
         );
 
         verify(loginAuditService).recordFailure(

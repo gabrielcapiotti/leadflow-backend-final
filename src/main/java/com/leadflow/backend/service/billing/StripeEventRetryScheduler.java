@@ -4,7 +4,6 @@ import com.leadflow.backend.entities.StripeEventLog;
 import com.leadflow.backend.repository.StripeEventLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,7 +43,7 @@ public class StripeEventRetryScheduler {
      * Executa a cada 5 segundos para processar eventos com retry pendente.
      * Processa em lotes de até 10 eventos por execução.
      */
-    @Scheduled(fixedDelay = 5000, initialDelay = 10000)
+    // @Scheduled(fixedDelay = 5000, initialDelay = 10000) // DESABILITADO: Causava loop durante boot
     @Transactional
     public void processFailedEvents() {
         try {

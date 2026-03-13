@@ -62,7 +62,7 @@ public class AuthService {
     /* ====================================================== */
 
     @Transactional
-    public User registerUser(String name, String email, String password) {
+    public User registerUser(String name, String email, String password, String tenant) {
 
         validateInput(name, email, password);
 
@@ -71,7 +71,7 @@ public class AuthService {
         if (userRepository
                 .existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)) {
 
-            audit(SecurityAction.USER_REGISTERED, normalizedEmail, false);
+            audit(SecurityAction.USER_REGISTERED, normalizedEmail, false, tenant);
             throw new IllegalArgumentException("Email already in use");
         }
 
@@ -90,7 +90,7 @@ public class AuthService {
 
         userRepository.save(user);
 
-        audit(SecurityAction.USER_REGISTERED, normalizedEmail, true);
+        audit(SecurityAction.USER_REGISTERED, normalizedEmail, true, tenant);
 
         logger.info("User registered successfully: {}", normalizedEmail);
 
@@ -102,19 +102,19 @@ public class AuthService {
     /* ====================================================== */
 
     @Transactional
-    public User authenticateUser(String email, String password) {
+    public User authenticateUser(String email, String password, String tenant) {
 
         HttpServletRequest request = currentRequest();
 
         if (email == null || email.isBlank()
                 || password == null || password.isBlank()) {
 
-            recordFailureAudit(email, "Invalid credentials");
+            recordFailureAudit(email, "Invalid credentials", tenant);
             throw new IllegalArgumentException("Invalid credentials");
         }
 
         String normalizedEmail = normalizeEmail(email);
-        String tenantSchema = TenantContext.getTenant();
+        String tenantSchema = tenant != null ? tenant : TenantContext.getTenant();
         String ip = request != null ? request.getRemoteAddr() : "unknown";
 
         String emailKey = "bf:email:" + tenantSchema + ":" + normalizedEmail;
@@ -123,7 +123,7 @@ public class AuthService {
         if (bruteForceService.isBlocked(emailKey, maxAttempts)
                 || bruteForceService.isBlocked(ipKey, maxAttempts)) {
 
-            recordFailureAudit(normalizedEmail, "Brute force detected");
+            recordFailureAudit(normalizedEmail, "Brute force detected", tenant);
 
             logger.warn("Brute-force blocked for email {}", normalizedEmail);
 
@@ -135,13 +135,13 @@ public class AuthService {
         User user = userRepository
                 .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
                 .orElseThrow(() -> {
-                    recordFailureAudit(normalizedEmail, "User not found");
+                    recordFailureAudit(normalizedEmail, "User not found", tenant);
                     return new IllegalArgumentException("Invalid credentials");
                 });
 
         if (user.isAccountLocked()) {
 
-            recordFailureAudit(normalizedEmail, "Account locked");
+            recordFailureAudit(normalizedEmail, "Account locked", tenant);
 
             logger.warn("Blocked login for locked account: {}", normalizedEmail);
 
@@ -158,7 +158,7 @@ public class AuthService {
             bruteForceService.recordFailure(emailKey, windowMinutes);
             bruteForceService.recordFailure(ipKey, windowMinutes);
 
-            recordFailureAudit(normalizedEmail, "Wrong password");
+            recordFailureAudit(normalizedEmail, "Wrong password", tenant);
 
             logger.warn("Invalid password attempt for {}", normalizedEmail);
 
@@ -171,7 +171,7 @@ public class AuthService {
         bruteForceService.reset(emailKey);
         bruteForceService.reset(ipKey);
 
-        recordSuccessAudit(user);
+        recordSuccessAudit(user, tenant);
 
         logger.info("User authenticated successfully: {}", normalizedEmail);
 
@@ -182,45 +182,52 @@ public class AuthService {
     /* AUDIT HELPERS                                          */
     /* ====================================================== */
 
-    private void recordSuccessAudit(User user) {
+    private void recordSuccessAudit(User user, String tenant) {
 
         HttpServletRequest request = currentRequest();
+        
+        String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
 
         loginAuditService.recordSuccess(
                 user.getId(),
-                TenantContext.getTenant(),
+                tenantToUse,
                 user.getEmail(),
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,
                 false
         );
 
-        audit(SecurityAction.LOGIN_SUCCESS, user.getEmail(), true);
+        audit(SecurityAction.LOGIN_SUCCESS, user.getEmail(), true, tenant);
     }
 
-    private void recordFailureAudit(String email, String reason) {
+    private void recordFailureAudit(String email, String reason, String tenant) {
 
         HttpServletRequest request = currentRequest();
+        
+        String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
 
         loginAuditService.recordFailure(
-                TenantContext.getTenant(),
+                tenantToUse,
                 email,
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,
                 reason
         );
 
-        audit(SecurityAction.LOGIN_FAILED, email, false);
+        audit(SecurityAction.LOGIN_FAILED, email, false, tenant);
     }
 
-    private void audit(SecurityAction action, String email, boolean success) {
+    private void audit(SecurityAction action, String email, boolean success, String tenant) {
 
         HttpServletRequest request = currentRequest();
+        
+        // Use tenant parameter, fallback to TenantContext if not provided
+        String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
 
         auditService.log(
                 action,
                 email,
-                TenantContext.getTenant(),
+                tenantToUse,
                 success,
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,

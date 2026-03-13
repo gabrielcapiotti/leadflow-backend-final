@@ -1,6 +1,6 @@
 package com.leadflow.backend.webhook.controller;
 
-import com.leadflow.backend.multitenancy.TenantContext;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.webhook.entity.FailedWebhookEvent;
 import com.leadflow.backend.webhook.service.WebhookReplayService;
 import com.leadflow.backend.webhook.validator.WebhookTenantValidator;
@@ -160,7 +160,7 @@ public class WebhookReplayController {
 
         log.info("Manual replay requested for webhook: {}", webhookId);
         try {
-            String tenantId = TenantContext.getCurrentTenant();
+            String tenantId = TenantContext.getTenant();
             
             // Validate webhook belongs to current tenant
             tenantValidator.validateFailedWebhookTenant(webhookId, tenantId);
@@ -228,7 +228,7 @@ public class WebhookReplayController {
 
         log.info("Delete requested for webhook: {}", webhookId);
         try {
-            String tenantId = TenantContext.getCurrentTenant();
+            String tenantId = TenantContext.getTenant();
             
             // Validate webhook belongs to current tenant
             tenantValidator.validateFailedWebhookTenant(webhookId, tenantId);

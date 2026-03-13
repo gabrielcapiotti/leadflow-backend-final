@@ -1,5 +1,7 @@
 package com.leadflow.backend.dto.auth;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.time.Instant;
 import java.util.UUID;
 
@@ -26,6 +28,7 @@ public record SessionResponse(
         /**
          * Timestamp when the session was created (UTC).
          */
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         Instant createdAt,
 
         /**

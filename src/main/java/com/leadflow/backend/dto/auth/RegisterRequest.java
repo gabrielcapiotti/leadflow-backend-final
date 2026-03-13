@@ -21,7 +21,11 @@ public record RegisterRequest(
         @NotBlank(message = "Senha é obrigatória")
         @Size(min = 8, message = "Senha deve ter no mínimo 8 caracteres")
         @JsonProperty("password")
-        String password
+        String password,
+
+        @NotBlank(message = "Confirmação de senha é obrigatória")
+        @JsonProperty("confirmPassword")
+        String confirmPassword
 
 ) {
 

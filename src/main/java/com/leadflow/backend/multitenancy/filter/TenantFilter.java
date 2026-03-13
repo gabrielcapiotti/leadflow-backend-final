@@ -8,6 +8,8 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.lang.NonNull;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -16,6 +18,7 @@ import java.util.Objects;
 
 public class TenantFilter extends OncePerRequestFilter {
 
+    private static final Logger logger = LoggerFactory.getLogger(TenantFilter.class);
     private final TenantResolver tenantResolver;
 
     public TenantFilter(TenantResolver tenantResolver) {
@@ -28,10 +31,14 @@ public class TenantFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        return path.startsWith("/actuator")
-                || path.startsWith("/health")
-                || path.startsWith("/swagger")
-                || path.startsWith("/v3/api-docs");
+        return path.equals("/auth/register")
+            || path.equals("/auth/login")
+            || path.equals("/auth/refresh")
+            || path.startsWith("/api/auth")
+            || path.startsWith("/actuator")
+            || path.startsWith("/health")
+            || path.startsWith("/swagger")
+            || path.startsWith("/v3/api-docs");
     }
 
     @Override
@@ -51,22 +58,13 @@ public class TenantFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        HttpServletRequest safeRequest =
-                Objects.requireNonNull(request, "HttpServletRequest must not be null");
-
-        HttpServletResponse safeResponse =
-                Objects.requireNonNull(response, "HttpServletResponse must not be null");
-
-        FilterChain safeFilterChain =
-                Objects.requireNonNull(filterChain, "FilterChain must not be null");
-
         try {
 
-            String tenant = tenantResolver.resolveTenant(safeRequest);
+            String tenant = tenantResolver.resolveTenant(request);
 
             if (tenant == null || tenant.isBlank()) {
 
-                safeResponse.sendError(
+                response.sendError(
                         HttpServletResponse.SC_BAD_REQUEST,
                         "Header 'X-Tenant-ID' é obrigatório"
                 );
@@ -75,18 +73,18 @@ public class TenantFilter extends OncePerRequestFilter {
 
             TenantContext.setTenant(tenant);
 
-            safeFilterChain.doFilter(safeRequest, safeResponse);
+            filterChain.doFilter(request, response);
 
         } catch (IllegalArgumentException ex) {
 
-            safeResponse.sendError(
+            response.sendError(
                     HttpServletResponse.SC_BAD_REQUEST,
                     ex.getMessage()
             );
 
         } catch (Exception ex) {
 
-            safeResponse.sendError(
+            response.sendError(
                     HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
                     "Erro ao resolver tenant"
             );

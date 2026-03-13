@@ -50,7 +50,7 @@ public class SecurityWebConfig {
     }
 
     /* =====================================================
-       JWT FILTER (CONDICIONAL)
+       JWT FILTER
        ===================================================== */
 
     @Bean
@@ -68,8 +68,8 @@ public class SecurityWebConfig {
         return new JwtAuthenticationFilter(
                 jwtService,
                 userDetailsService,
-            userSessionService,
-            tenantService
+                userSessionService,
+                tenantService
         );
     }
 
@@ -102,25 +102,76 @@ public class SecurityWebConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
 
             .exceptionHandling(ex -> ex
-                .authenticationEntryPoint((request, response, authException) ->
-                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED)
-                )
+                .authenticationEntryPoint((request, response, authException) -> {
+                    System.out.println("🔴 AuthenticationEntryPoint triggered for: " + request.getRequestURI());
+                    System.out.println("🔴 Exception: " + authException.getMessage());
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                })
                 .accessDeniedHandler((request, response, accessDeniedException) ->
                         response.sendError(HttpServletResponse.SC_FORBIDDEN)
                 )
             )
 
             .authorizeHttpRequests(auth -> auth
+
+                /* =========================================
+                   PUBLIC AUTH ENDPOINTS
+                   ========================================= */
+
+                .requestMatchers(
+                        "/auth/register",
+                        "/auth/login",
+                        "/auth/refresh",
+                        "/api/auth/register",
+                        "/api/auth/login",
+                        "/api/auth/refresh",
+                        "/error"
+                ).permitAll()
+
+                /* =========================================
+                   AUTHENTICATED AUTH ENDPOINTS
+                   ========================================= */
+
+                .requestMatchers(
+                        "/auth/me",
+                        "/auth/sessions/**",
+                        "/api/auth/me",
+                        "/api/auth/sessions/**"
+                ).authenticated()
+
+                /* =========================================
+                   ADMIN
+                   ========================================= */
+
                 .requestMatchers("/admin/**").hasRole("ADMIN")
-                .requestMatchers("/auth/**").permitAll()
+
+                /* =========================================
+                   BILLING
+                   ========================================= */
+
                 .requestMatchers("/billing/checkout").permitAll()
                 .requestMatchers("/billing/checkout-session").permitAll()
                 .requestMatchers("/billing/webhook").permitAll()
+
+                /* =========================================
+                   WEBHOOKS
+                   ========================================= */
+
                 .requestMatchers("/stripe/webhook").permitAll()
                 .requestMatchers("/payments/webhook").permitAll()
+                .requestMatchers("/webhooks/**").permitAll()
+
+                /* =========================================
+                   MONITORING
+                   ========================================= */
+
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/actuator/prometheus").permitAll()
-                .requestMatchers("/webhooks/**").permitAll()
+
+                /* =========================================
+                   EVERYTHING ELSE
+                   ========================================= */
+
                 .anyRequest().authenticated()
             )
 
@@ -130,7 +181,9 @@ public class SecurityWebConfig {
                 )
                 .frameOptions(frame -> frame.deny())
                 .xssProtection(xss ->
-                    xss.headerValue(XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK)
+                    xss.headerValue(
+                        XXssProtectionHeaderWriter.HeaderValue.ENABLED_MODE_BLOCK
+                    )
                 )
                 .contentTypeOptions(contentType -> {})
                 .httpStrictTransportSecurity(hsts -> hsts
@@ -146,7 +199,11 @@ public class SecurityWebConfig {
 
         JwtAuthenticationFilter jwtFilter = jwtFilterProvider.getIfAvailable();
 
-        // TenantFilter must run FIRST to set TenantContext before any authentication
+        /* =========================================
+           FILTER ORDER
+           ========================================= */
+
+        // Tenant must run BEFORE authentication
         http.addFilterBefore(
                 tenantFilter,
                 UsernamePasswordAuthenticationFilter.class
@@ -160,10 +217,11 @@ public class SecurityWebConfig {
         }
 
         http.addFilterAfter(
-            rateLimitFilter,
-            UsernamePasswordAuthenticationFilter.class
+                rateLimitFilter,
+                UsernamePasswordAuthenticationFilter.class
         );
 
         return http.build();
     }
 }
+

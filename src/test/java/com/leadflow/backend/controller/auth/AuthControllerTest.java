@@ -128,10 +128,10 @@ class AuthControllerTest {
 
         ReflectionTestUtils.setField(mockUser, "id", UUID.randomUUID());
 
-        when(authService.registerUser(anyString(), anyString(), anyString()))
+        when(authService.registerUser(anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(mockUser);
 
-        when(authService.authenticateUser(anyString(), anyString()))
+        when(authService.authenticateUser(anyString(), anyString(), anyString()))
                 .thenReturn(mockUser);
 
         when(jwtService.generateToken(any(User.class), anyString()))
@@ -170,6 +170,7 @@ class AuthControllerTest {
         RegisterRequest request = new RegisterRequest(
                 "Test User",
                 "user@test.com",
+                "12345678",
                 "12345678"
         );
 

@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 public class TenantResolver {
 
     public static final String TENANT_HEADER = "X-Tenant-ID";
+    public static final String TENANT_HEADER_LEGACY = "X-Tenant";
 
     private static final Pattern TENANT_PATTERN =
             Pattern.compile("^[a-zA-Z0-9_-]+$");
@@ -18,11 +19,16 @@ public class TenantResolver {
     public String resolveTenant(HttpServletRequest request) {
 
         String tenant = request.getHeader(TENANT_HEADER);
+        
+        // Fallback para header legado se X-Tenant-ID não estiver presente
+        if ((tenant == null || tenant.isBlank())) {
+            tenant = request.getHeader(TENANT_HEADER_LEGACY);
+        }
 
         if (tenant == null || tenant.isBlank()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
-                    "Header 'X-Tenant-ID' é obrigatório"
+                    "Header 'X-Tenant-ID' ou 'X-Tenant' é obrigatório"
             );
         }
 

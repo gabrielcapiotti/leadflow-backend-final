@@ -1,6 +1,5 @@
 package com.leadflow.backend.config;
 
-import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.repository.PlanRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +17,9 @@ public class PlanInitializer {
 
     @PostConstruct
     public void initializePlan() {
-
+        log.info("⏭️ PlanInitializer desabilitado temporariamente durante boot para diagnosticar travamento");
+        // TODO: Reabilitar após resolver problema de travamento no boot
+        /*
         if (planRepository.count() == 0) {
 
             Plan plan = new Plan();
@@ -35,5 +36,6 @@ public class PlanInitializer {
         } else {
             log.info("Plano já existe no banco de dados");
         }
+        */
     }
 }

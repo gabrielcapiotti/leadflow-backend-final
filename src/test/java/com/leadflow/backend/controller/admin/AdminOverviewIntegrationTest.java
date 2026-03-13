@@ -417,6 +417,7 @@ class AdminOverviewIntegrationTest extends IntegrationTestBase {
                 new RegisterRequest(
                         "Admin Test",
                         email,
+                        "password123",
                         "password123"
                 );
 

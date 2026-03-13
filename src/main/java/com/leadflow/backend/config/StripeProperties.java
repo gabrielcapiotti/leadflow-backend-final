@@ -32,19 +32,19 @@ public class StripeProperties {
     private Timeout timeout = new Timeout();
     private Events events = new Events();
     
-    @PostConstruct
+    // @PostConstruct // DESABILITADO: causava erro no boot quando Stripe não estava configurado
     public void init() {
         log.info("=== Initializing Stripe Configuration ===");
         
         // Validate required fields
         if (api.secretKey == null || api.secretKey.isBlank()) {
-            log.error("CRITICAL: stripe.api.secret-key is not configured!");
-            throw new IllegalStateException("Stripe secret key is required. Set STRIPE_SECRET_KEY environment variable.");
+            log.warn("⚠️  stripe.api.secret-key is not configured!");
+            return; // MODIFICADO: retorna ao invés de lançar exceção
         }
         
         if (webhook.secret == null || webhook.secret.isBlank()) {
-            log.error("CRITICAL: stripe.webhook.secret is not configured!");
-            throw new IllegalStateException("Stripe webhook secret is required. Set STRIPE_WEBHOOK_SECRET environment variable.");
+            log.warn("⚠️  stripe.webhook.secret is not configured!");
+            return; // MODIFICADO: retorna ao invés de lançar exceção
         }
         
         // Determine mode (test or live)

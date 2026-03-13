@@ -20,7 +20,7 @@ import java.util.Collections;
  * @version 1.0
  */
 @Slf4j
-@Component
+// @Component // DESABILITADO: causava delay no boot
 public class StripeHealthIndicator implements HealthIndicator {
 
     @Autowired(required = false)

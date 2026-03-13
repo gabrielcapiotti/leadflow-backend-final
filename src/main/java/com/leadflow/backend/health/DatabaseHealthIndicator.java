@@ -4,13 +4,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
-import org.springframework.stereotype.Component;
-
 import javax.sql.DataSource;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Health indicator for database connectivity and performance.
@@ -24,7 +21,7 @@ import java.util.concurrent.TimeUnit;
  * @version 1.0
  */
 @Slf4j
-@Component
+// @Component // DESABILITADO: causava travamento no boot durante health checks
 public class DatabaseHealthIndicator implements HealthIndicator {
 
     @Autowired(required = false)

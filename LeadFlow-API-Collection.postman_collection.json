@@ -1,0 +1,1076 @@
+{
+  "info": {
+    "_postman_id": "leadflow-api-complete-2024",
+    "name": "LeadFlow API - Todos os Endpoints",
+    "description": "Coleção completa com todos os 45+ endpoints do LeadFlow Backend",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "🔐 Auth",
+      "item": [
+        {
+          "name": "Registrar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"João Silva\",\n  \"email\": \"joao@test.com\",\n  \"password\": \"Senha@123\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/auth/register",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "auth", "register"]
+            },
+            "description": "Registrar novo usuário na plataforma"
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"joao@test.com\",\n  \"password\": \"Senha@123\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/auth/login",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "auth", "login"]
+            },
+            "description": "Autenticar usuário e obter token JWT"
+          },
+          "response": []
+        },
+        {
+          "name": "Obter Usuário Atual",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/auth/me",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "auth", "me"]
+            },
+            "description": "Obter informações do usuário autenticado"
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Sessões",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/auth/sessions",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "auth", "sessions"]
+            },
+            "description": "Listar todas as sessões ativas do usuário"
+          },
+          "response": []
+        },
+        {
+          "name": "Revogar Sessão",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/auth/sessions/{{session_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "auth", "sessions", "{{session_id}}"]
+            },
+            "description": "Revogar uma sessão específica"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📋 Leads",
+      "item": [
+        {
+          "name": "Criar Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"phone\": \"(11) 99999-9999\",\n  \"company\": \"Tech Company\",\n  \"source\": \"WEBSITE\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/leads",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "leads"]
+            },
+            "description": "Criar novo lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/leads?page=0&size=20&sort=createdAt,desc",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "leads"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                },
+                {
+                  "key": "sort",
+                  "value": "createdAt,desc"
+                }
+              ]
+            },
+            "description": "Listar todos os leads com paginação"
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar Status do Lead",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/leads/{{lead_id}}/status?status=QUALIFIED",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "leads", "{{lead_id}}", "status"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "QUALIFIED"
+                }
+              ]
+            },
+            "description": "Atualizar status do lead (NEW, QUALIFIED, LOST, CONVERTED)"
+          },
+          "response": []
+        },
+        {
+          "name": "Deletar Lead",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/leads/{{lead_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "leads", "{{lead_id}}"]
+            },
+            "description": "Deletar um lead (soft delete)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🤝 Vendor Leads",
+      "item": [
+        {
+          "name": "Criar Vendor Lead",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Lead Vendor\",\n  \"email\": \"vendor@test.com\",\n  \"stage\": \"COLD\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/leads",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "leads"]
+            },
+            "description": "Criar novo vendor lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Vendor Leads",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads?page=0&size=20",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Listar vendor leads com paginação"
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar Stage",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stage\": \"WARM\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/{{vendor_lead_id}}/stage",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "{{vendor_lead_id}}", "stage"]
+            },
+            "description": "Atualizar o stage de um vendor lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas Vendor",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/metrics",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "metrics"]
+            },
+            "description": "Obter métricas de vendor leads"
+          },
+          "response": []
+        },
+        {
+          "name": "Ranking",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/ranking",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "ranking"]
+            },
+            "description": "Obter ranking de vendor leads"
+          },
+          "response": []
+        },
+        {
+          "name": "Atribuir Owner",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ownerId\": \"{{user_id}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/{{vendor_lead_id}}/owner",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "{{vendor_lead_id}}", "owner"]
+            },
+            "description": "Atribuir owner a um vendor lead"
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas de Tempo por Stage",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/metrics/stage-time",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "metrics", "stage-time"]
+            },
+            "description": "Obter métricas de tempo gasto em cada stage"
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas de Conversão",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/vendor-leads/metrics/conversion",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "vendor-leads", "metrics", "conversion"]
+            },
+            "description": "Obter métricas de taxa de conversão"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "💳 Billing",
+      "item": [
+        {
+          "name": "Criar Checkout Stripe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Tenant-ID",
+                "value": "public"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@test.com\",\n  \"planId\": \"plan_123\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/billing/checkout",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "billing", "checkout"]
+            },
+            "description": "Criar session de checkout no Stripe"
+          },
+          "response": []
+        },
+        {
+          "name": "Webhook Stripe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Stripe-Signature",
+                "value": "t=123456789,v1=signature_hash"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"payment_intent.succeeded\",\n  \"data\": {}\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/billing/webhook",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "billing", "webhook"]
+            },
+            "description": "WebHook para receber eventos do Stripe"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📊 Billing Dashboard",
+      "item": [
+        {
+          "name": "Dashboard Billing",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/v1/billing/dashboard/{{tenant_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "v1", "billing", "dashboard", "{{tenant_id}}"]
+            },
+            "description": "Obter dashboard de billing"
+          },
+          "response": []
+        },
+        {
+          "name": "Detalhes da Subscription",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/v1/billing/subscription/{{tenant_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "v1", "billing", "subscription", "{{tenant_id}}"]
+            },
+            "description": "Obter detalhes da subscrição"
+          },
+          "response": []
+        },
+        {
+          "name": "Histórico de Eventos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/v1/billing/events/{{tenant_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "v1", "billing", "events", "{{tenant_id}}"]
+            },
+            "description": "Obter histórico de eventos de billing"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "👨‍💼 Admin",
+      "item": [
+        {
+          "name": "Overview Admin",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/admin/overview",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "admin", "overview"]
+            },
+            "description": "Obter overview do admin (requer ROLE_ADMIN)"
+          },
+          "response": []
+        },
+        {
+          "name": "Métricas de Growth",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/admin/metrics/growth?days=30",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "admin", "metrics", "growth"],
+              "query": [
+                {
+                  "key": "days",
+                  "value": "30"
+                }
+              ]
+            },
+            "description": "Obter métricas de crescimento dos últimos days"
+          },
+          "response": []
+        },
+        {
+          "name": "Análise de Cohorts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/admin/metrics/cohorts",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "admin", "metrics", "cohorts"]
+            },
+            "description": "Obter análise de cohorts de usuários"
+          },
+          "response": []
+        },
+        {
+          "name": "Previsão MRR",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/admin/metrics/mrr-forecast",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "admin", "metrics", "mrr-forecast"]
+            },
+            "description": "Obter previsão de Monthly Recurring Revenue"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "⚙️ Settings",
+      "item": [
+        {
+          "name": "Obter Configurações",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/settings",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "settings"]
+            },
+            "description": "Obter todas as configurações do usuário"
+          },
+          "response": []
+        },
+        {
+          "name": "Obter Configuração por ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/settings/{{setting_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "settings", "{{setting_id}}"]
+            },
+            "description": "Obter configuração específica por ID"
+          },
+          "response": []
+        },
+        {
+          "name": "Salvar/Atualizar Configurações",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": \"dark\",\n  \"notifications\": true,\n  \"language\": \"pt-BR\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/settings",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "settings"]
+            },
+            "description": "Salvar ou atualizar configurações do usuário"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🤖 AI",
+      "item": [
+        {
+          "name": "Chat IA",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"Qual é o meu melhor lead?\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/ai/chat",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "ai", "chat"]
+            },
+            "description": "Chat com IA usando OpenAI (gpt-4-mini)"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📈 Dashboard",
+      "item": [
+        {
+          "name": "Dashboard Geral",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/dashboard",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "dashboard"]
+            },
+            "description": "Obter dados gerais do dashboard"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "📊 Usage & Limits",
+      "item": [
+        {
+          "name": "Uso Atual",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/usage",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "usage"]
+            },
+            "description": "Obter uso atual de recursos"
+          },
+          "response": []
+        },
+        {
+          "name": "Limites",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/usage/limits",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "usage", "limits"]
+            },
+            "description": "Obter limites de uso por plano"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "👥 Users",
+      "item": [
+        {
+          "name": "Listar Usuários",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/users?page=0&size=20",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "users"],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "0"
+                },
+                {
+                  "key": "size",
+                  "value": "20"
+                }
+              ]
+            },
+            "description": "Listar usuários (requer ROLE_ADMIN)"
+          },
+          "response": []
+        },
+        {
+          "name": "Obter Usuário",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/users/{{user_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "users", "{{user_id}}"]
+            },
+            "description": "Obter detalhes de um usuário específico"
+          },
+          "response": []
+        },
+        {
+          "name": "Atualizar Usuário",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Novo Nome\",\n  \"email\": \"new@email.com\",\n  \"role\": \"USER\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/users/{{user_id}}",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "users", "{{user_id}}"]
+            },
+            "description": "Atualizar informações de um usuário"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "🔗 Webhooks",
+      "item": [
+        {
+          "name": "Webhook Pagamento Stripe",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Stripe-Signature",
+                "value": "t=1614556800,v1=hash",
+                "disabled": false
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"evt_123\",\n  \"type\": \"payment_intent.succeeded\",\n  \"data\": {\n    \"object\": {\n      \"id\": \"pi_123\",\n      \"amount\": 10000,\n      \"currency\": \"usd\"\n    }\n  }\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8081/api/stripe/webhook",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "stripe", "webhook"]
+            },
+            "description": "Receber eventos de pagamento do Stripe"
+          },
+          "response": []
+        },
+        {
+          "name": "Listar Webhooks Falhos",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "http://localhost:8081/api/billing/webhooks/failed",
+              "protocol": "http",
+              "host": ["localhost"],
+              "port": "8081",
+              "path": ["api", "billing", "webhooks", "failed"]
+            },
+            "description": "Listar webhooks que falharam e podem ser retentados"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "lead_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "tenant_id",
+      "value": "public",
+      "type": "string"
+    },
+    {
+      "key": "setting_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "vendor_lead_id",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

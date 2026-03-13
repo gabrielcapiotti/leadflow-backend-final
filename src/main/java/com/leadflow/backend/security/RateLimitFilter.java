@@ -109,15 +109,15 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return null;
         }
 
-        if (requestPath.startsWith("/ai")) {
+        if (requestPath.contains("/ai")) {
             return AI_SCOPE;
         }
 
-        if (requestPath.startsWith("/auth")) {
+        if (requestPath.contains("/auth")) {
             return AUTH_SCOPE;
         }
 
-        if (requestPath.startsWith("/admin")) {
+        if (requestPath.contains("/admin")) {
             return ADMIN_SCOPE;
         }
 
