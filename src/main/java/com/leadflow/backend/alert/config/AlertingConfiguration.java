@@ -9,6 +9,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.web.client.RestTemplate;
 import org.thymeleaf.TemplateEngine;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -73,9 +75,15 @@ public class AlertingConfiguration {
 
     /**
      * ObjectMapper bean for JSON processing
+     * 
+     * Registers JavaTimeModule to enable serialization of java.time types
+     * (Instant, LocalDateTime, LocalDate, OffsetDateTime, etc.)
      */
     @Bean
     public ObjectMapper objectMapper() {
-        return new ObjectMapper();
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.registerModule(new JavaTimeModule());
+        mapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+        return mapper;
     }
 }

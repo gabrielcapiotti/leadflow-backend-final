@@ -235,34 +235,56 @@ public class AuthController {
     ) {
 
         try {
+
+            System.out.println("[SESSION] 1. Inicio do listSessions");
+
             CustomUserDetails user = requireAuthenticatedUser(authentication);
+            System.out.println("[SESSION] 2. Usuario autenticado: " + user.getId());
 
             String tenant = extractTenantFromHeader(request);
             if (tenant == null || tenant.isBlank()) {
                 tenant = "public";
             }
+            System.out.println("[SESSION] 3. Tenant: " + tenant);
 
             UUID tenantId = resolveTenantId(tenant);
+            System.out.println("[SESSION] 4. TenantId: " + tenantId);
 
             String token = extractToken(request);
+            System.out.println("[SESSION] 5. Token: " + (token != null ? "present" : "null"));
+            
             String tokenId = null;
 
-            try {
-                tokenId = jwtService.extractTokenId(token);
-            } catch (Exception ignored) {}
+            if (token != null) {
+                try {
+                    tokenId = jwtService.extractTokenId(token);
+                    System.out.println("[SESSION] 6. TokenId extraido: " + tokenId);
+                } catch (Exception ignored) {
+                    System.err.println("[SESSION] 6. Erro ao extrair tokenId: " + ignored.getMessage());
+                }
+            }
 
-            List<SessionResponse> sessions = userSessionService.listActiveSessions(
-                    user.getId(),
-                    tenantId,
-                    tokenId
-            );
+            System.out.println("[SESSION] 7. Chamando userSessionService.listActiveSessions");
+            
+            List<SessionResponse> sessions =
+                    userSessionService.listActiveSessions(
+                            user.getId(),
+                            tenantId,
+                            tokenId
+                    );
+
+            System.out.println("[SESSION] 8. Sessoes obtidas: " + (sessions != null ? sessions.size() : "null"));
 
             return ResponseEntity.ok(
                     sessions != null ? sessions : List.of()
             );
+
         } catch (Exception e) {
-            System.err.println("ERROR in listSessions: " + e.getMessage());
+
+            System.err.println("[SESSION] ❌ ERRO CAPTURADO: " + e.getClass().getSimpleName());
+            System.err.println("[SESSION] Mensagem: " + e.getMessage());
             e.printStackTrace();
+
             return ResponseEntity.ok(List.of());
         }
     }
@@ -299,12 +321,19 @@ public class AuthController {
 
     private CustomUserDetails requireAuthenticatedUser(Authentication authentication) {
 
-        if (authentication == null ||
-                !(authentication.getPrincipal() instanceof CustomUserDetails user)) {
+        if (authentication == null || !authentication.isAuthenticated()) {
             throw new UnauthorizedException("Authentication required");
         }
 
-        return user;
+        Object principal = authentication.getPrincipal();
+
+        if (principal instanceof CustomUserDetails user) {
+            return user;
+        }
+
+        throw new UnauthorizedException(
+            "Invalid authentication principal type: " + principal.getClass().getName()
+        );
     }
 
     private UUID resolveTenantId(String tenant) {
@@ -372,10 +401,12 @@ public class AuthController {
 
         String header = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        if (header == null || !header.startsWith("Bearer ")) {
-            throw new AuthenticationCredentialsNotFoundException(
-                    "Missing or invalid Authorization header"
-            );
+        if (header == null) {
+            return null;
+        }
+
+        if (!header.startsWith("Bearer ")) {
+            return null;
         }
 
         return header.substring(7);

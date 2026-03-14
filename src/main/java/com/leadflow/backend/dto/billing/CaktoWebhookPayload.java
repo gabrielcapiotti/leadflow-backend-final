@@ -1,5 +1,6 @@
 package com.leadflow.backend.dto.billing;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -22,6 +23,7 @@ public class CaktoWebhookPayload {
         private Customer customer;
 
         @JsonProperty("next_billing_at")
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         private Instant nextBillingAt;
 
         public String getStatus() {

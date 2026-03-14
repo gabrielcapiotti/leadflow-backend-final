@@ -1,11 +1,15 @@
 package com.leadflow.backend.dto.vendor;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
+
 import java.time.Instant;
 
 public class UsageResponse {
 
     private final ResourceUsage active_leads;
     private final ResourceUsage ai_executions;
+    
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
     private final Instant period_end;
 
     public static class ResourceUsage {
