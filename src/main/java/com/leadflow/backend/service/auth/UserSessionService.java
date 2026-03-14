@@ -6,9 +6,11 @@ import com.leadflow.backend.repository.auth.UserSessionRepository;
 import com.leadflow.backend.security.exception.UnauthorizedException;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -132,22 +134,23 @@ public class UserSessionService {
             }
         }
 
-        /* -------- Suspicious Detection -------- */
-
-        boolean ipChanged =
-                session.getInitialIpAddress() != null &&
-                !session.getInitialIpAddress().equals(currentIp);
+        /* -------- Suspicious Detection (User-Agent only) --------
+           Note: IP-based detection is disabled because:
+           - Cloudflare / proxies change the IP per request
+           - Mobile networks (4G/5G) switch between towers
+           - Load balancers may mask the real IP
+           
+           Using User-Agent is more reliable for device changes.
+         */
 
         boolean agentChanged =
                 session.getInitialUserAgent() != null &&
                 !session.getInitialUserAgent().equals(currentUserAgent);
 
-        if (ipChanged || agentChanged) {
-
+        if (agentChanged) {
             session.markSuspicious();
             session.revoke(now);
-
-            throw new UnauthorizedException("Suspicious session detected");
+            throw new UnauthorizedException("Suspicious session detected: device changed");
         }
 
         /* -------- Update Activity -------- */
@@ -164,13 +167,19 @@ public class UserSessionService {
     public void revokeSession(String tokenId, UUID tenantId) {
 
         if (tokenId == null || tokenId.isBlank()) {
-            throw new UnauthorizedException("Invalid session identifier");
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid session identifier"
+            );
         }
 
         UserSession session = repository
                 .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId)
                 .orElseThrow(() ->
-                        new UnauthorizedException("Active session not found"));
+                        new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Active session not found"
+                        ));
 
         session.revoke(Instant.now(clock));
     }
@@ -237,7 +246,8 @@ public class UserSessionService {
     @Transactional
     public void revokeSpecificSession(UUID sessionId,
                                       UUID userId,
-                                      UUID tenantId) {
+                                      UUID tenantId,
+                                      String currentTokenId) {
 
         UserSession session = repository
                 .findByIdAndUserIdAndTenantIdAndActiveTrue(
@@ -246,7 +256,18 @@ public class UserSessionService {
                         tenantId
                 )
                 .orElseThrow(() ->
-                        new UnauthorizedException("Session not found"));
+                        new ResponseStatusException(
+                                HttpStatus.NOT_FOUND,
+                                "Session not found"
+                        ));
+
+        // Prevent revoking the current session
+        if (session.getTokenId().equals(currentTokenId)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Cannot revoke current session"
+            );
+        }
 
         session.revoke(Instant.now(clock));
     }

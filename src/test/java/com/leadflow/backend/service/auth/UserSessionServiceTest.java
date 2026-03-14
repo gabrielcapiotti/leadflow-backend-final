@@ -292,7 +292,8 @@ class UserSessionServiceTest {
         service.revokeSpecificSession(
                 sessionId,
                 USER_ID,
-                TENANT_ID
+                TENANT_ID,
+                null  // No current token for test
         );
 
         assertThat(session.isActive()).isFalse();
