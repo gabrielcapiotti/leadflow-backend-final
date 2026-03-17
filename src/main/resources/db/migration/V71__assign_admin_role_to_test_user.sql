@@ -6,28 +6,40 @@ DO $$
 DECLARE
     admin_role_id UUID;
     test_user_id UUID;
+    users_table_exists BOOLEAN;
 BEGIN
-    -- Get the test admin user ID
-    SELECT u.id INTO test_user_id
-    FROM public.users u
-    WHERE u.email = 'admin.test@leadflow.com'
-    LIMIT 1;
+    -- Check if users table exists in public schema
+    SELECT EXISTS (
+        SELECT 1 FROM information_schema.tables 
+        WHERE table_schema = 'public' 
+        AND table_name = 'users'
+    ) INTO users_table_exists;
     
-    -- Get the ADMIN role ID
-    SELECT r.id INTO admin_role_id
-    FROM public.roles r
-    WHERE r.name = 'ROLE_ADMIN'
-    LIMIT 1;
-    
-    -- Update user with ADMIN role
-    IF test_user_id IS NOT NULL AND admin_role_id IS NOT NULL THEN
-        UPDATE public.users 
-        SET role_id = admin_role_id,
-            updated_at = CURRENT_TIMESTAMP
-        WHERE id = test_user_id;
+    IF users_table_exists THEN
+        -- Get the test admin user ID
+        SELECT u.id INTO test_user_id
+        FROM public.users u
+        WHERE u.email = 'admin.test@leadflow.com'
+        LIMIT 1;
         
-        RAISE NOTICE 'Admin role assigned to test user';
+        -- Get the ADMIN role ID
+        SELECT r.id INTO admin_role_id
+        FROM public.roles r
+        WHERE r.name = 'ROLE_ADMIN'
+        LIMIT 1;
+        
+        -- Update user with ADMIN role
+        IF test_user_id IS NOT NULL AND admin_role_id IS NOT NULL THEN
+            UPDATE public.users 
+            SET role_id = admin_role_id,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = test_user_id;
+            
+            RAISE NOTICE 'Admin role assigned to test user';
+        ELSE
+            RAISE NOTICE 'Could not find test user or admin role (not migrated yet)';
+        END IF;
     ELSE
-        RAISE WARNING 'Could not find test user or admin role';
+        RAISE NOTICE 'Skipping admin role assignment: users table does not exist in public schema';
     END IF;
 END $$;
