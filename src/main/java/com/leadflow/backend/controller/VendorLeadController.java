@@ -17,7 +17,6 @@ import com.leadflow.backend.service.vendor.VendorLeadService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import jakarta.validation.Valid;
 
@@ -26,8 +25,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/vendor-leads")
-@PreAuthorize("@subscriptionGuard.isActive()")
+@RequestMapping(value = {"/vendor-leads", "/api/vendor-leads"})
 public class VendorLeadController {
 
     private final VendorLeadService service;
@@ -58,9 +56,9 @@ public class VendorLeadController {
             );
         }
 
-        service.create(request);
+        VendorLead createdLead = service.create(request);
 
-        return ResponseEntity.ok().build();
+        return ResponseEntity.ok(createdLead);
     }
 
     @GetMapping

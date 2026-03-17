@@ -119,4 +119,131 @@ public class SettingService {
             settingRepository.save(setting);
         }
     }
+
+    @Transactional
+    public void softDeleteById(UUID id) {
+
+        Setting setting = getById(id);
+
+        if (!setting.isDeleted()) {
+            setting.softDelete();
+            settingRepository.save(setting);
+        }
+    }
+
+    /* ======================================================
+       UPDATE BY ID
+       ====================================================== */
+
+    @Transactional
+    public Setting updateById(
+            UUID id,
+            String vendorName,
+            String whatsapp,
+            String companyName,
+            String logo,
+            String welcomeMessage
+    ) {
+
+        Setting setting = getById(id);
+
+        if (setting.isDeleted()) {
+            setting.restore();
+        }
+
+        setting.update(
+                vendorName != null ? vendorName : setting.getVendorName(),
+                whatsapp != null ? whatsapp : setting.getWhatsapp(),
+                companyName != null ? companyName : setting.getCompanyName(),
+                logo != null ? logo : setting.getLogo(),
+                welcomeMessage != null ? welcomeMessage : setting.getWelcomeMessage()
+        );
+
+        return settingRepository.save(setting);
+    }
+
+    /* ======================================================
+       PARTIAL UPDATE (PATCH)
+       ====================================================== */
+
+    @Transactional
+    public Setting partialUpdate(
+            User user,
+            String vendorName,
+            String whatsapp,
+            String companyName,
+            String logo,
+            String welcomeMessage
+    ) {
+
+        Setting setting = getByUser(user);
+
+        if (setting.isDeleted()) {
+            throw new IllegalStateException("Cannot update deleted settings");
+        }
+
+        // Atualiza apenas os campos não-nulos
+        if (vendorName != null && !vendorName.isBlank()) {
+            setting.setVendorName(vendorName);
+        }
+        if (whatsapp != null && !whatsapp.isBlank()) {
+            setting.setWhatsapp(whatsapp);
+        }
+        if (companyName != null && !companyName.isBlank()) {
+            setting.setCompanyName(companyName);
+        }
+        if (logo != null && !logo.isBlank()) {
+            setting.setLogo(logo);
+        }
+        if (welcomeMessage != null && !welcomeMessage.isBlank()) {
+            setting.setWelcomeMessage(welcomeMessage);
+        }
+
+        return settingRepository.save(setting);
+    }
+
+    /* ======================================================
+       PUBLIC SETTINGS
+       ====================================================== */
+
+    @Transactional(readOnly = true)
+    public Setting getPublicSettings(UUID settingId) {
+
+        if (settingId == null) {
+            throw new IllegalArgumentException("Setting id cannot be null");
+        }
+
+        // Retorna settings públicos sem verificar autenticação
+        // (validação de acesso é feita no controller)
+        return settingRepository.findById(settingId)
+                .filter(setting -> !setting.isDeleted())
+                .orElseThrow(() ->
+                        new IllegalArgumentException("Setting not found")
+                );
+    }
+
+    /* ======================================================
+       RESET TO DEFAULTS
+       ====================================================== */
+
+    @Transactional
+    public Setting resetToDefaults(User user) {
+
+        Setting setting = getByUser(user);
+
+        if (setting.isDeleted()) {
+            setting.restore();
+        }
+
+        // Reset com valores padrão
+        setting.update(
+                "My Vendor",
+                "+55 11 9999-9999",
+                "My Company",
+                null,
+                "Welcome to my profile!"
+        );
+
+        return settingRepository.save(setting);
+    }
 }

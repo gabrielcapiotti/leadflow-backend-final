@@ -4,6 +4,8 @@ import com.leadflow.backend.entities.auth.RefreshToken;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.repository.auth.RefreshTokenRepository;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +18,7 @@ import java.util.Base64;
 @Service
 public class RefreshTokenService {
 
+    private static final Logger log = LoggerFactory.getLogger(RefreshTokenService.class);
     private static final int TOKEN_BYTE_LENGTH = 32;
     private static final int REFRESH_DAYS = 7;
 
@@ -65,46 +68,75 @@ public class RefreshTokenService {
                                             String ipAddress,
                                             String userAgent) {
 
+        log.info("=== REFRESH TOKEN VALIDATION START ===");
+        log.debug("IP: {}, UserAgent: {}", ipAddress, userAgent);
+
         if (rawToken == null || rawToken.isBlank()) {
+            log.error("❌ Token is null or blank");
             throw new IllegalArgumentException("Invalid refresh token");
         }
 
+        log.debug("✓ Token is not blank (length: {})", rawToken.length());
+
         String tokenHash = hash(rawToken);
+        log.debug("✓ Token hashed successfully");
 
         RefreshToken token = repository
                 .findByTokenHash(tokenHash)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("Invalid refresh token"));
+                .orElseThrow(() -> {
+                    log.error("❌ Token not found in repository: {}", tokenHash);
+                    return new IllegalArgumentException("Invalid refresh token");
+                });
+
+        log.info("✓ Token found in repository");
 
         // 🔒 REUSE DETECTION
         if (token.isRevoked()) {
+            log.error("❌ Token is revoked - REUSE DETECTED");
             repository.deleteByUser_Id(token.getUser().getId());
             throw new IllegalStateException("Refresh token reuse detected");
         }
 
+        log.debug("✓ Token is not revoked");
+
         if (token.isExpired()) {
+            log.error("❌ Token is expired");
             token.revoke();
             repository.save(token);
             throw new IllegalArgumentException("Refresh token expired");
         }
 
+        log.debug("✓ Token is not expired");
+
         // 🔐 DEVICE BINDING VALIDATION
         String currentFingerprint = generateFingerprint(ipAddress, userAgent);
+        String storedFingerprint = token.getDeviceFingerprint();
 
-        if (!token.getDeviceFingerprint().equals(currentFingerprint)) {
+        log.debug("Current fingerprint: {}", currentFingerprint);
+        log.debug("Stored fingerprint:  {}", storedFingerprint);
+
+        if (!storedFingerprint.equals(currentFingerprint)) {
+            log.error("❌ Device fingerprint mismatch - DEVICE CHANGE DETECTED");
             repository.deleteByUser_Id(token.getUser().getId());
             throw new IllegalStateException("Device mismatch detected");
         }
 
+        log.debug("✓ Device fingerprint matches");
+
         // 🔁 ROTATION
+        log.debug("Revoking old token...");
         token.revoke();
         repository.save(token);
+        log.debug("✓ Old token revoked");
 
         User user = token.getUser();
+        log.debug("✓ User retrieved: {}", user.getEmail());
 
+        log.debug("Generating new refresh token...");
         String newRefresh =
                 generate(user, ipAddress, userAgent);
 
+        log.info("=== REFRESH TOKEN ROTATION SUCCESSFUL ===");
         return new RotationResult(user, newRefresh);
     }
 

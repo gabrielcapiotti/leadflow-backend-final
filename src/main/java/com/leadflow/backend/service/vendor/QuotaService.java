@@ -1,6 +1,7 @@
 package com.leadflow.backend.service.vendor;
 
 import com.leadflow.backend.dto.vendor.UsageResponse;
+import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.vendor.QuotaType;
 import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.entities.vendor.VendorUsage;
@@ -71,30 +72,43 @@ public class QuotaService {
         repository.save(usage);
     }
 
-        public UsageResponse getUsage(UUID vendorId) {
-
+    public UsageResponse getUsage(UUID vendorId) {
         VendorUsage leadsUsage =
             getOrCreateUsage(vendorId, QuotaType.ACTIVE_LEADS);
 
         VendorUsage aiUsage =
             getOrCreateUsage(vendorId, QuotaType.AI_EXECUTIONS);
 
+        Plan activePlan = null;
+        try {
+            activePlan = planService.getActivePlan();
+        } catch (RuntimeException e) {
+            System.out.println("ERROR: Unable to get active plan: " + e.getMessage());
+            e.printStackTrace(System.out);
+            throw new RuntimeException("Failed to get active plan", e);
+        }
+
         UsageResponse.ResourceUsage leads =
             new UsageResponse.ResourceUsage(
-                leadsUsage.getUsed(), planService.getActivePlan().getMaxLeads()
+                leadsUsage.getUsed(), activePlan.getMaxLeads()
             );
 
         UsageResponse.ResourceUsage ai =
             new UsageResponse.ResourceUsage(
-                aiUsage.getUsed(), planService.getActivePlan().getMaxAiExecutions()
+                aiUsage.getUsed(), activePlan.getMaxAiExecutions()
             );
+
+        // Ensures periodEnd is never null by using current time if null
+        Instant periodEnd = leadsUsage.getPeriodEnd() != null 
+            ? leadsUsage.getPeriodEnd() 
+            : Instant.now().plusSeconds(30L * 86400L);
 
         return new UsageResponse(
             leads,
             ai,
-            leadsUsage.getPeriodEnd()
+            periodEnd
         );
-        }
+    }
 
     public void initializePlanLimits(UUID vendorId) {
         getOrCreateUsage(vendorId, QuotaType.ACTIVE_LEADS);
@@ -117,7 +131,7 @@ public class QuotaService {
                 .findByVendorIdAndQuotaType(vendorId, type)
                 .orElseGet(() -> createNewPeriod(vendorId, type));
 
-        if (usage.getPeriodEnd().isBefore(now)) {
+        if (usage.getPeriodEnd() != null && usage.getPeriodEnd().isBefore(now)) {
             usage.setUsed(0);
             usage.setAlert80Sent(false);
             usage.setAlert100Sent(false);

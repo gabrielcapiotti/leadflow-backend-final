@@ -6,6 +6,9 @@ import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.service.vendor.SubscriptionService;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -18,8 +21,13 @@ import java.util.Objects;
 @Component
 public class SubscriptionGuard {
 
+    private static final Logger log = LoggerFactory.getLogger(SubscriptionGuard.class);
+
     private final VendorRepository vendorRepository;
     private final SubscriptionService subscriptionService;
+
+    @Value("${app.billing.enabled:false}")
+    private boolean billingEnabled;
 
     public SubscriptionGuard(VendorRepository vendorRepository,
                              SubscriptionService subscriptionService) {
@@ -33,6 +41,11 @@ public class SubscriptionGuard {
        ====================================================== */
 
     public SubscriptionAccessLevel resolveAccess() {
+
+        if (!billingEnabled) {
+            log.debug("Billing validation disabled - granting FULL access level");
+            return SubscriptionAccessLevel.FULL;
+        }
 
         Vendor vendor = resolveVendor();
 

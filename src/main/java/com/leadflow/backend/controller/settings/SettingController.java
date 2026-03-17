@@ -1,39 +1,42 @@
 package com.leadflow.backend.controller.settings;
 
+import com.leadflow.backend.dto.settings.PatchSettingRequest;
 import com.leadflow.backend.dto.settings.SettingResponse;
 import com.leadflow.backend.dto.settings.UpdateSettingRequest;
 import com.leadflow.backend.entities.Setting;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.security.CustomUserDetails;
 import com.leadflow.backend.service.settings.SettingMapper;
 import com.leadflow.backend.service.settings.SettingService;
-import com.leadflow.backend.service.user.UserService;
 
 import jakarta.validation.Valid;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/settings")
+@RequestMapping("/api/me/settings")
 public class SettingController {
+
+    private static final Logger log = LoggerFactory.getLogger(SettingController.class);
 
     private final SettingService settingService;
     private final SettingMapper settingMapper;
-    private final UserService userService;
 
     public SettingController(
             SettingService settingService,
-            SettingMapper settingMapper,
-            UserService userService
+            SettingMapper settingMapper
     ) {
         this.settingService = settingService;
         this.settingMapper = settingMapper;
-        this.userService = userService;
     }
 
     /* ======================================================
@@ -46,6 +49,7 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
+        log.debug("GET /api/me/settings - user: {}", user.getId());
 
         Setting setting = settingService.getByUser(user);
 
@@ -77,6 +81,7 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
+        log.info("PUT /api/me/settings - user: {}", user.getId());
 
         Setting setting = settingService.saveOrUpdate(
                 user,
@@ -87,6 +92,7 @@ public class SettingController {
                 request.getWelcomeMessage()
         );
 
+        log.info("PUT /api/me/settings successful - user: {}", user.getId());
         return ResponseEntity.ok(settingMapper.toResponse(setting));
     }
 
@@ -100,10 +106,38 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
+        log.info("DELETE /api/me/settings - user: {}", user.getId());
 
         settingService.softDelete(user);
 
+        log.info("DELETE /api/me/settings successful - user: {}", user.getId());
         return ResponseEntity.noContent().build();
+    }
+
+    /* ======================================================
+       PATCH (Partial Update)
+       ====================================================== */
+
+    @PatchMapping
+    public ResponseEntity<SettingResponse> partialUpdate(
+            @AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody PatchSettingRequest request
+    ) {
+
+        User user = resolveUser(principal);
+        log.info("PATCH /api/me/settings - user: {}", user.getId());
+
+        Setting setting = settingService.partialUpdate(
+                user,
+                request.getVendorName(),
+                request.getWhatsapp(),
+                request.getCompanyName(),
+                request.getLogo(),
+                request.getWelcomeMessage()
+        );
+
+        log.info("PATCH /api/me/settings successful - user: {}", user.getId());
+        return ResponseEntity.ok(settingMapper.toResponse(setting));
     }
 
     /* ======================================================
@@ -113,11 +147,22 @@ public class SettingController {
     private User resolveUser(UserDetails principal) {
 
         if (principal == null) {
-            throw new AuthenticationCredentialsNotFoundException(
+            log.warn("AUTH: Principal is null");
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
                     "User not authenticated"
             );
         }
 
-        return userService.getActiveByEmail(principal.getUsername());
+        if (!(principal instanceof CustomUserDetails customUser)) {
+            log.error("AUTH: Principal is not CustomUserDetails: {}", principal.getClass().getName());
+            throw new ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "Invalid authentication"
+            );
+        }
+
+        log.debug("AUTH: User resolved - {}", customUser.getUsername());
+        return customUser.getUser();
     }
 }

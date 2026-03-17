@@ -32,7 +32,7 @@ public class UserSession {
     @Column(nullable = false, updatable = false)
     private UUID tenantId;
 
-    @Column(nullable = false, unique = true, length = 36, updatable = false)
+    @Column(nullable = false, unique = true, length = 36, updatable = true)
     private String tokenId;
 
     /* ======================================================
@@ -161,5 +161,9 @@ public class UserSession {
     public void updateDeviceInfo(String ip, String agent) {
         this.ipAddress = ip;
         this.userAgent = agent;
+    }
+
+    public void setTokenId(String tokenId) {
+        this.tokenId = Objects.requireNonNull(tokenId);
     }
 }

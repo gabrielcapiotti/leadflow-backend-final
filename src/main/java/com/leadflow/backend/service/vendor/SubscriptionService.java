@@ -24,10 +24,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @Slf4j
 public class SubscriptionService {
+
+    @Value("${app.billing.enabled:false}")
+    private boolean billingEnabled;
 
     private final VendorRepository vendorRepository;
     private final SubscriptionAuditService auditService;
@@ -54,7 +58,9 @@ public class SubscriptionService {
         this.subscriptionRepository = subscriptionRepository;
         this.subscriptionAuditRepository = subscriptionAuditRepository;
         this.notificationService = notificationService;
+        log.info("✅ SubscriptionService initialized - billingEnabled={}", billingEnabled);
     }
+    
 
     public void transition(Vendor vendor,
                            SubscriptionStatus newStatus,
@@ -426,10 +432,18 @@ public class SubscriptionService {
      * Validates if the subscription associated with the given tenant is active.
      * Throws SubscriptionInactiveException if subscription is not active.
      * 
+     * In development mode (app.billing.enabled=false), validation is skipped.
+     * 
      * @param tenantId the tenant ID to validate
-     * @throws SubscriptionInactiveException if subscription does not exist or is not ACTIVE
+     * @throws SubscriptionInactiveException if subscription does not exist or is not ACTIVE (only if billing is enabled)
      */
     public void validateActiveSubscription(UUID tenantId) {
+        // Skip validation in development mode
+        if (!billingEnabled) {
+            log.debug("Billing validation skipped - development mode enabled");
+            return;
+        }
+
         Subscription subscription = subscriptionRepository.findByTenantId(tenantId)
             .orElseThrow(() -> {
                 log.warn("Subscription not found for tenant: {}", tenantId);
@@ -658,5 +672,81 @@ public class SubscriptionService {
             log.error("❌ Error syncing subscription with Stripe", e);
             throw new RuntimeException("Failed to sync subscription with Stripe", e);
         }
+    }
+
+    /**
+     * Get subscription by vendor ID
+     * First tries to find a Subscription entity in the subscriptions table.
+     * If not found, builds one from the Vendor trial/subscription fields.
+     * This supports both the Subscription entity pattern and the Vendor embedded pattern.
+     * 
+     * @param vendorId the vendor ID (same as tenantId)
+     * @return Optional containing subscription if found
+     */
+    public Optional<Subscription> getSubscriptionByVendorId(UUID vendorId) {
+        // Try to find an explicit Subscription entity
+        Optional<Subscription> explicit = subscriptionRepository.findByTenantId(vendorId);
+        if (explicit.isPresent()) {
+            return explicit;
+        }
+        
+        // Fall back to building from Vendor trial/subscription data
+        var vendor = vendorRepository.findById(vendorId);
+        if (vendor.isEmpty()) {
+            return Optional.empty();
+        }
+        
+        Vendor v = vendor.get();
+        
+        // Only return if vendor has active/trial subscription
+        if (v.getSubscriptionStatus() == null || 
+            (v.getSubscriptionStatus() != com.leadflow.backend.entities.vendor.SubscriptionStatus.TRIAL && 
+             v.getSubscriptionStatus() != com.leadflow.backend.entities.vendor.SubscriptionStatus.ATIVA)) {
+            return Optional.empty();
+        }
+        
+        // Build a Subscription-like object from Vendor fields
+        Subscription sub = new Subscription();
+        sub.setTenantId(vendorId);
+        sub.setEmail(v.getUserEmail());
+        
+        // Map Vendor subscription status to Subscription status enum
+        com.leadflow.backend.entities.vendor.SubscriptionStatus vendorStatus = v.getSubscriptionStatus();
+        Subscription.SubscriptionStatus subStatus = Subscription.SubscriptionStatus.ACTIVE;
+        
+        if (vendorStatus == com.leadflow.backend.entities.vendor.SubscriptionStatus.TRIAL) {
+            subStatus = Subscription.SubscriptionStatus.ACTIVE; // Trial is treated as active for access
+        } else if (vendorStatus == com.leadflow.backend.entities.vendor.SubscriptionStatus.ATIVA) {
+            subStatus = Subscription.SubscriptionStatus.ACTIVE;
+        }
+        
+        sub.setStatus(subStatus);
+        
+        // Convert Instant to LocalDateTime for subscription fields
+        if (v.getSubscriptionStartedAt() != null) {
+            sub.setStartedAt(LocalDateTime.ofInstant(v.getSubscriptionStartedAt(), java.time.ZoneId.systemDefault()));
+        } else {
+            sub.setStartedAt(LocalDateTime.now());
+        }
+        
+        if (v.getSubscriptionExpiresAt() != null) {
+            sub.setExpiresAt(LocalDateTime.ofInstant(v.getSubscriptionExpiresAt(), java.time.ZoneId.systemDefault()));
+        } else {
+            sub.setExpiresAt(LocalDateTime.now().plusDays(14)); // Default trial duration
+        }
+        
+        sub.setStripeCustomerId(v.getExternalCustomerId() != null ? v.getExternalCustomerId() : "not_set");
+        
+        // Get and set the active plan (required for DTO conversion)
+        try {
+            Plan activePlan = planService.getActivePlan();
+            if (activePlan != null) {
+                sub.setPlan(activePlan);
+            }
+        } catch (Exception e) {
+            log.warn("Could not set plan for subscription from vendor data", e);
+        }
+        
+        return Optional.of(sub);
     }
 }

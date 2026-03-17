@@ -45,5 +45,12 @@ multitenancy:
 
 security:
   jwt:
-    secret: integration-secret-key               # Chave secreta para JWT (JSON Web Token)
+    secret: super-secret-key-for-development-use-256-bits-minimum    # Chave secreta para JWT (JSON Web Token)
     expiration: 3600000                          # Tempo de expiração do token JWT (em milissegundos)
+
+# ============================================================
+# Development Mode Configuration
+# ============================================================
+app:
+  billing:
+    enabled: false                               # Desabilita validação de billing em modo desenvolvimento

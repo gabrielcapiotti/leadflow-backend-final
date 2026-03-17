@@ -85,13 +85,6 @@ public class LeadService {
             throw new IllegalArgumentException("Email already in use");
         }
 
-        UUID tenantId = vendorContext.getCurrentVendorId();
-        
-        // Validate subscriber has active subscription before creating lead
-        subscriptionService.validateActiveSubscription(tenantId);
-        
-        usageService.consumeLead(tenantId);
-
         Lead lead = new Lead(
                 createdBy.getId(),
                 name,

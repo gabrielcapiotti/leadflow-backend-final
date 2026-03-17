@@ -14,6 +14,7 @@ import java.util.UUID;
 
 public final class CustomUserDetails implements UserDetails {
 
+    private final User user;
     private final UUID id;
     private final String email;
     private final String password;
@@ -47,6 +48,7 @@ public final class CustomUserDetails implements UserDetails {
             throw new IllegalStateException("User role cannot be null");
         }
 
+        this.user = user;
         this.id = user.getId();
         this.email = user.getEmail();
         this.password = user.getPassword();
@@ -78,6 +80,10 @@ public final class CustomUserDetails implements UserDetails {
     /* ======================================================
        CUSTOM GETTERS
        ====================================================== */
+
+    public User getUser() {
+        return user;
+    }
 
     public UUID getId() {
         return id;

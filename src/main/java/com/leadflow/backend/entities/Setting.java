@@ -134,6 +134,32 @@ public class Setting {
     public LocalDateTime getDeletedAt() { return deletedAt; }
 
     /* ==========================
+       SETTERS (for partial updates)
+       ========================== */
+
+    public void setVendorName(String vendorName) {
+        validateVendorName(vendorName);
+        this.vendorName = vendorName.trim();
+    }
+
+    public void setWhatsapp(String whatsapp) {
+        validateWhatsapp(whatsapp);
+        this.whatsapp = whatsapp.trim();
+    }
+
+    public void setCompanyName(String companyName) {
+        this.companyName = normalize(companyName);
+    }
+
+    public void setLogo(String logo) {
+        this.logo = normalize(logo);
+    }
+
+    public void setWelcomeMessage(String welcomeMessage) {
+        this.welcomeMessage = normalize(welcomeMessage);
+    }
+
+    /* ==========================
        REGRAS DE DOMÍNIO
        ========================== */
 

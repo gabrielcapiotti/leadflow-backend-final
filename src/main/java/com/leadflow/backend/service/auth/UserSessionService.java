@@ -5,6 +5,8 @@ import com.leadflow.backend.entities.auth.UserSession;
 import com.leadflow.backend.repository.auth.UserSessionRepository;
 import com.leadflow.backend.security.exception.UnauthorizedException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -20,6 +22,8 @@ import java.util.UUID;
 
 @Service
 public class UserSessionService {
+
+    private static final Logger log = LoggerFactory.getLogger(UserSessionService.class);
 
     private final UserSessionRepository repository;
     private final Clock clock;
@@ -113,10 +117,16 @@ public class UserSessionService {
                                        String currentIp,
                                        String currentUserAgent) {
 
+        log.debug("🔍 PROCESSING SESSION ACTIVITY: tokenId={}, tenantId={}", tokenId, tenantId);
+
         UserSession session = repository
                 .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId)
-                .orElseThrow(() ->
-                        new UnauthorizedException("Session not found"));
+                .orElseThrow(() -> {
+                    log.error("❌ SESSION NOT FOUND: tokenId={}, tenantId={}", tokenId, tenantId);
+                    return new UnauthorizedException("Session not found");
+                });
+
+        log.debug("✓ Session found: userId={}, sessionId={}", session.getUserId(), session.getId());
 
         Instant now = Instant.now(clock);
 
@@ -214,6 +224,19 @@ public class UserSessionService {
     }
 
     /* ======================================================
+       GET ACTIVE SESSIONS FOR USER
+       ====================================================== */
+
+    @Transactional(readOnly = true)
+    public List<UserSession> getActiveSessionsForUser(UUID userId, UUID tenantId) {
+
+        return repository.findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtDesc(
+                userId,
+                tenantId
+        );
+    }
+
+    /* ======================================================
        LIST ACTIVE SESSIONS
        ====================================================== */
 
@@ -270,6 +293,35 @@ public class UserSessionService {
         }
 
         session.revoke(Instant.now(clock));
+    }
+
+    /* ======================================================
+       UPDATE SESSION AFTER TOKEN REFRESH
+       ====================================================== */
+
+    @Transactional
+    public void updateSessionTokenIdAfterRefresh(String oldTokenId,
+                                                  String newTokenId,
+                                                  UUID tenantId) {
+        log.info("🔄 UPDATING SESSION AFTER REFRESH: oldTokenId={}, newTokenId={}, tenantId={}", 
+            oldTokenId, newTokenId, tenantId);
+        
+        var session = repository
+                .findByTokenIdAndTenantIdAndActiveTrue(oldTokenId, tenantId)
+                .orElseThrow(() -> {
+                    log.error("❌ Session not found for refresh: oldTokenId={}, tenantId={}", 
+                        oldTokenId, tenantId);
+                    return new UnauthorizedException("Session not found for refresh");
+                });
+
+        log.debug("✓ Session found: sessionId={}, userId={}", 
+            session.getId(), session.getUserId());
+        
+        // Update the session with the new token ID
+        session.setTokenId(newTokenId);
+        repository.save(session);
+        
+        log.info("✓ Session updated with new tokenId: {}", newTokenId);
     }
 
     @Scheduled(cron = "0 0 3 * * ?")

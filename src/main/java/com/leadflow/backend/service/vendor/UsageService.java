@@ -237,7 +237,7 @@ public class UsageService {
        QUERY
        ========================================================= */
 
-    @Transactional(readOnly = true)
+    @Transactional
     public UsageLimit getUsage(UUID tenantId) {
         if (tenantId == null) {
             throw new IllegalArgumentException("Tenant ID cannot be null");

@@ -6,6 +6,7 @@ import com.leadflow.backend.service.vendor.SubscriptionService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -28,12 +29,15 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
     private final SubscriptionService subscriptionService;
     private final VendorContext vendorContext;
 
+    @Value("${app.billing.enabled:false}")
+    private boolean billingEnabled;
+
     // Paths that are exempt from subscription validation
     private static final String[] PUBLIC_PATHS = {
-        "/api/auth",
-        "/api/v1/auth",
-        "/api/v1/health",
-        "/api/v1/public",
+        "/auth",
+        "/v1/auth",
+        "/v1/health",
+        "/v1/public",
         "/stripe/webhook",
         "/actuator",
         "/swagger-ui",
@@ -45,6 +49,7 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
             VendorContext vendorContext) {
         this.subscriptionService = subscriptionService;
         this.vendorContext = vendorContext;
+        log.info("🔧 BillingValidationInterceptor initialized - billingEnabled={}", billingEnabled);
     }
 
     @Override
@@ -54,6 +59,12 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
 
         String requestPath = request.getRequestURI();
         String method = request.getMethod();
+
+        // Skip ALL billing validation if billing is disabled
+        if (!billingEnabled) {
+            log.debug("Billing validation globally disabled - skipping all checks");
+            return true;
+        }
 
         // Skip validation for public endpoints
         if (isPublicPath(requestPath)) {
@@ -109,8 +120,14 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
      * Checks if the request path is a public endpoint that should skip billing validation
      */
     private boolean isPublicPath(String requestPath) {
+        String normalizedPath = requestPath;
+
+        if (normalizedPath.startsWith("/api/")) {
+            normalizedPath = normalizedPath.substring(4);
+        }
+
         for (String publicPath : PUBLIC_PATHS) {
-            if (requestPath.startsWith(publicPath)) {
+            if (normalizedPath.startsWith(publicPath)) {
                 return true;
             }
         }

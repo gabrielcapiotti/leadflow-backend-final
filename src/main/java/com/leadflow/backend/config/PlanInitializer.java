@@ -1,5 +1,6 @@
 package com.leadflow.backend.config;
 
+import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.repository.PlanRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -17,25 +18,25 @@ public class PlanInitializer {
 
     @PostConstruct
     public void initializePlan() {
-        log.info("⏭️ PlanInitializer desabilitado temporariamente durante boot para diagnosticar travamento");
-        // TODO: Reabilitar após resolver problema de travamento no boot
-        /*
-        if (planRepository.count() == 0) {
+        try {
+            if (planRepository.count() == 0) {
 
-            Plan plan = new Plan();
+                Plan plan = new Plan();
 
-            plan.setName("Leadflow Standard");
-            plan.setMaxLeads(500);
-            plan.setMaxUsers(10);
-            plan.setMaxAiExecutions(1000);
-            plan.setActive(true);
+                plan.setName("Leadflow Standard");
+                plan.setMaxLeads(500);
+                plan.setMaxUsers(10);
+                plan.setMaxAiExecutions(1000);
+                plan.setActive(true);
 
-            planRepository.save(plan);
+                planRepository.save(plan);
 
-            log.info("Plano padrão 'Leadflow Standard' criado automaticamente no startup");
-        } else {
-            log.info("Plano já existe no banco de dados");
+                log.info("✅ Plano padrão 'Leadflow Standard' criado automaticamente no startup");
+            } else {
+                log.info("✅ Plano já existe no banco de dados");
+            }
+        } catch (Exception e) {
+            log.error("❌ Erro ao inicializar plano: {}", e.getMessage(), e);
         }
-        */
     }
 }

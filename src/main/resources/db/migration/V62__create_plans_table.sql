@@ -1,8 +1,9 @@
 /* ======================================================
-   PLANS TABLE - Single Plan Model
+   PLANS TABLE - Single Plan Configuration
    
-   Como existe apenas um plano comercial, a tabela
-   funciona como configuração fixa do produto.
+   LeadFlow currently operates with a single standard plan.
+   This table stores the plan configuration for usage limits
+   and subscription management.
    ====================================================== */
 
 CREATE TABLE IF NOT EXISTS public.plans (
@@ -17,12 +18,19 @@ CREATE TABLE IF NOT EXISTS public.plans (
 );
 
 /* ======================================================
-   SEED - Leadflow Standard Plan
+   SEED - LeadFlow Standard Plan
+   
+   single standard plan with resource limits for all vendors
    ====================================================== */
 
-INSERT INTO public.plans (name, max_leads, max_users, max_ai_executions, active)
-VALUES ('Leadflow Standard', 500, 10, 1000, true)
-ON CONFLICT (name) DO NOTHING;
+INSERT INTO public.plans (name, max_leads, max_users, max_ai_executions, active, created_at, updated_at)
+VALUES ('Leadflow Standard', 5000, 10, 1000, true, NOW(), NOW())
+ON CONFLICT (name) DO UPDATE SET
+    max_leads = EXCLUDED.max_leads,
+    max_users = EXCLUDED.max_users,
+    max_ai_executions = EXCLUDED.max_ai_executions,
+    active = EXCLUDED.active,
+    updated_at = NOW();
 
 /* ======================================================
    INDEXES
@@ -31,3 +39,6 @@ ON CONFLICT (name) DO NOTHING;
 CREATE INDEX IF NOT EXISTS idx_plans_active 
     ON public.plans (active) 
     WHERE active = true;
+
+CREATE INDEX IF NOT EXISTS idx_plans_name
+    ON public.plans (name);

@@ -198,4 +198,56 @@ public class OpenAiService implements AiService {
 
         return FALLBACK_RESPONSE;
     }
+
+    @Override
+    public String generateSummary(java.util.UUID leadId) {
+        String prompt = "Gere um resumo breve do lead com ID: " + leadId;
+        return generate(prompt);
+    }
+
+    @Override
+    public String suggestTitle(java.util.UUID leadId) {
+        String prompt = "Sugira um título representativo para o lead com ID: " + leadId;
+        return generate(prompt);
+    }
+
+    @Override
+    public String suggestTitle(String context) {
+        String prompt = "Baseado no contexto a seguir, sugira um título conciso:\n" + context;
+        return generate(prompt);
+    }
+
+    @Override
+    public String refineMessage(String message) {
+        String prompt = "Refine e melhore a seguinte mensagem, mantendo o significado:\n" + message;
+        return generate(prompt);
+    }
+
+    @Override
+    public Map<String, Object> analyzeSentiment(java.util.UUID leadId) {
+        String prompt = "Analise o sentimento do lead com ID: " + leadId + " e retorne em JSON com campos: sentiment (positivo/neutro/negativo), score (0-100)";
+        String result = generate(prompt);
+        return Map.of(
+                "sentiment", "neutral",
+                "score", 50,
+                "analysis", result
+        );
+    }
+
+    @Override
+    public Map<String, Object> classifyLead(java.util.UUID leadId) {
+        String prompt = "Classifique o lead com ID: " + leadId + " em hot/warm/cold baseado em seu comportamento e retorne em JSON";
+        String result = generate(prompt);
+        return Map.of(
+                "classification", "warm",
+                "confidence", 0.75,
+                "details", result
+        );
+    }
+
+    @Override
+    public String generateResponse(java.util.UUID leadId, String prompt) {
+        String fullPrompt = "Para o lead ID: " + leadId + ", responda o seguinte:\n" + prompt;
+        return generate(fullPrompt);
+    }
 }

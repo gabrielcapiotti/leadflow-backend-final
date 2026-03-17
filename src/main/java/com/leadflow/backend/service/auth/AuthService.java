@@ -219,20 +219,25 @@ public class AuthService {
 
     private void audit(SecurityAction action, String email, boolean success, String tenant) {
 
-        HttpServletRequest request = currentRequest();
-        
-        // Use tenant parameter, fallback to TenantContext if not provided
-        String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
+        try {
+            HttpServletRequest request = currentRequest();
+            
+            // Use tenant parameter, fallback to TenantContext if not provided
+            String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
 
-        auditService.log(
-                action,
-                email,
-                tenantToUse,
-                success,
-                request != null ? request.getRemoteAddr() : null,
-                request != null ? request.getHeader("User-Agent") : null,
-                MDC.get("correlationId")
-        );
+            auditService.log(
+                    action,
+                    email,
+                    tenantToUse,
+                    success,
+                    request != null ? request.getRemoteAddr() : null,
+                    request != null ? request.getHeader("User-Agent") : null,
+                    MDC.get("correlationId")
+            );
+        } catch (Exception e) {
+            // Audit failure should not block authentication operations
+            logger.warn("Audit log failed: {}", e.getMessage());
+        }
     }
 
     private HttpServletRequest currentRequest() {
@@ -259,5 +264,38 @@ public class AuthService {
             throw new IllegalArgumentException(
                     "Password must contain at least 8 characters"
             );
+    }
+
+    /* ====================================================== */
+    /* PASSWORD MANAGEMENT                                    */
+    /* ====================================================== */
+
+    @Transactional
+    public void validatePassword(String email, String rawPassword) {
+        String normalizedEmail = normalizeEmail(email);
+        
+        User user = userRepository
+                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        
+        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
+            audit(SecurityAction.LOGIN_FAILED, normalizedEmail, false, null);
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+    }
+
+    @Transactional
+    public void changePassword(java.util.UUID userId, String newPassword) {
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException("Password must contain at least 8 characters");
+        }
+        
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        
+        user.changePassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+        
+        logger.info("Password changed for user: {}", user.getEmail());
     }
 }

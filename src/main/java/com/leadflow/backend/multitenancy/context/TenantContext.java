@@ -13,9 +13,15 @@ public final class TenantContext {
 
     /**
      * Regex segura para schema PostgreSQL.
+     * Deve iniciar com letra ou underscore.
      */
     private static final Pattern VALID_SCHEMA =
-            Pattern.compile("^[a-z0-9_]{1,63}$");
+            Pattern.compile("^[a-z_][a-z0-9_]{0,62}$");
+
+    /**
+     * Tenant padrão utilizado quando necessário.
+     */
+    private static final String DEFAULT_TENANT = "public";
 
     /**
      * ThreadLocal que mantém o tenant atual.
@@ -60,21 +66,29 @@ public final class TenantContext {
     }
 
     /* ======================================================
+       SET IF ABSENT
+       ====================================================== */
+
+    public static void setIfAbsent(String tenant) {
+
+        if (CURRENT_TENANT.get() == null) {
+            setTenant(tenant);
+        }
+    }
+
+    /* ======================================================
        GET STRICT
        ====================================================== */
 
     /**
      * Usado quando o tenant é obrigatório
-     * (serviços de domínio).
+     * (camada de domínio).
      */
     public static String getTenant() {
 
         String tenant = CURRENT_TENANT.get();
 
         if (tenant == null) {
-
-            log.error("Attempt to access tenant context but none is set");
-
             throw new IllegalStateException(
                     "No tenant set in current thread"
             );
@@ -84,14 +98,49 @@ public final class TenantContext {
     }
 
     /* ======================================================
+       REQUIRE TENANT
+       ====================================================== */
+
+    /**
+     * Alias explícito para uso em serviços.
+     */
+    public static String requireTenant() {
+        return getTenant();
+    }
+
+    /* ======================================================
        GET OPTIONAL
        ====================================================== */
 
     /**
-     * Usado por infraestrutura (Hibernate resolver).
+     * Usado por infraestrutura
+     * (ex: Hibernate CurrentTenantIdentifierResolver).
      */
     public static String getIfPresent() {
         return CURRENT_TENANT.get();
+    }
+
+    /* ======================================================
+       GET WITH FALLBACK
+       ====================================================== */
+
+    public static String getOrDefault() {
+
+        String tenant = CURRENT_TENANT.get();
+
+        if (tenant == null) {
+
+            if (log.isDebugEnabled()) {
+                log.debug(
+                        "Tenant context empty. Using default schema: {}",
+                        DEFAULT_TENANT
+                );
+            }
+
+            return DEFAULT_TENANT;
+        }
+
+        return tenant;
     }
 
     /* ======================================================
@@ -112,8 +161,10 @@ public final class TenantContext {
      */
     public static void clear() {
 
-        if (CURRENT_TENANT.get() != null && log.isDebugEnabled()) {
-            log.debug("Clearing tenant context: {}", CURRENT_TENANT.get());
+        String tenant = CURRENT_TENANT.get();
+
+        if (tenant != null && log.isDebugEnabled()) {
+            log.debug("Clearing tenant context: {}", tenant);
         }
 
         CURRENT_TENANT.remove();

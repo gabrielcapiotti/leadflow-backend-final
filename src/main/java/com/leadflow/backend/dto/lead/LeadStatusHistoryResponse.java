@@ -15,7 +15,7 @@ public final class LeadStatusHistoryResponse {
     private final String status;
     private final String updatedBy;
 
-    @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
     private final LocalDateTime changedAt;
 
     public LeadStatusHistoryResponse(

@@ -28,7 +28,7 @@ public class UsageLimit {
     @Column(name = "ai_executions_used", nullable = false)
     private Integer aiExecutionsUsed = 0;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "plan_id", nullable = false)
     private Plan plan;
 

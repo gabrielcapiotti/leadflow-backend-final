@@ -1,5 +1,6 @@
 package com.leadflow.backend.dto.lead;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.leadflow.backend.entities.enums.LeadStatus;
 import com.leadflow.backend.entities.lead.Lead;
 
@@ -13,6 +14,7 @@ public class LeadResponse {
     private final String email;
     private final String phone;
     private final LeadStatus status;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
     private final LocalDateTime createdAt;
     private final LocalDateTime updatedAt;
 

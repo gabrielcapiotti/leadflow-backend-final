@@ -122,11 +122,15 @@ public class SecurityWebConfig {
                         "/auth/register",
                         "/auth/login",
                         "/auth/refresh",
-                        "/api/auth/register",
-                        "/api/auth/login",
-                        "/api/auth/refresh",
+                        "/auth/debug",
                         "/error"
                 ).permitAll()
+
+                /* =========================================
+                   PUBLIC API ENDPOINTS
+                   ========================================= */
+
+                .requestMatchers("/public/**").permitAll()
 
                 /* =========================================
                    AUTHENTICATED AUTH ENDPOINTS
@@ -135,8 +139,9 @@ public class SecurityWebConfig {
                 .requestMatchers(
                         "/auth/me",
                         "/auth/sessions/**",
-                        "/api/auth/me",
-                        "/api/auth/sessions/**"
+                        "/auth/change-password",
+                        "/auth/logout",
+                        "/auth/sessions"
                 ).authenticated()
 
                 /* =========================================
@@ -167,6 +172,13 @@ public class SecurityWebConfig {
 
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/actuator/prometheus").permitAll()
+
+                /* =========================================
+                   VENDORS
+                   ========================================= */
+
+                .requestMatchers("/vendors").authenticated()
+                .requestMatchers("/vendor-leads/**").authenticated()
 
                 /* =========================================
                    EVERYTHING ELSE
@@ -200,15 +212,30 @@ public class SecurityWebConfig {
         JwtAuthenticationFilter jwtFilter = jwtFilterProvider.getIfAvailable();
 
         /* =========================================
-           FILTER ORDER
+           FILTER ORDER - CRITICAL!
            ========================================= */
 
-        // Tenant must run BEFORE authentication
-        http.addFilterBefore(
-                tenantFilter,
-                UsernamePasswordAuthenticationFilter.class
-        );
+        // IMPORTANT: Filter execution order is crucial!
+        // Both filters use the same reference point (UsernamePasswordAuthenticationFilter)
+        // Filters are executed in the order they are registered
+        // 
+        // Execution order will be:
+        // 1. TenantFilter (extracts X-Tenant-ID header and sets TenantContext) 
+        // 2. JwtAuthenticationFilter (uses TenantContext that was already set by TenantFilter)
+        // 3. UsernamePasswordAuthenticationFilter
+        // 4. Rate limit filter (runs after authentication)
 
+        // Add TenantFilter FIRST before UsernamePasswordAuthenticationFilter
+        // This ensures TenantContext is available for JwtAuthenticationFilter
+        if (tenantFilter != null) {
+            http.addFilterBefore(
+                    tenantFilter,
+                    UsernamePasswordAuthenticationFilter.class
+            );
+        }
+
+        // Add JwtAuthenticationFilter SECOND before UsernamePasswordAuthenticationFilter
+        // TenantContext is already set by TenantFilter at this point
         if (jwtFilter != null) {
             http.addFilterBefore(
                     jwtFilter,
@@ -216,6 +243,7 @@ public class SecurityWebConfig {
             );
         }
 
+        // Rate limit filter runs after authentication
         http.addFilterAfter(
                 rateLimitFilter,
                 UsernamePasswordAuthenticationFilter.class

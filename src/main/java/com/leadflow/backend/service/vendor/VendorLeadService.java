@@ -335,21 +335,25 @@ public class VendorLeadService {
 
     public VendorLeadMetricsResponse getMetricsForCurrentVendor() {
 
-        UUID vendorId = vendorContext.getCurrentVendor().getId();
+        try {
+            UUID vendorId = vendorContext.getCurrentVendor().getId();
 
-        var results = repository.countByStage(vendorId);
+            var results = repository.countByStage(vendorId);
 
-        Map<String, Long> map = new HashMap<>();
+            Map<String, Long> map = new HashMap<>();
 
-        for (Object[] row : results) {
+            for (Object[] row : results) {
+                String stage = (String) row[0];
+                Long count = (Long) row[1];
+                map.put(stage, count);
+            }
 
-            String stage = (String) row[0];
-            Long count = (Long) row[1];
-
-            map.put(stage, count);
+            return new VendorLeadMetricsResponse(map);
+        } catch (Exception e) {
+            log.error("Error getting metrics for current vendor", e);
+            // Return empty metrics on error
+            return new VendorLeadMetricsResponse(new HashMap<>());
         }
-
-        return new VendorLeadMetricsResponse(map);
     }
 
     public List<VendorLead> getRankingForCurrentVendor() {

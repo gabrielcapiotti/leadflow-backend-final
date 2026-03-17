@@ -96,6 +96,9 @@ public class JwtService implements InitializingBean {
         Instant now = Instant.now(clock);
         Instant expiresAt = now.plusMillis(expirationMillis);
         String tokenId = UUID.randomUUID().toString();
+        
+        logger.info("🔐 GENERATING NEW JWT TOKEN: user={}, tokenId={}, tenant={}", 
+            user.getEmail(), tokenId, tenantSchema);
 
         String token = Jwts.builder()
                 .setId(tokenId)
@@ -109,7 +112,43 @@ public class JwtService implements InitializingBean {
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
+        logger.debug("✓ JWT generated successfully with JTI: {}", tokenId);
         return new JwtToken(token, tokenId, expiresAt);
+    }
+
+    /**
+     * Generate token for refresh - reuses the session's existing tokenId
+     * This keeps the session persistent across token renewals
+     */
+    public JwtToken generateTokenForRefresh(User user, String tenantSchema, String sessionTokenId) {
+
+        validateUser(user);
+        validateTenant(tenantSchema);
+        
+        if (sessionTokenId == null || sessionTokenId.isBlank()) {
+            throw new IllegalArgumentException("sessionTokenId cannot be null or blank");
+        }
+
+        Instant now = Instant.now(clock);
+        Instant expiresAt = now.plusMillis(expirationMillis);
+        
+        logger.info("🔐 REFRESHING JWT TOKEN: user={}, sessionTokenId={}, tenant={}", 
+            user.getEmail(), sessionTokenId, tenantSchema);
+
+        String token = Jwts.builder()
+                .setId(sessionTokenId)  // Reuse session's tokenId
+                .setSubject(user.getEmail())
+                .setIssuer(issuer)
+                .setIssuedAt(Date.from(now))
+                .setExpiration(Date.from(expiresAt))
+                .claim("userId", user.getId().toString())
+                .claim("role", user.getRole().getName())
+                .claim("tenant", tenantSchema.trim().toLowerCase())
+                .signWith(signingKey, SignatureAlgorithm.HS256)
+                .compact();
+
+        logger.debug("✓ JWT refreshed successfully with same tokenId: {}", sessionTokenId);
+        return new JwtToken(token, sessionTokenId, expiresAt);
     }
 
     /* ====================================================== */
@@ -151,25 +190,51 @@ public class JwtService implements InitializingBean {
 
             boolean emailMatches = Objects.equals(email, userDetails.getUsername());
             boolean userIdMatches = Objects.equals(tokenUserId, expectedUserId);
-            boolean tenantMatches = tokenTenant.equalsIgnoreCase(expectedTenant);
+            
+            logger.debug("=== TOKEN VALIDATION ===");
+            logger.debug("Email: {} == {} ? {}", LogSanitizer.sanitize(email), LogSanitizer.sanitize(userDetails.getUsername()), emailMatches);
+            logger.debug("UserId: {} == {} ? {}", tokenUserId, expectedUserId, userIdMatches);
+            logger.debug("Tenant: {} == {} ? (will check)", tokenTenant, expectedTenant);
+            
+            // Handle null cases for tenant comparison
+            boolean tenantMatches = false;
+            if (tokenTenant != null && expectedTenant != null) {
+                tenantMatches = tokenTenant.equalsIgnoreCase(expectedTenant);
+            } else if (tokenTenant != null) {
+                // Token has tenant but expected is null - allow if token tenant is "public"
+                tenantMatches = tokenTenant.equalsIgnoreCase("public");
+            } else if (expectedTenant != null) {
+                // Expected has tenant but token doesn't - allow if expected is "public"
+                tenantMatches = expectedTenant.equalsIgnoreCase("public");
+            } else {
+                // Both are null - allow
+                tenantMatches = true;
+            }
+            
+            logger.debug("Tenant matches: {}", tenantMatches);
             
             if (!emailMatches) {
-                logger.debug("Email mismatch: token={}, expected={}", 
+                logger.warn("❌ Email mismatch: token={}, expected={}", 
                     LogSanitizer.sanitize(email),
                     LogSanitizer.sanitize(userDetails.getUsername()));
             }
             if (!userIdMatches) {
-                logger.debug("UserId mismatch: token={}, expected={}", 
+                logger.warn("❌ UserId mismatch: token={}, expected={}", 
                     LogSanitizer.sanitize(tokenUserId.toString()),
                    LogSanitizer.sanitize(expectedUserId.toString()));
             }
             if (!tenantMatches) {
-                logger.debug("Tenant mismatch: token={}, expected={}", 
+                logger.warn("*** TENANT MISMATCH ***: token={}, expected={}", 
                     LogSanitizer.sanitize(tokenTenant),
                     LogSanitizer.sanitize(expectedTenant));
             }
 
-            return emailMatches && userIdMatches && tenantMatches;
+            boolean isValid = emailMatches && userIdMatches && tenantMatches;
+            if (!isValid) {
+                logger.warn("Token validation FAILED - email={}, userId={}, tenant={}", 
+                    emailMatches, userIdMatches, tenantMatches);
+            }
+            return isValid;
 
         } catch (Exception e) {
             logger.warn("Token context validation failed: {}", LogSanitizer.sanitize(e.getMessage()));

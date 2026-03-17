@@ -1,6 +1,8 @@
 package com.leadflow.backend.dto.settings;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -23,12 +25,13 @@ public final class UpdateSettingRequest {
     @Size(max = 500, message = "Welcome message deve ter no máximo 500 caracteres")
     private final String welcomeMessage;
 
+    @JsonCreator
     public UpdateSettingRequest(
-            String vendorName,
-            String whatsapp,
-            String companyName,
-            String logo,
-            String welcomeMessage
+            @JsonProperty("vendorName") String vendorName,
+            @JsonProperty("whatsapp") String whatsapp,
+            @JsonProperty("companyName") String companyName,
+            @JsonProperty("logo") String logo,
+            @JsonProperty("welcomeMessage") String welcomeMessage
     ) {
         this.vendorName = vendorName;
         this.whatsapp = whatsapp;

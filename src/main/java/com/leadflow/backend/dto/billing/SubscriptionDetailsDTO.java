@@ -1,5 +1,6 @@
 package com.leadflow.backend.dto.billing;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.leadflow.backend.entities.Subscription;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -23,6 +24,7 @@ public class SubscriptionDetailsDTO {
     private Integer maxLeads;
     private Integer maxUsers;
     private Integer maxAiExecutions;
+    @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
     private LocalDateTime startedAt;
     private LocalDateTime expiresAt;
     private Long daysUntilExpiration;

@@ -133,4 +133,154 @@ public class AiController {
 
         return ResponseEntity.ok(aiResponse);
     }
+
+    @PostMapping("/lead-summary")
+    public ResponseEntity<?> generateLeadSummary(@RequestParam UUID leadId) {
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(403).body(
+                    Map.of("error", "SUBSCRIPTION_READ_ONLY", "message", "Assinatura não permite uso da IA.")
+            );
+        }
+
+        Vendor vendor = vendorContext.getCurrentVendor();
+        if (vendor == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
+        }
+
+        vendorLeadService.getLeadForCurrentVendor(leadId);
+
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
+        }
+
+        aiMetricsService.increment();
+        String summary = aiService.generateSummary(leadId);
+        return ResponseEntity.ok(Map.of("summary", summary));
+    }
+
+    @PostMapping("/title-suggestion")
+    public ResponseEntity<?> suggestLeadTitle(
+            @RequestParam UUID leadId,
+            @RequestParam(required = false) String context
+    ) {
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(403).body(
+                    Map.of("error", "SUBSCRIPTION_READ_ONLY")
+            );
+        }
+
+        Vendor vendor = vendorContext.getCurrentVendor();
+        if (vendor == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
+        }
+
+        vendorLeadService.getLeadForCurrentVendor(leadId);
+
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
+        }
+
+        aiMetricsService.increment();
+        String title = context != null && !context.isBlank()
+                ? aiService.suggestTitle(context)
+                : aiService.suggestTitle(leadId);
+        return ResponseEntity.ok(Map.of("title", title));
+    }
+
+    @PostMapping("/refine-message")
+    public ResponseEntity<?> refineMessage(@RequestParam String message) {
+        if (message == null || message.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_MESSAGE"));
+        }
+
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
+        }
+
+        Vendor vendor = vendorContext.getCurrentVendor();
+        if (vendor == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
+        }
+
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
+        }
+
+        aiMetricsService.increment();
+        String refined = aiService.refineMessage(message);
+        return ResponseEntity.ok(Map.of("refined", refined));
+    }
+
+    @PostMapping("/sentiment-analysis")
+    public ResponseEntity<?> analyzeSentiment(@RequestParam UUID leadId) {
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
+        }
+
+        Vendor vendor = vendorContext.getCurrentVendor();
+        if (vendor == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
+        }
+
+        vendorLeadService.getLeadForCurrentVendor(leadId);
+
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
+        }
+
+        aiMetricsService.increment();
+        Map<String, Object> sentiment = aiService.analyzeSentiment(leadId);
+        return ResponseEntity.ok(sentiment);
+    }
+
+    @PostMapping("/classify-lead")
+    public ResponseEntity<?> classifyLead(@RequestParam UUID leadId) {
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
+        }
+
+        Vendor vendor = vendorContext.getCurrentVendor();
+        if (vendor == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
+        }
+
+        vendorLeadService.getLeadForCurrentVendor(leadId);
+
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
+        }
+
+        aiMetricsService.increment();
+        Map<String, Object> classification = aiService.classifyLead(leadId);
+        return ResponseEntity.ok(classification);
+    }
+
+    @PostMapping("/generate-response")
+    public ResponseEntity<?> generateResponse(
+            @RequestParam UUID leadId,
+            @RequestParam String prompt
+    ) {
+        if (prompt == null || prompt.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_PROMPT"));
+        }
+
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
+        }
+
+        Vendor vendor = vendorContext.getCurrentVendor();
+        if (vendor == null) {
+            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
+        }
+
+        vendorLeadService.getLeadForCurrentVendor(leadId);
+
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
+        }
+
+        aiMetricsService.increment();
+        String response = aiService.generateResponse(leadId, prompt);
+        return ResponseEntity.ok(Map.of("response", response));
+    }
 }
