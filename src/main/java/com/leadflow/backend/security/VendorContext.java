@@ -41,9 +41,7 @@ public class VendorContext {
         }
 
         return vendorRepository
-                .findByUserEmail(email)
-                .stream()
-                .findFirst()
+                .findFirstByUserEmailIgnoreCase(email)
                 .orElseThrow(() ->
                         new UnauthorizedException(
                                 "Authenticated user does not belong to any vendor"

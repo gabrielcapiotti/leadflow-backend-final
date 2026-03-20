@@ -1,186 +1,262 @@
 param()
 
 $BaseUrl = "http://localhost:8081"
-$TenantId = "public"
-$Token = ""
+$TenantHeader = "public"
+$ProgressPreference = 'SilentlyContinue'
 
-Write-Host "=========================================="
-Write-Host "LEADS ENDPOINTS - INTEGRATION TESTS"
-Write-Host "=========================================="
+Write-Host "`n════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "LEADFLOW LEADS ENDPOINTS - INTEGRATION TESTS" -ForegroundColor Cyan
+Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Cyan
 Write-Host "Server: $BaseUrl"
-Write-Host "Tenant: $TenantId`n"
+Write-Host "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+Write-Host "════════════════════════════════════════════════════════`n" -ForegroundColor Cyan
 
-# Helper function to get auth token
-function Get-AuthToken {
-    $loginBody = @{
-        email = "carlos@leadflow.com"
-        password = "SenhaForte@123"
-    } | ConvertTo-Json
-    
+# Utility Functions
+function Invoke-ApiRequest {
+    param(
+        [string]$Method,
+        [string]$Endpoint,
+        [hashtable]$Body = $null,
+        [bool]$RequireAuth = $false,
+        [string]$Token = $null
+    )
+
+    $Headers = @{
+        "Content-Type" = "application/json"
+        "X-Tenant-Id"  = $TenantHeader
+    }
+
+    if ($RequireAuth -and $Token) {
+        $Headers["Authorization"] = "Bearer $Token"
+    }
+
     try {
-        $response = Invoke-WebRequest -Uri "$BaseUrl/auth/login" `
-            -Method POST `
-            -Headers @{
-                "Content-Type" = "application/json"
-                "X-Tenant-ID" = $TenantId
-            } `
-            -Body $loginBody `
-            -UseBasicParsing `
-            -TimeoutSec 10
+        $params = @{
+            Uri     = "$BaseUrl$Endpoint"
+            Method  = $Method
+            Headers = $Headers
+        }
+
+        if ($Body) {
+            $params.Body = ($Body | ConvertTo-Json -Depth 10)
+        }
+
+        $response = Invoke-RestMethod @params
+        return @{
+            Success = $true
+            Status  = 200
+            Data    = $response
+        }
+    }
+    catch {
+        $status = 0
+        try { 
+            $status = $_.Exception.Response.StatusCode.value__ 
+        } catch {}
         
-        $json = $response.Content | ConvertFrom-Json
-        return $json.accessToken
-    } catch {
-        Write-Host "Could not get auth token: $_" -ForegroundColor Yellow
-        return $null
+        return @{
+            Success = $false
+            Status  = $status
+            Exception = $_.Exception.Message
+        }
     }
 }
 
-# Try to get token
-Write-Host "STEP 1: Getting Auth Token" -ForegroundColor Blue
-Write-Host "====================="
-$token = Get-AuthToken
-if ($token) {
-    Write-Host "[OK] Auth token obtained" -ForegroundColor Green
+# Step 1: Register New User
+Write-Host "STEP 1: Register New User" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+$testEmail = "lead-test-$timestamp@leadflow.dev"
+$testPassword = "TestPassword123!@"
+
+$r = Invoke-ApiRequest "POST" "/auth/register" @{
+    name = "Lead Tester"
+    email = $testEmail
+    password = $testPassword
+    confirmPassword = $testPassword
+}
+
+if ($r.Success) {
+    Write-Host "✅ User registered" -ForegroundColor Green
+    Write-Host "   Email: $testEmail"
+    $token = $r.Data.accessToken
 } else {
-    Write-Host "[WARN] Could not obtain auth token, tests may fail" -ForegroundColor Yellow
+    Write-Host "❌ Failed to register: $($r.Exception)" -ForegroundColor Red
+    exit 1
 }
 Write-Host ""
 
 # Define headers for authenticated requests
 $authHeaders = @{
     "Content-Type" = "application/json"
-    "X-Tenant-ID" = $TenantId
-}
-if ($token) {
-    $authHeaders["Authorization"] = "Bearer $token"
+    "X-Tenant-ID" = $TenantHeader
+    "Authorization" = "Bearer $token"
 }
 
-# ENDPOINT 1: Create Lead (LeadController)
-Write-Host "STEP 2: Create Lead (LeadController)" -ForegroundColor Blue
-Write-Host "======================================"
+# Test Results
+$TestCount = 0
+$PassCount = 0
+$FailCount = 0
+
+# STEP 2: Create Lead
+Write-Host "STEP 2: Create Lead (LeadController)" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
 $leadBody = @{
     name = "John Doe"
-    email = "john@example.com"
+    email = "john-$timestamp@example.com"
     phone = "+5511999999999"
-} | ConvertTo-Json
+}
 
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/leads" `
-        -Method POST `
-        -Headers $authHeaders `
-        -Body $leadBody `
-        -UseBasicParsing `
-        -TimeoutSec 10
-    
-    $leadJson = $response.Content | ConvertFrom-Json
-    $leadId = $leadJson.id
-    Write-Host "[OK] Lead created - Status $($response.StatusCode)" -ForegroundColor Green
-    Write-Host "    ID: $leadId"
-} catch {
-    Write-Host "[ERROR] Failed to create lead: $($_.Exception.Message)" -ForegroundColor Red
+$r = Invoke-ApiRequest "POST" "/api/leads" $leadBody $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Lead created (HTTP $($r.Status))" -ForegroundColor Green
+    $leadId = $r.Data.id
+    Write-Host "   Lead ID: $leadId"
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to create lead (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
     $leadId = $null
 }
 Write-Host ""
 
-# ENDPOINT 2: List Leads
-Write-Host "STEP 3: List Leads (LeadController)" -ForegroundColor Blue
-Write-Host "===================================="
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/leads" `
-        -Method GET `
-        -Headers $authHeaders `
-        -UseBasicParsing `
-        -TimeoutSec 10
-    
-    Write-Host "[OK] List leads - Status $($response.StatusCode)" -ForegroundColor Green
-    $leads = $response.Content | ConvertFrom-Json
-    Write-Host "    Found: $($leads.Count) leads"
-} catch {
-    Write-Host "[ERROR] Failed to list leads: $($_.Exception.Message)" -ForegroundColor Red
+# STEP 3: List Leads
+Write-Host "STEP 3: List Leads (LeadController)" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+$r = Invoke-ApiRequest "GET" "/api/leads" $null $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Listed leads (HTTP $($r.Status))" -ForegroundColor Green
+    $leads = $r.Data
+    Write-Host "   Total leads: $(if ($leads -is [array]) { $leads.Count } else { 1 })"
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to list leads (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
 }
 Write-Host ""
 
-# ENDPOINT 3: List Vendor Leads (with pagination)
-Write-Host "STEP 4: List Vendor Leads (VendorLeadController)" -ForegroundColor Blue
-Write-Host "================================================"
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/vendor-leads?page=0&size=10" `
-        -Method GET `
-        -Headers $authHeaders `
-        -UseBasicParsing `
-        -TimeoutSec 10
+# STEP 4: Get Lead by ID
+Write-Host "STEP 4: Get Lead by ID (LeadController)" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+if ($leadId) {
+    $r = Invoke-ApiRequest "GET" "/api/leads/$leadId" $null $true $token
     
-    Write-Host "[OK] List vendor leads - Status $($response.StatusCode)" -ForegroundColor Green
-} catch {
-    Write-Host "[ERROR] Failed to list vendor leads: $($_.Exception.Message)" -ForegroundColor Red
+    if ($r.Success) {
+        Write-Host "✅ Retrieved lead (HTTP $($r.Status))" -ForegroundColor Green
+        Write-Host "   Name: $($r.Data.name)"
+        Write-Host "   Email: $($r.Data.email)"
+        $PassCount++
+    } else {
+        Write-Host "❌ Failed to retrieve lead (HTTP $($r.Status))" -ForegroundColor Red
+        Write-Host "   Error: $($r.Exception)"
+        $FailCount++
+    }
+} else {
+    Write-Host "⚠️  Skipped (no lead ID from previous test)" -ForegroundColor Gray
 }
 Write-Host ""
 
-# ENDPOINT 5: Get Vendor Lead Metrics
-Write-Host "STEP 5: Get Vendor Lead Metrics" -ForegroundColor Blue
-Write-Host "================================"
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/vendor-leads/metrics" `
-        -Method GET `
-        -Headers $authHeaders `
-        -UseBasicParsing `
-        -TimeoutSec 10
-    
-    Write-Host "[OK] Get metrics - Status $($response.StatusCode)" -ForegroundColor Green
-} catch {
-    Write-Host "[ERROR] Failed to get metrics: $($_.Exception.Message)" -ForegroundColor Red
+# STEP 5: List Vendor Leads
+Write-Host "STEP 5: List Vendor Leads (VendorLeadController)" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+$r = Invoke-ApiRequest "GET" "/api/vendor-leads?page=0&size=10" $null $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Listed vendor leads (HTTP $($r.Status))" -ForegroundColor Green
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to list vendor leads (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
 }
 Write-Host ""
 
-# ENDPOINT 6: Get Vendor Lead Ranking
-Write-Host "STEP 6: Get Vendor Lead Ranking" -ForegroundColor Blue
-Write-Host "================================"
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/vendor-leads/ranking" `
-        -Method GET `
-        -Headers $authHeaders `
-        -UseBasicParsing `
-        -TimeoutSec 10
-    
-    Write-Host "[OK] Get ranking - Status $($response.StatusCode)" -ForegroundColor Green
-} catch {
-    Write-Host "[ERROR] Failed to get ranking: $($_.Exception.Message)" -ForegroundColor Red
+# STEP 6: Get Vendor Lead Metrics
+Write-Host "STEP 6: Get Vendor Lead Metrics" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+$r = Invoke-ApiRequest "GET" "/api/vendor-leads/metrics" $null $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Retrieved metrics (HTTP $($r.Status))" -ForegroundColor Green
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to get metrics (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
 }
 Write-Host ""
 
-# ENDPOINT 7: Get Stage Time Metrics
-Write-Host "STEP 7: Get Stage Time Metrics" -ForegroundColor Blue
-Write-Host "==============================="
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/vendor-leads/metrics/stage-time" `
-        -Method GET `
-        -Headers $authHeaders `
-        -UseBasicParsing `
-        -TimeoutSec 10
-    
-    Write-Host "[OK] Get stage time metrics - Status $($response.StatusCode)" -ForegroundColor Green
-} catch {
-    Write-Host "[ERROR] Failed to get stage time metrics: $($_.Exception.Message)" -ForegroundColor Red
+# STEP 7: Get Vendor Lead Ranking
+Write-Host "STEP 7: Get Vendor Lead Ranking" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+$r = Invoke-ApiRequest "GET" "/api/vendor-leads/ranking" $null $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Retrieved ranking (HTTP $($r.Status))" -ForegroundColor Green
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to get ranking (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
 }
 Write-Host ""
 
-# ENDPOINT 8: Get Conversion Metrics
-Write-Host "STEP 8: Get Conversion Metrics" -ForegroundColor Blue
-Write-Host "==============================="
-try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/vendor-leads/metrics/conversion" `
-        -Method GET `
-        -Headers $authHeaders `
-        -UseBasicParsing `
-        -TimeoutSec 10
-    
-    Write-Host "[OK] Get conversion metrics - Status $($response.StatusCode)" -ForegroundColor Green
-} catch {
-    Write-Host "[ERROR] Failed to get conversion metrics: $($_.Exception.Message)" -ForegroundColor Red
+# STEP 8: Get Stage Time Metrics
+Write-Host "STEP 8: Get Stage Time Metrics" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+$r = Invoke-ApiRequest "GET" "/api/vendor-leads/metrics/stage-time" $null $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Retrieved stage time metrics (HTTP $($r.Status))" -ForegroundColor Green
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to get stage time metrics (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
 }
 Write-Host ""
 
-Write-Host "=========================================="
-Write-Host "LEADS TESTS COMPLETED" -ForegroundColor Cyan
-Write-Host "=========================================="
+# STEP 9: Get Conversion Metrics
+Write-Host "STEP 9: Get Conversion Metrics" -ForegroundColor Yellow
+Write-Host "═════════════════════════════════════════════════════════"
+$TestCount++
+
+$r = Invoke-ApiRequest "GET" "/api/vendor-leads/metrics/conversion" $null $true $token
+
+if ($r.Success) {
+    Write-Host "✅ Retrieved conversion metrics (HTTP $($r.Status))" -ForegroundColor Green
+    $PassCount++
+} else {
+    Write-Host "❌ Failed to get conversion metrics (HTTP $($r.Status))" -ForegroundColor Red
+    Write-Host "   Error: $($r.Exception)"
+    $FailCount++
+}
+Write-Host ""
+
+# Summary
+Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "TEST SUMMARY" -ForegroundColor Cyan
+Write-Host "════════════════════════════════════════════════════════" -ForegroundColor Cyan
+Write-Host "Total Tests:  $TestCount"
+Write-Host "Passed:       $PassCount" -ForegroundColor Green
+Write-Host "Failed:       $FailCount" $(if ($FailCount -eq 0) { "-ForegroundColor Green" } else { "-ForegroundColor Red" })
+Write-Host "Pass Rate:    $([math]::Round(($PassCount/$TestCount)*100, 2))%"
+Write-Host "════════════════════════════════════════════════════════`n" -ForegroundColor Cyan

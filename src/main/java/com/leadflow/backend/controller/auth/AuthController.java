@@ -12,6 +12,7 @@ import com.leadflow.backend.security.jwt.JwtToken;
 import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
+import com.leadflow.domain.auth.service.PasswordResetService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -42,19 +43,22 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
+    private final PasswordResetService passwordResetService;
 
     public AuthController(
             AuthService authService,
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
             UserSessionService userSessionService,
-            TenantService tenantService
+            TenantService tenantService,
+            PasswordResetService passwordResetService
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
+        this.passwordResetService = passwordResetService;
     }
 
     /* ======================================================
@@ -324,6 +328,46 @@ public class AuthController {
         );
 
         return ResponseEntity.noContent().build();
+    }
+
+    /* ======================================================
+       FORGOT PASSWORD
+       ====================================================== */
+
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(
+            @Valid @RequestBody ForgotPasswordRequest request
+    ) {
+        log.info("Password reset requested for: {}", maskEmail(request.email()));
+
+        // Always returns 200 (anti-enumeration: não revela se email existe)
+        passwordResetService.requestPasswordReset(request.email());
+
+        return ResponseEntity.ok(Map.of(
+                "message", "Se o email existe, você receberá um link para resetar a senha"
+        ));
+    }
+
+    /* ======================================================
+       RESET PASSWORD
+       ====================================================== */
+
+    @PostMapping("/reset-password")
+    public ResponseEntity<Void> resetPassword(
+            @Valid @RequestBody ResetPasswordRequest request
+    ) {
+        try {
+            log.info("Password reset attempted with token");
+
+            passwordResetService.resetPassword(request.token(), request.newPassword());
+
+            log.info("Password reset successful");
+
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException e) {
+            log.warn("Password reset failed: {}", e.getMessage());
+            throw new UnauthorizedException("Token inválido ou expirado");
+        }
     }
 
     /* ======================================================

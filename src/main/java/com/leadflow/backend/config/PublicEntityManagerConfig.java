@@ -46,7 +46,9 @@ public class PublicEntityManagerConfig {
         return builder
                 .dataSource(dataSource)
                 .packages(
-                        "com.leadflow.backend.entities"   // entidades globais (ex: Tenant)
+                        "com.leadflow.backend.entities",      // entidades globais (ex: Tenant)
+                        "com.leadflow.backend.webhook.entity", // webhook entities
+                        "com.leadflow.domain"                  // domain entities (ex: PasswordResetToken)
                 )
                 .persistenceUnit("public")
                 .properties(properties)

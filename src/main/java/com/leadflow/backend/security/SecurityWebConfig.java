@@ -122,6 +122,8 @@ public class SecurityWebConfig {
                         "/auth/register",
                         "/auth/login",
                         "/auth/refresh",
+                        "/auth/forgot-password",
+                        "/auth/reset-password",
                         "/auth/debug",
                         "/error"
                 ).permitAll()
@@ -170,6 +172,7 @@ public class SecurityWebConfig {
                    MONITORING
                    ========================================= */
 
+                .requestMatchers("/health").permitAll()
                 .requestMatchers("/actuator/health").permitAll()
                 .requestMatchers("/actuator/prometheus").permitAll()
 

@@ -72,27 +72,31 @@ public class LeadService {
     ) {
 
         requireUser(createdBy);
-
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("Name cannot be blank");
+        }
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email cannot be blank");
+        }
         String normalizedEmail = normalizeEmail(email);
-
+        if (!normalizedEmail.matches("^[A-Za-z0-9+_.-]+@[A-Za-z0-9.-]+$")) {
+            throw new IllegalArgumentException("Invalid email format");
+        }
         boolean exists = leadRepository
                 .existsByUserIdAndEmailIgnoreCaseAndDeletedAtIsNull(
                         createdBy.getId(),
                         normalizedEmail
                 );
-
         if (exists) {
-            throw new IllegalArgumentException("Email already in use");
+            throw new IllegalArgumentException("Email already in use for this user");
         }
-
         Lead lead = new Lead(
                 createdBy.getId(),
                 name,
                 normalizedEmail,
                 phone
         );
-
-        leadRepository.save(lead);
+        lead = leadRepository.save(lead);
 
         historyRepository.save(
                 new LeadStatusHistory(lead, LeadStatus.NEW, createdBy)

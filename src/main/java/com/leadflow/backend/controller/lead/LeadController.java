@@ -56,22 +56,27 @@ public class LeadController {
             @Valid @RequestBody CreateLeadRequest request
     ) {
 
-        enforceWriteAccess();
-
-        User user = resolveAuthenticatedUser(principal);
-        log.info("Creating lead for user: {} with email: {}", user.getId(), request.getEmail());
-
-        Lead lead = leadService.createLead(
+        try {
+            enforceWriteAccess();
+            User user = resolveAuthenticatedUser(principal);
+            log.info("Creating lead for user: {} with email: {}", user.getId(), request.getEmail());
+            Lead lead = leadService.createLead(
                 request.getName(),
                 request.getEmail(),
                 request.getPhone(),
                 user
-        );
-
-        log.info("Lead created successfully with ID: {}", lead.getId());
-        return ResponseEntity
+            );
+            log.info("Lead created successfully with ID: {}", lead.getId());
+            return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(new LeadResponse(lead));
+        } catch (IllegalArgumentException e) {
+            log.warn("Lead creation failed: {}", e.getMessage());
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(null);
+        } catch (Exception e) {
+            log.error("Unexpected error during lead creation", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(null);
+        }
     }
 
     /* ======================================================

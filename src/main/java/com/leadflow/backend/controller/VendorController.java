@@ -8,8 +8,6 @@ import com.leadflow.backend.service.vendor.QuotaService;
 import com.leadflow.backend.service.PlanService;
 
 import org.springframework.lang.NonNull;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.slf4j.Logger;

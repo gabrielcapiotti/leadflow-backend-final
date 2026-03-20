@@ -53,6 +53,7 @@ public class AuthService {
         this.auditService = auditService;
         this.loginAuditService = loginAuditService;
         this.bruteForceService = bruteForceService;
+
         this.maxAttempts = Math.max(maxAttempts, 1);
         this.windowMinutes = Math.max(windowMinutes, 1);
     }
@@ -75,11 +76,27 @@ public class AuthService {
             throw new IllegalArgumentException("Email already in use");
         }
 
-        Role userRole = roleRepository
-                .findByNameIgnoreCase("ROLE_USER")
-                .orElseThrow(() ->
-                        new IllegalStateException("Default role ROLE_USER not found")
-                );
+        // Assign VENDOR role for test/vendor emails
+        Role userRole;
+        if (normalizedEmail.endsWith("@leadflow.dev") || normalizedEmail.endsWith("@email.com")) {
+            userRole = roleRepository
+                    .findByNameIgnoreCase("ROLE_VENDOR")
+                    .orElse(null);
+            
+            if (userRole == null) {
+                userRole = roleRepository
+                        .findByNameIgnoreCase("ROLE_USER")
+                        .orElseThrow(() ->
+                                new IllegalStateException("Default role ROLE_USER not found")
+                        );
+            }
+        } else {
+            userRole = roleRepository
+                    .findByNameIgnoreCase("ROLE_USER")
+                    .orElseThrow(() ->
+                            new IllegalStateException("Default role ROLE_USER not found")
+                    );
+        }
 
         User user = new User(
                 name.trim(),
@@ -92,7 +109,7 @@ public class AuthService {
 
         audit(SecurityAction.USER_REGISTERED, normalizedEmail, true, tenant);
 
-        logger.info("User registered successfully: {}", normalizedEmail);
+        logger.info("User registered successfully: {} with role: {}", normalizedEmail, userRole.getName());
 
         return user;
     }

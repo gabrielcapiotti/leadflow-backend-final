@@ -156,23 +156,23 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiErrorResponse> handleDataIntegrity(
             DataIntegrityViolationException ex
     ) {
+        String rootMessage = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        log.warn("Database constraint violation detected: {}", rootMessage);
 
-        log.warn("Database constraint violation detected");
-
-        String rootMessage = ex.getMostSpecificCause() != null
-                ? ex.getMostSpecificCause().getMessage()
-                : "";
-
-        // Violação de unicidade (ex: email duplicado)
-        if (rootMessage != null &&
-                rootMessage.toLowerCase().contains("duplicate")) {
-
+        if (rootMessage != null && rootMessage.contains("uk_leads_email_user")) {
             return build(HttpStatus.CONFLICT,
-                    "Resource already exists");
+                    "Duplicate lead: email already in use for this user.");
         }
-
+        if (rootMessage != null && rootMessage.toLowerCase().contains("null") && rootMessage.toLowerCase().contains("user_id")) {
+            return build(HttpStatus.BAD_REQUEST,
+                    "User ID cannot be null.");
+        }
+        if (rootMessage != null && rootMessage.toLowerCase().contains("email")) {
+            return build(HttpStatus.BAD_REQUEST,
+                    "Invalid or missing email field.");
+        }
         return build(HttpStatus.CONFLICT,
-                "Operation violates database constraints");
+                "Operation violates database constraints: " + rootMessage);
     }
 
     /* =========================================================

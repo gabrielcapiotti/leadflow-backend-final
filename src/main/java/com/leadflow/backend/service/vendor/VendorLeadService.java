@@ -28,6 +28,8 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.util.*;
 import java.util.regex.Pattern;
+import org.springframework.transaction.annotation.Transactional;
+import com.leadflow.backend.entities.vendor.Vendor;
 
 @Service
 public class VendorLeadService {
@@ -47,6 +49,7 @@ public class VendorLeadService {
     private final MetricsService metricsService;
     private final UsageService usageService;
     private final ObjectMapper objectMapper;
+    private final VendorService vendorService;
 
     public VendorLeadService(
             VendorLeadRepository repository,
@@ -55,7 +58,8 @@ public class VendorLeadService {
             VendorContext vendorContext,
             MetricsService metricsService,
             UsageService usageService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            VendorService vendorService) {
 
         this.repository = repository;
         this.conversationRepository = conversationRepository;
@@ -64,6 +68,7 @@ public class VendorLeadService {
         this.metricsService = metricsService;
         this.usageService = usageService;
         this.objectMapper = objectMapper;
+        this.vendorService = vendorService;
     }
 
     @Audit(action = "CREATE_LEAD_FROM_AI", entity = "VendorLead")
@@ -148,9 +153,18 @@ public class VendorLeadService {
 
     @Audit(action = "CREATE_LEAD", entity = "VendorLead")
     @CheckQuota(type = "LEAD_CREATION")
+    @Transactional
     public VendorLead create(CreateLeadRequest request) {
 
-        UUID vendorId = vendorContext.getCurrentVendor().getId();
+        // Obter email do usuário autenticado
+        String email = org.springframework.security.core.context.SecurityContextHolder
+                .getContext()
+                .getAuthentication()
+                .getName();
+        
+        // Garantir que Vendor existe (dentro da mesma transação)
+        Vendor vendor = vendorService.ensureVendorExists(email);
+        UUID vendorId = vendor.getId();
 
         String nomeCompleto = sanitizeNomeCompleto(request.getNomeCompleto());
         String whatsapp = sanitizeWhatsapp(request.getWhatsapp());

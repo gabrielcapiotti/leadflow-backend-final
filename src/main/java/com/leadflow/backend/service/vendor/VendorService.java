@@ -20,14 +20,23 @@ public class VendorService {
         this.vendorRepository = vendorRepository;
     }
 
+    @Transactional
     public Vendor createVendor(String email) {
         Vendor vendor = new Vendor();
         vendor.setUserEmail(normalizeEmail(email));
+        vendor.setName(localPart(email));  // FIX: Set name (NOT NULL constraint)
         vendor.setNomeVendedor(localPart(email));
         vendor.setWhatsappVendedor("0000000000");
         vendor.setSlug(generateSlug(email));
         vendor.setSubscriptionStatus(SubscriptionStatus.TRIAL);
         return vendorRepository.save(vendor);
+    }
+
+    @Transactional
+    public Vendor ensureVendorExists(String email) {
+        String normalizedEmail = normalizeEmail(email);
+        return vendorRepository.findFirstByUserEmailIgnoreCase(normalizedEmail)
+                .orElseGet(() -> createVendor(normalizedEmail));
     }
 
     private String generateSlug(String email) {

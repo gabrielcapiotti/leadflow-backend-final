@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,6 +20,13 @@ public interface SettingRepository extends JpaRepository<Setting, UUID> {
 
     @EntityGraph(attributePaths = {"user"})
     Optional<Setting> findByUser(User user);
+
+    /* ======================================================
+       CONSULTA COM SOFT DELETE
+       ====================================================== */
+
+    @Query("SELECT s FROM Setting s WHERE s.user = :user")
+    Optional<Setting> findByUserIncludingDeleted(@Param("user") User user);
 
     /* ======================================================
        VALIDAÇÕES

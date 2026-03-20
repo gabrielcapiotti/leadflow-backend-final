@@ -141,6 +141,24 @@ public class SettingController {
     }
 
     /* ======================================================
+       RESET TO DEFAULTS
+       ====================================================== */
+
+    @PostMapping("/reset")
+    public ResponseEntity<SettingResponse> resetToDefaults(
+            @AuthenticationPrincipal UserDetails principal
+    ) {
+
+        User user = resolveUser(principal);
+        log.info("POST /api/me/settings/reset - user: {}", user.getId());
+
+        Setting setting = settingService.resetToDefaults(user);
+
+        log.info("POST /api/me/settings/reset successful - user: {}", user.getId());
+        return ResponseEntity.ok(settingMapper.toResponse(setting));
+    }
+
+    /* ======================================================
        INTERNAL
        ====================================================== */
 

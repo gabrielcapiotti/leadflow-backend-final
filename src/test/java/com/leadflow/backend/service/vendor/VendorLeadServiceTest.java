@@ -27,6 +27,7 @@ class VendorLeadServiceTest {
     private VendorContext vendorContext;
     private MetricsService metricsService;
     private UsageService usageService;
+    private VendorService vendorService;
 
     private VendorLeadService service;
 
@@ -41,6 +42,7 @@ class VendorLeadServiceTest {
         vendorContext = mock(VendorContext.class);
         metricsService = mock(MetricsService.class);
         usageService = mock(UsageService.class);
+        vendorService = mock(VendorService.class);
 
         service = new VendorLeadService(
                 repository,
@@ -49,7 +51,8 @@ class VendorLeadServiceTest {
                 vendorContext,
                 metricsService,
                 usageService,
-                new ObjectMapper()
+                new ObjectMapper(),
+                vendorService
         );
 
         vendorId = UUID.randomUUID();

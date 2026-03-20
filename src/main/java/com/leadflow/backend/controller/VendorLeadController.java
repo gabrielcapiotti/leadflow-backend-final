@@ -6,18 +6,25 @@ import com.leadflow.backend.dto.vendor.StageTimeMetricsResponse;
 import com.leadflow.backend.dto.vendor.UpdateStageRequest;
 import com.leadflow.backend.dto.vendor.VendorLeadMetricsResponse;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
+import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.entities.vendor.VendorLeadAlert;
 import com.leadflow.backend.entities.vendor.VendorLeadConversation;
 import com.leadflow.backend.entities.vendor.VendorLead;
 import com.leadflow.backend.repository.VendorLeadAlertRepository;
+import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.service.vendor.ResumoService;
 import com.leadflow.backend.service.vendor.VendorLeadService;
+import com.leadflow.backend.service.vendor.VendorService;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
+
+import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 
 import java.util.List;
@@ -32,20 +39,61 @@ public class VendorLeadController {
     private final ResumoService resumoService;
     private final VendorLeadAlertRepository alertRepository;
     private final SubscriptionGuard subscriptionGuard;
+    private final VendorService vendorService;
+    private final VendorRepository vendorRepository;
 
     public VendorLeadController(VendorLeadService service,
                                 ResumoService resumoService,
                                 VendorLeadAlertRepository alertRepository,
-                                SubscriptionGuard subscriptionGuard) {
+                                SubscriptionGuard subscriptionGuard,
+                                VendorService vendorService,
+                                VendorRepository vendorRepository) {
         this.service = service;
         this.resumoService = resumoService;
         this.alertRepository = alertRepository;
         this.subscriptionGuard = subscriptionGuard;
+        this.vendorService = vendorService;
+        this.vendorRepository = vendorRepository;
+    }
+
+    private void ensureVendorExists() {
+        try {
+            Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+            if (auth == null || !auth.isAuthenticated()) {
+                throw new IllegalStateException("User not authenticated");
+            }
+
+            String userEmail = auth.getName();
+            boolean hasVendorRole = auth.getAuthorities().stream()
+                    .anyMatch(a -> a.getAuthority().equals("ROLE_VENDOR"));
+
+            if (!hasVendorRole) {
+                throw new IllegalStateException("User does not have VENDOR role");
+            }
+
+            // Check if vendor already exists for this email
+            boolean vendorExists = vendorRepository.findFirstByUserEmailIgnoreCase(userEmail).isPresent();
+            if (!vendorExists) {
+                System.out.println("🔧 AUTO-CREATING VENDOR for: " + userEmail);
+                // Auto-create vendor for user with VENDOR role
+                Vendor created = vendorService.createVendor(userEmail);
+                System.out.println("✅ VENDOR CREATED: " + created.getId());
+            } else {
+                System.out.println("✅ VENDOR EXISTS for: " + userEmail);
+            }
+        } catch (Exception e) {
+            System.err.println("❌ Vendor creation check failed: " + e.getClass().getSimpleName() + " - " + e.getMessage());
+            e.printStackTrace(System.err);
+        }
     }
 
     @PostMapping("/leads")
+    @Transactional
     public ResponseEntity<?> createLead(
             @Valid @RequestBody CreateLeadRequest request) {
+
+        // Ensure vendor exists FIRST (before any guard that depends on VendorContext)
+        ensureVendorExists();
 
         if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
             return ResponseEntity.status(403).body(
@@ -56,6 +104,7 @@ public class VendorLeadController {
             );
         }
 
+        // Vendor already exists at this point, service.create() will find it
         VendorLead createdLead = service.create(request);
 
         return ResponseEntity.ok(createdLead);
@@ -65,6 +114,7 @@ public class VendorLeadController {
     public ResponseEntity<Page<VendorLead>> list(Pageable pageable) {
 
         subscriptionGuard.assertActive();
+        ensureVendorExists();
 
         return ResponseEntity.ok(service.listForCurrentVendor(pageable));
     }
@@ -82,6 +132,8 @@ public class VendorLeadController {
                 )
             );
         }
+
+        ensureVendorExists();
 
         try {
             VendorLead updated =

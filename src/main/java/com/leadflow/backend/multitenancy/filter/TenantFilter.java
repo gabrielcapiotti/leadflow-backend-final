@@ -43,19 +43,14 @@ public class TenantFilter extends OncePerRequestFilter {
             path = path.substring(0, path.indexOf("?"));
         }
 
-        // Remove /api prefix if present
-        String cleanPath = path.startsWith("/api/") ? 
-            path.substring(4) : path;
-
-        // Public auth endpoints that don't require tenant
-        boolean isPublicAuth = cleanPath.startsWith("/auth/register")
-                || cleanPath.startsWith("/auth/login")
-                || cleanPath.startsWith("/auth/refresh")
-                || cleanPath.startsWith("/auth/debug");
+        // Public auth endpoints (NO /api/ prefix - rotas públicas não têm /api/)
+        boolean isPublicAuth = path.startsWith("/auth/register")
+                || path.startsWith("/auth/login")
+                || path.startsWith("/auth/refresh")
+                || path.startsWith("/auth/debug");
         
         // Public API endpoints (no authentication or tenant required)
-        boolean isPublicApi = cleanPath.startsWith("/public/")
-                || path.startsWith("/public/");
+        boolean isPublicApi = path.startsWith("/public/");
         
         return isPublicAuth
                 || isPublicApi

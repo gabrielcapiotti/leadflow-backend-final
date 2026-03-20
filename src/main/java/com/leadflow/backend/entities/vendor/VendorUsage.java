@@ -20,26 +20,26 @@ public class VendorUsage {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(nullable = false)
+    @Column(name = "vendor_id", nullable = false)
     private UUID vendorId;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false)
+    @Column(name = "quota_type", nullable = false)
     private QuotaType quotaType;
 
     @Column(nullable = false)
     private int used = 0;
 
-    @Column(nullable = false)
+    @Column(name = "alert80_sent", nullable = false)
     private boolean alert80Sent = false;
 
-    @Column(nullable = false)
+    @Column(name = "alert100_sent", nullable = false)
     private boolean alert100Sent = false;
 
-    @Column(nullable = false)
+    @Column(name = "period_start", nullable = false)
     private Instant periodStart;
 
-    @Column(nullable = false)
+    @Column(name = "period_end", nullable = false)
     private Instant periodEnd;
 
     public UUID getId() {

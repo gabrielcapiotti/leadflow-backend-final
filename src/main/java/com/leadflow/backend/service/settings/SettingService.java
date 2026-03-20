@@ -229,21 +229,34 @@ public class SettingService {
     @Transactional
     public Setting resetToDefaults(User user) {
 
-        Setting setting = getByUser(user);
+        if (user == null) {
+            throw new IllegalArgumentException("User cannot be null");
+        }
 
+        // Find existing setting (including deleted ones that can be restored)
+        Setting setting = settingRepository
+                .findByUserIncludingDeleted(user)
+                .orElseThrow(() ->
+                        new IllegalArgumentException(
+                                "Settings not found for user id=" + user.getId()
+                        )
+                );
+
+        // If deleted, restore it first
         if (setting.isDeleted()) {
             setting.restore();
         }
 
-        // Reset com valores padrão
-        setting.update(
-                "My Vendor",
-                "+55 11 9999-9999",
-                "My Company",
-                null,
-                "Welcome to my profile!"
-        );
+        // Reset all fields to defaults by directly updating values
+        setting.setVendorName("My Vendor");
+        setting.setWhatsapp("+55 11 9999-9999");
+        setting.setCompanyName("My Company");
+        setting.setLogo(null);
+        setting.setWelcomeMessage("Welcome to my profile!");
+        
+        // Explicitly flush to detect any constraint violations
+        settingRepository.saveAndFlush(setting);
 
-        return settingRepository.save(setting);
+        return setting;
     }
 }
