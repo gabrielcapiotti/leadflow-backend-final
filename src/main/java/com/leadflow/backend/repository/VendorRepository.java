@@ -35,6 +35,20 @@ public interface VendorRepository extends JpaRepository<Vendor, UUID> {
     long countBySubscriptionStatus(SubscriptionStatus status);
 
     /* ======================================================
+       TENANT-AWARE LOOKUPS (MULTI-TENANT ISOLATION)
+       ====================================================== */
+
+    Optional<Vendor> findByIdAndTenantId(UUID id, String tenantId);
+
+    Optional<Vendor> findBySlugAndTenantId(String slug, String tenantId);
+
+    List<Vendor> findByUserEmailAndTenantId(String email, String tenantId);
+
+    List<Vendor> findAllByTenantId(String tenantId);
+
+    boolean existsBySlugAndTenantId(String slug, String tenantId);
+
+    /* ======================================================
        GLOBAL QUERIES (PUBLIC SCHEMA)
        ====================================================== */
 

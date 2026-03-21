@@ -2,6 +2,7 @@ package com.leadflow.backend.service.user;
 
 import com.leadflow.backend.entities.user.Role;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.exception.UserNotFoundException;
 import com.leadflow.backend.repository.user.UserRepository;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -89,23 +90,23 @@ class UserServiceTest {
     @Test
     void shouldReturnUserById() {
 
-        when(userRepository.findById(Objects.requireNonNull(userId)))
+        when(userRepository.findByIdAndDeletedAtIsNull(Objects.requireNonNull(userId)))
                 .thenReturn(Optional.of(user));
 
-        User result = userService.getById(Objects.requireNonNull(userId));
+        User result = userService.getByIdOrThrow(Objects.requireNonNull(userId));
 
         assertThat(result).isEqualTo(user);
-        verify(userRepository).findById(Objects.requireNonNull(userId));
+        verify(userRepository).findByIdAndDeletedAtIsNull(Objects.requireNonNull(userId));
     }
 
     @Test
     void shouldThrowWhenUserNotFoundById() {
 
-        when(userRepository.findById(Objects.requireNonNull(userId)))
+        when(userRepository.findByIdAndDeletedAtIsNull(Objects.requireNonNull(userId)))
                 .thenReturn(Optional.empty());
 
         assertThatThrownBy(() ->
-                userService.getById(Objects.requireNonNull(userId))
-        ).isInstanceOf(IllegalArgumentException.class);
+                userService.getByIdOrThrow(Objects.requireNonNull(userId))
+        ).isInstanceOf(UserNotFoundException.class);
     }
 }

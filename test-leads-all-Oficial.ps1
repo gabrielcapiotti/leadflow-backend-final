@@ -12,10 +12,10 @@ $VendorLeadsUrl = "$BaseUrl/api/vendor-leads"
 $TenantHeader = "public"
 $ProgressPreference = 'SilentlyContinue'
 
-# Global variables
-$TestCount = 0
-$PassCount = 0
-$FailCount = 0
+# Global variables - INICIALIZAÇÃO OBRIGATÓRIA
+$Global:TestCount = 0
+$Global:Passed = 0
+$Global:Failed = 0
 $LoginToken = $null
 $CurrentHeaders = @{}
 
@@ -42,7 +42,8 @@ function Write-Step {
 function Write-Success {
     param($Text, $Status)
     Write-Host "    ✅ OK - $Text (HTTP $Status)" -ForegroundColor $ColorPass
-    $Global:PassCount++
+    $Global:TestCount++
+    $Global:Passed++
 }
 
 function Write-Fail {
@@ -51,19 +52,20 @@ function Write-Fail {
     if ($Error) {
         Write-Host "       Error: $Error" -ForegroundColor $ColorFail
     }
-    $Global:FailCount++
+    $Global:TestCount++
+    $Global:Failed++
 }
 
 function Write-Summary {
-    $Total = $PassCount + $FailCount
+    $Total = $Global:Passed + $Global:Failed
     Write-Host "`n════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
     Write-Host "TEST SUMMARY - LEADS + VENDORS TEST SUITE" -ForegroundColor $ColorTitle
     Write-Host "════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
     Write-Host "Total Tests Run: $Total" -ForegroundColor $ColorInfo
-    Write-Host "Passed: $PassCount" -ForegroundColor $ColorPass
-    Write-Host "Failed: $FailCount" -ForegroundColor $(if ($FailCount -eq 0) { $ColorPass } else { $ColorFail })
+    Write-Host "Passed: $($Global:Passed)" -ForegroundColor $ColorPass
+    Write-Host "Failed: $($Global:Failed)" -ForegroundColor $(if ($Global:Failed -eq 0) { $ColorPass } else { $ColorFail })
     if ($Total -gt 0) {
-        Write-Host "Pass Rate: $([math]::Round(($PassCount/$Total)*100, 2))%" -ForegroundColor $(if ($FailCount -eq 0) { $ColorPass } else { $ColorFail })
+        Write-Host "Pass Rate: $([math]::Round(($Global:Passed/$Total)*100, 2))%" -ForegroundColor $(if ($Global:Failed -eq 0) { $ColorPass } else { $ColorFail })
     }
     Write-Host "`n✍️  TESTS MAPPED FROM: test-all-Settings-Oficial.ps1" -ForegroundColor $ColorTitle
     Write-Host "   - Unified headers pattern (Bearer + X-Tenant-ID)" -ForegroundColor $ColorInfo
@@ -83,10 +85,8 @@ Write-Step "1" "Health Check - Server Status"
 try {
     $response = Invoke-WebRequest -Uri "$BaseUrl/actuator/health" -Method Get -UseBasicParsing -ErrorAction Stop
     Write-Success "Health" $response.StatusCode
-    $Global:TestCount++
 } catch {
     Write-Fail "Health" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
     Write-Host "`n⚠️ Server is not responding. Cannot continue testing.`n" -ForegroundColor Red
     exit 1
 }
@@ -119,10 +119,8 @@ try {
         -ErrorAction Stop
     
     Write-Success "Register User" $response.StatusCode
-    $Global:TestCount++
 } catch {
     Write-Fail "Register User" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
     Write-Host "`n⚠️ Cannot continue without successful registration. Stopping tests.`n" -ForegroundColor Red
     exit 1
 }
@@ -159,11 +157,11 @@ try {
     }
     
     Write-Success "Login & Headers Setup" $response.StatusCode
-    $Global:TestCount++
-    Write-Host "   Token: $($LoginToken.Substring(0,30))..." -ForegroundColor DarkGray
+    if ($LoginToken) {
+        Write-Host "   Token: $($LoginToken.Substring(0,30))..." -ForegroundColor DarkGray
+    }
 } catch {
     Write-Fail "Login" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
     Write-Host "`n⚠️ Cannot continue without login token. Stopping tests.`n" -ForegroundColor Red
     exit 1
 }
@@ -185,10 +183,8 @@ try {
     if ($data.roles -and $data.roles.Count -gt 0) {
         Write-Host "   User Role: $($data.roles[0].name)" -ForegroundColor DarkGray
     }
-    $Global:TestCount++
 } catch {
     Write-Fail "Get User Profile" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
 }
 
 # ============================================================================
@@ -217,10 +213,8 @@ try {
     $LeadId = $data.id
     Write-Success "Create Lead" $response.StatusCode
     Write-Host "   Lead ID: $LeadId" -ForegroundColor DarkGray
-    $Global:TestCount++
 } catch {
     Write-Fail "Create Lead" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
 }
 
 # ============================================================================
@@ -239,10 +233,8 @@ if ($LeadId) {
         $data = $response.Content | ConvertFrom-Json
         Write-Success "Get Lead" $response.StatusCode
         Write-Host "   Status: $($data.status)" -ForegroundColor DarkGray
-        $Global:TestCount++
     } catch {
         Write-Fail "Get Lead" $_.Exception.Response.StatusCode $_.Exception.Message
-        $Global:TestCount++
     }
 } else {
     Write-Host "    ⚠️  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
@@ -262,12 +254,14 @@ if ($LeadId) {
             -ErrorAction Stop
         
         $data = $response.Content | ConvertFrom-Json
-        Write-Success "Update Lead Status" $response.StatusCode
-        Write-Host "   New Status: $($data.status)" -ForegroundColor DarkGray
-        $Global:TestCount++
+        if ($data.status -eq "CONTACTED") {
+            Write-Success "Update Lead Status" $response.StatusCode
+            Write-Host "   New Status: $($data.status)" -ForegroundColor DarkGray
+        } else {
+            Write-Fail "Status not updated correctly" $response.StatusCode "Expected CONTACTED, got $($data.status)"
+        }
     } catch {
         Write-Fail "Update Lead Status" $_.Exception.Response.StatusCode $_.Exception.Message
-        $Global:TestCount++
     }
 } else {
     Write-Host "    ⚠️  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
@@ -290,11 +284,114 @@ try {
     if ($data.totalElements) {
         Write-Host "   Total Leads: $($data.totalElements)" -ForegroundColor DarkGray
     }
-    $Global:TestCount++
 } catch {
     Write-Fail "List Leads" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
 }
+
+# ============================================================================
+# TEST 8B: MULTI-TENANT ISOLATION (LEADS) - SECURITY VALIDATION
+# ============================================================================
+Write-Step "8b" "Cross-Tenant Isolation (Leads - SECURITY)"
+
+$originalTenant = $TenantHeader
+$TenantHeader = "tenant_isolation_test"
+
+try {
+    $response = Invoke-WebRequest -Uri "$LeadsUrl" `
+        -Method Get `
+        -Headers @{
+            "X-Tenant-Id" = $TenantHeader
+            "Authorization" = "Bearer $LoginToken"
+            "Content-Type" = "application/json"
+        } `
+        -UseBasicParsing `
+        -ErrorAction Stop
+    
+    Write-Fail "SECURITY BREACH - cross-tenant access allowed" $response.StatusCode "Should be 401/403"
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.Value__
+    if ($statusCode -in @(401, 403)) {
+        Write-Success "Isolation OK (Leads)" $statusCode
+    } else {
+        Write-Fail "Unexpected response (should be 401/403)" $statusCode
+    }
+}
+
+$TenantHeader = $originalTenant
+
+# ============================================================================
+# TEST 8c: CROSS-TENANT ACCESS BY ID (CRITICAL SECURITY TEST)
+# ========================================================================
+Write-Step "8c" "Cross-Tenant Access by ID (SECURITY)"
+
+if ($LeadId) {
+    $originalTenant = $TenantHeader
+    $TenantHeader = "tenant_attack_test"
+
+    try {
+        $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId" `
+            -Method Get `
+            -Headers @{
+                "X-Tenant-Id" = $TenantHeader
+                "Authorization" = "Bearer $LoginToken"
+                "Content-Type" = "application/json"
+            } `
+            -UseBasicParsing `
+            -ErrorAction Stop
+
+        Write-Fail "SECURITY BREACH - Accessed foreign tenant lead" $response.StatusCode "CRITICAL DATA LEAK"
+
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.Value__
+
+        if ($statusCode -in @(401,403,404)) {
+            Write-Success "Isolation OK (ID protected)" $statusCode
+        } else {
+            Write-Fail "Unexpected response" $statusCode $_.Exception.Message
+        }
+    }
+
+    $TenantHeader = $originalTenant
+}
+
+# ============================================================================
+# TEST 8d: CROSS-TENANT LIST ISOLATION (CRITICAL SECURITY TEST)
+# ========================================================================
+Write-Step "8d" "Cross-Tenant List Isolation (SECURITY)"
+
+$originalTenant = $TenantHeader
+$TenantHeader = "tenant_attack_test"
+
+try {
+    $response = Invoke-WebRequest -Uri "$LeadsUrl`?page=0&size=10" `
+        -Method Get `
+        -Headers @{
+            "X-Tenant-Id" = $TenantHeader
+            "Authorization" = "Bearer $LoginToken"
+            "Content-Type" = "application/json"
+        } `
+        -UseBasicParsing `
+        -ErrorAction Stop
+
+    $data = $response.Content | ConvertFrom-Json
+
+    if ($data.content -and $data.content.Count -gt 0) {
+        Write-Fail "SECURITY BREACH - Tenant B can see Tenant A data" 200 "DATA LEAK"
+    } else {
+        Write-Success "Isolation OK (empty list)" 200
+    }
+
+} catch {
+    $statusCode = $_.Exception.Response.StatusCode.Value__
+
+    if ($statusCode -in @(401,403)) {
+        Write-Success "Isolation OK (access blocked)" $statusCode
+    } else {
+        Write-Fail "Unexpected response" $statusCode $_.Exception.Message
+    }
+}
+
+$TenantHeader = $originalTenant
 
 # ============================================================================
 # TEST 9: DELETE LEAD (Pattern: test-all-Settings-Oficial.ps1)
@@ -309,11 +406,13 @@ if ($LeadId) {
             -UseBasicParsing `
             -ErrorAction Stop
         
-        Write-Success "Delete Lead" $response.StatusCode
-        $Global:TestCount++
+        if ($response.StatusCode -in @(200, 204)) {
+            Write-Success "Delete Lead" $response.StatusCode
+        } else {
+            Write-Fail "Delete Lead" $response.StatusCode "Unexpected status"
+        }
     } catch {
         Write-Fail "Delete Lead" $_.Exception.Response.StatusCode $_.Exception.Message
-        $Global:TestCount++
     }
 } else {
     Write-Host "    ⚠️  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
@@ -354,10 +453,8 @@ try {
     if ($VendorId) {
         Write-Host "   Vendor ID: $VendorId (auto-created)" -ForegroundColor DarkGray
     }
-    $Global:TestCount++
 } catch {
     Write-Fail "Create Vendor Lead" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
 }
 
 # ============================================================================
@@ -376,10 +473,8 @@ if ($VendorLeadId) {
         $data = $response.Content | ConvertFrom-Json
         Write-Success "Get Vendor Lead" $response.StatusCode
         Write-Host "   Status: $($data.stage)" -ForegroundColor DarkGray
-        $Global:TestCount++
     } catch {
         Write-Fail "Get Vendor Lead" $_.Exception.Response.StatusCode $_.Exception.Message
-        $Global:TestCount++
     }
 } else {
     Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
@@ -401,10 +496,43 @@ try {
     if ($data.totalElements) {
         Write-Host "   Total Vendor Leads: $($data.totalElements)" -ForegroundColor DarkGray
     }
-    $Global:TestCount++
 } catch {
     Write-Fail "List Vendor Leads" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
+}
+
+# ============================================================================
+# TEST 12b: CROSS-TENANT VENDOR LEAD ACCESS (CRITICAL SECURITY TEST)
+# ========================================================================
+Write-Step "12b" "Cross-Tenant Vendor Lead Access (SECURITY)"
+
+if ($VendorLeadId) {
+    $originalTenant = $TenantHeader
+    $TenantHeader = "tenant_attack_test"
+
+    try {
+        $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
+            -Method Get `
+            -Headers @{
+                "X-Tenant-Id" = $TenantHeader
+                "Authorization" = "Bearer $LoginToken"
+                "Content-Type" = "application/json"
+            } `
+            -UseBasicParsing `
+            -ErrorAction Stop
+
+        Write-Fail "SECURITY BREACH - Vendor lead exposed cross-tenant" $response.StatusCode "CRITICAL"
+
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.Value__
+
+        if ($statusCode -in @(401,403,404)) {
+            Write-Success "Vendor isolation OK" $statusCode
+        } else {
+            Write-Fail "Unexpected response" $statusCode $_.Exception.Message
+        }
+    }
+
+    $TenantHeader = $originalTenant
 }
 
 # ============================================================================
@@ -426,12 +554,14 @@ if ($VendorLeadId) {
             -ErrorAction Stop
         
         $data = $response.Content | ConvertFrom-Json
-        Write-Success "Update Vendor Lead Stage" $response.StatusCode
-        Write-Host "   New Stage: $($data.stage)" -ForegroundColor DarkGray
-        $Global:TestCount++
+        if ($data.stage -eq "CONTATO") {
+            Write-Success "Update Vendor Lead Stage" $response.StatusCode
+            Write-Host "   New Stage: $($data.stage)" -ForegroundColor DarkGray
+        } else {
+            Write-Fail "Stage not updated correctly" $response.StatusCode "Expected CONTATO, got $($data.stage)"
+        }
     } catch {
         Write-Fail "Update Vendor Lead Stage" $_.Exception.Response.StatusCode $_.Exception.Message
-        $Global:TestCount++
     }
 } else {
     Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
@@ -450,11 +580,13 @@ if ($VendorLeadId) {
             -UseBasicParsing `
             -ErrorAction Stop
         
-        Write-Success "Delete Vendor Lead" $response.StatusCode
-        $Global:TestCount++
+        if ($response.StatusCode -in @(200, 204)) {
+            Write-Success "Delete Vendor Lead" $response.StatusCode
+        } else {
+            Write-Fail "Delete Vendor Lead" $response.StatusCode "Unexpected status"
+        }
     } catch {
         Write-Fail "Delete Vendor Lead" $_.Exception.Response.StatusCode $_.Exception.Message
-        $Global:TestCount++
     }
 } else {
     Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
@@ -474,16 +606,13 @@ if ($VendorLeadId) {
             -ErrorAction Stop
         
         Write-Fail "Validate Deletion" 200 "Should not return success - item was deleted"
-        $Global:TestCount++
     } catch {
         $statusCode = $_.Exception.Response.StatusCode.Value__
         if ($statusCode -in @(400, 404)) {
             Write-Success "Validate Deletion" $statusCode
             Write-Host "   Item properly deleted" -ForegroundColor DarkGray
-            $Global:TestCount++
         } else {
             Write-Fail "Validate Deletion" $statusCode $_.Exception.Message
-            $Global:TestCount++
         }
     }
 } else {
@@ -496,7 +625,7 @@ if ($VendorLeadId) {
 Write-Summary
 
 # Exit with appropriate code
-if ($FailCount -gt 0) {
+if ($Global:Failed -gt 0) {
     exit 1
 } else {
     exit 0

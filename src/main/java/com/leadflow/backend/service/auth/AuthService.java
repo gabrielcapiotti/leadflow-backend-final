@@ -105,6 +105,7 @@ public class AuthService {
                 userRole
         );
 
+        user.setTenantId(tenant);
         userRepository.save(user);
 
         audit(SecurityAction.USER_REGISTERED, normalizedEmail, true, tenant);

@@ -86,9 +86,6 @@ public class AuthController {
                 tenant
         );
 
-        // Garantir que Vendor existe após registro
-        vendorService.ensureVendorExists(user.getEmail());
-
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
         UUID tenantId = tenantService.getTenantIdBySchema(tenant);
@@ -126,9 +123,6 @@ public class AuthController {
                 tenant
         );
 
-        // Garantir que Vendor existe após login (arquitetura: todo User autenticado tem Vendor)
-        vendorService.ensureVendorExists(user.getEmail());
-
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
         UUID tenantId = tenantService.getTenantIdBySchema(tenant);
@@ -163,7 +157,8 @@ public class AuthController {
                 "role", user.getAuthorities().stream()
                         .findFirst()
                         .map(a -> a.getAuthority())
-                        .orElse("ROLE_USER")
+                        .orElse("ROLE_USER"),
+                "tenantId", user.getUser().getTenantId()
         ));
     }
 

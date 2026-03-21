@@ -2,6 +2,7 @@ package com.leadflow.backend.multitenancy.filter;
 
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.resolver.TenantResolver;
+import com.leadflow.backend.security.tenant.HibernateFilterService;
 import com.leadflow.backend.util.LogSanitizer;
 
 import jakarta.servlet.FilterChain;
@@ -24,12 +25,18 @@ public class TenantFilter extends OncePerRequestFilter {
             LoggerFactory.getLogger(TenantFilter.class);
 
     private final TenantResolver tenantResolver;
+    private final HibernateFilterService hibernateFilterService;
 
-    public TenantFilter(TenantResolver tenantResolver) {
+    public TenantFilter(TenantResolver tenantResolver, HibernateFilterService hibernateFilterService) {
         this.tenantResolver =
                 Objects.requireNonNull(
                         tenantResolver,
                         "TenantResolver must not be null"
+                );
+        this.hibernateFilterService =
+                Objects.requireNonNull(
+                        hibernateFilterService,
+                        "HibernateFilterService must not be null"
                 );
     }
 
@@ -37,11 +44,6 @@ public class TenantFilter extends OncePerRequestFilter {
     protected boolean shouldNotFilter(HttpServletRequest request) {
 
         String path = request.getRequestURI();
-        
-        // Remove query parameters if present
-        if (path.contains("?")) {
-            path = path.substring(0, path.indexOf("?"));
-        }
 
         // Public auth endpoints (NO /api/ prefix - rotas públicas não têm /api/)
         boolean isPublicAuth = path.startsWith("/auth/register")
@@ -52,12 +54,8 @@ public class TenantFilter extends OncePerRequestFilter {
         // Public API endpoints (no authentication or tenant required)
         boolean isPublicApi = path.startsWith("/public/");
         
-        // Admin endpoints (global/system-wide, no tenant required)
-        boolean isAdminEndpoint = path.startsWith("/admin/");
-        
         return isPublicAuth
                 || isPublicApi
-                || isAdminEndpoint
                 || path.startsWith("/actuator")
                 || path.startsWith("/health")
                 || path.startsWith("/swagger")
@@ -66,12 +64,12 @@ public class TenantFilter extends OncePerRequestFilter {
 
     @Override
     protected boolean shouldNotFilterAsyncDispatch() {
-        return true;
+        return false;
     }
 
     @Override
     protected boolean shouldNotFilterErrorDispatch() {
-        return true;
+        return false;
     }
 
     @Override
@@ -123,7 +121,7 @@ public class TenantFilter extends OncePerRequestFilter {
 
                 response.sendError(
                         HttpServletResponse.SC_BAD_REQUEST,
-                        "Header 'X-Tenant-ID' é obrigatório"
+                        "Header 'X-Tenant-Id' is required"
                 );
 
                 return;
@@ -135,6 +133,12 @@ public class TenantFilter extends OncePerRequestFilter {
             );
 
             TenantContext.setTenant(tenant);
+            
+            // 🔒 ETAPA 2: Ativa filtro Hibernate automático
+            // Isso garante que TODAS as queries respeitem tenant
+            // mesmo que dev esqueça de adicionar WHERE tenant_id = ?
+            hibernateFilterService.enableTenantFilter(tenant);
+            
             tenantSetByThisFilter = true;
 
             filterChain.doFilter(request, response);
@@ -166,7 +170,9 @@ public class TenantFilter extends OncePerRequestFilter {
         } finally {
 
             if (tenantSetByThisFilter) {
+                // 🔒 ETAPA 4: Limpeza garantida (ThreadLocal + Hibernate Filter)
                 TenantContext.clear();
+                hibernateFilterService.disableTenantFilter();
             }
         }
     }

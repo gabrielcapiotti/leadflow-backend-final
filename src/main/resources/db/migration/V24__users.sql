@@ -1,33 +1,55 @@
 /* ======================================================
-   RENAME TEMPLATE_USERS TO USERS
-   Align with User entity @Table(name = "users")
+   USERS TABLE (FINAL STRUCTURE - NO TEMPLATE)
    ====================================================== */
 
-ALTER TABLE IF EXISTS public.template_users RENAME TO users;
+CREATE TABLE IF NOT EXISTS public.users (
 
-/* ======================================================
-   ADD MISSING COLUMNS TO USERS
-   ====================================================== */
+    id UUID NOT NULL,
+    name VARCHAR(255),
+    email VARCHAR(255),
+    password VARCHAR(255),
 
-ALTER TABLE public.users
-ADD COLUMN IF NOT EXISTS failed_attempts INTEGER NOT NULL DEFAULT 0;
+    role_id UUID,
 
-ALTER TABLE public.users
-ADD COLUMN IF NOT EXISTS lock_until TIMESTAMPTZ;
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ,
 
-ALTER TABLE public.users
-ADD COLUMN IF NOT EXISTS credentials_updated_at TIMESTAMPTZ;
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    lock_until TIMESTAMPTZ,
+    credentials_updated_at TIMESTAMPTZ
+);
 
-ALTER TABLE public.users
-ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- PRIMARY KEY (idempotente)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'pk_users'
+    ) THEN
+        ALTER TABLE public.users
+        ADD CONSTRAINT pk_users PRIMARY KEY (id);
+    END IF;
+END $$;
 
+-- UNIQUE EMAIL (recomendado)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'uq_users_email'
+    ) THEN
+        ALTER TABLE public.users
+        ADD CONSTRAINT uq_users_email UNIQUE (email);
+    END IF;
+END $$;
 
-/* ======================================================
-   INDEXES
-   ====================================================== */
-
+-- INDEXES
 CREATE INDEX IF NOT EXISTS idx_users_deleted_at
     ON public.users (deleted_at);
 
 CREATE INDEX IF NOT EXISTS idx_users_lock_until
     ON public.users (lock_until);
+
+CREATE INDEX IF NOT EXISTS idx_users_email
+    ON public.users (email);

@@ -4,8 +4,6 @@ import com.leadflow.backend.entities.user.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Query;
-import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -15,29 +13,24 @@ import java.util.UUID;
 public interface UserRepository extends JpaRepository<User, UUID> {
 
     /* ======================================================
-       AUTENTICAÇÃO (APENAS USUÁRIOS ATIVOS)
+       ACTIVE USERS (DEFAULT - SEMPRE USAR ESTES)
        ====================================================== */
 
-    @Query(value = "SELECT u.* FROM public.users u WHERE LOWER(u.email) = LOWER(:email) AND u.deleted_at IS NULL", nativeQuery = true)
-    Optional<User> findByEmailIgnoreCaseAndDeletedAtIsNull(@Param("email") String email);
+    Optional<User> findByIdAndDeletedAtIsNull(UUID id);
 
-    /* ======================================================
-       VALIDAÇÃO DE CADASTRO
-       ====================================================== */
+    Optional<User> findByEmailIgnoreCaseAndDeletedAtIsNull(String email);
+
+    Page<User> findAllByDeletedAtIsNull(Pageable pageable);
 
     boolean existsByEmailIgnoreCaseAndDeletedAtIsNull(String email);
 
     /* ======================================================
-       CONSULTAS ADMINISTRATIVAS
+       RAW ACCESS (USO RESTRITO / ADMIN / AUDITORIA)
        ====================================================== */
+
+    Optional<User> findById(UUID id);
 
     Optional<User> findByEmailIgnoreCase(String email);
 
-    Optional<User> findByEmail(String email);
-
-    Page<User> findByDeletedAtIsNull(Pageable pageable);
-
-    Optional<User> findByEmailAndDeletedAtIsNull(String email);
-
-    boolean existsByEmailAndDeletedAtIsNull(String email);
+    boolean existsByEmailIgnoreCase(String email);
 }

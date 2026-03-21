@@ -3,11 +3,22 @@ package com.leadflow.backend.entities.user;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.ParamDef;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
+@FilterDef(
+        name = "tenantFilter",
+        parameters = @ParamDef(name = "tenantId", type = String.class)
+)
+@Filter(
+        name = "tenantFilter",
+        condition = "tenant_id = :tenantId"
+)
 @Entity
 @Table(
         name = "users",
@@ -43,6 +54,14 @@ public class User {
         if (id == null) {
             id = UUID.randomUUID();
         }
+        
+        // 🔒 ETAPA 5: Fail-fast - tenant é OBRIGATÓRIO
+        if (tenantId == null || tenantId.trim().isEmpty()) {
+            throw new IllegalStateException(
+                "User.tenantId is required and cannot be null. " +
+                "Call TenantContext.requireTenant() before saving user."
+            );
+        }
     }
 
     /* ======================================================
@@ -71,6 +90,13 @@ public class User {
 
     @Column(name = "lock_until")
     private LocalDateTime lockUntil;
+
+    /* ======================================================
+       MULTI-TENANT
+       ====================================================== */
+
+    @Column(name = "tenant_id", nullable = false, length = 63)
+    private String tenantId;
 
     /* ======================================================
        RELATIONSHIPS
@@ -160,6 +186,8 @@ public class User {
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public int getFailedAttempts() { return failedAttempts; }
     public LocalDateTime getLockUntil() { return lockUntil; }
+    public String getTenantId() { return tenantId; }
+    public void setTenantId(String tenantId) { this.tenantId = tenantId; }
 
     /* ======================================================
        DOMAIN METHODS

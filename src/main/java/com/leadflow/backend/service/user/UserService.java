@@ -3,6 +3,7 @@ package com.leadflow.backend.service.user;
 import com.leadflow.backend.entities.user.Role;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.entities.vendor.Vendor;
+import com.leadflow.backend.exception.UserNotFoundException;
 import com.leadflow.backend.repository.user.RoleRepository;
 import com.leadflow.backend.repository.user.UserRepository;
 import com.leadflow.backend.service.vendor.UsageService;
@@ -46,21 +47,20 @@ public class UserService {
             throw new IllegalArgumentException("Pageable cannot be null");
         }
 
-        // Não é necessário chamar orElse() pois o método findAll já retorna um Page<User>
-        return userRepository.findAll(pageable);
+        return userRepository.findAllByDeletedAtIsNull(pageable);
     }
 
     @Transactional(readOnly = true)
-    public User getById(UUID id) {
+    public User getByIdOrThrow(UUID id) {
 
         if (id == null) {
             throw new IllegalArgumentException("User id cannot be null");
         }
 
-        return userRepository.findById(id)
-                .filter(user -> user.getDeletedAt() == null)
+        return userRepository
+                .findByIdAndDeletedAtIsNull(id)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("User not found")
+                        new UserNotFoundException("User not found with id: " + id)
                 );
     }
 
@@ -72,9 +72,9 @@ public class UserService {
         }
 
         return userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(email.trim())
+                .findByEmailIgnoreCaseAndDeletedAtIsNull(email.trim().toLowerCase())
                 .orElseThrow(() ->
-                        new IllegalArgumentException("User not found")
+                        new UserNotFoundException("User not found with email: " + email)
                 );
     }
 
@@ -97,7 +97,7 @@ public class UserService {
             throw new IllegalArgumentException("Email cannot be blank");
         }
 
-        User user = getById(id);
+        User user = getByIdOrThrow(id);
 
         Role role = roleRepository.findById(roleId)
                 .orElseThrow(() ->
@@ -113,12 +113,12 @@ public class UserService {
             throw new IllegalArgumentException("Email already in use");
         }
 
-        // ✅ Usa métodos de domínio
+        // Domain methods
         user.changeName(name.trim());
         user.changeEmail(normalizedEmail);
         user.changeRole(role);
 
-        return userRepository.save(user);
+        return user;
     }
 
     /* ======================================================
@@ -128,28 +128,34 @@ public class UserService {
     @Transactional
     public void softDelete(UUID id) {
 
-        User user = getById(id);
+        User user = getByIdOrThrow(id);
 
         if (user.isDeleted()) {
-            return; // idempotência
+            return; // idempotente
         }
 
         user.softDelete();
-
-        userRepository.save(user);
     }
+
+    /* ======================================================
+       CREATE ADMIN USER
+       ====================================================== */
 
     @Transactional
     public void createAdminUser(Vendor vendor, String email) {
 
-        if (vendor == null || email == null || email.isBlank()) {
-            return;
+        if (vendor == null) {
+            throw new IllegalArgumentException("Vendor cannot be null");
+        }
+
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email cannot be blank");
         }
 
         String normalizedEmail = email.trim().toLowerCase();
 
         if (userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)) {
-            return;
+            throw new IllegalArgumentException("Email already exists");
         }
 
         Role role = roleRepository
@@ -159,15 +165,18 @@ public class UserService {
 
         String temporaryPassword = "tmp-" + UUID.randomUUID();
 
-        usageService.consumeUser(vendor.getId());
-
         User admin = new User(
-                vendor.getNomeVendedor() != null ? vendor.getNomeVendedor() : normalizedEmail,
+                vendor.getNomeVendedor() != null
+                        ? vendor.getNomeVendedor()
+                        : normalizedEmail,
                 normalizedEmail,
                 passwordEncoder.encode(temporaryPassword),
                 role
         );
 
         userRepository.save(admin);
+
+        // Executa após persistência (consistência)
+        usageService.consumeUser(vendor.getId());
     }
 }

@@ -1,33 +1,43 @@
 /* ======================================================
-   RENAME TEMPLATE_LEADS TO LEADS
-   Align with Lead entity @Table(name = "leads")
+   LEADS TABLE (FINAL STRUCTURE - NO TEMPLATE)
    ====================================================== */
 
-ALTER TABLE IF EXISTS public.template_leads RENAME TO leads;
+CREATE TABLE IF NOT EXISTS public.leads (
 
-/* ======================================================
-   ADD NEW COLUMNS
-   ====================================================== */
+    id UUID NOT NULL,
 
-ALTER TABLE public.leads
-ADD COLUMN IF NOT EXISTS status VARCHAR(30);
+    user_id UUID,
 
-ALTER TABLE public.leads
-ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+    name VARCHAR(255),
+    email VARCHAR(255),
+    phone VARCHAR(50),
+
+    status VARCHAR(30) DEFAULT 'NEW',
+
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    deleted_at TIMESTAMPTZ
+);
+
+-- PRIMARY KEY (idempotente)
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'pk_leads'
+    ) THEN
+        ALTER TABLE public.leads
+        ADD CONSTRAINT pk_leads PRIMARY KEY (id);
+    END IF;
+END $$;
 
 
-/* ======================================================
-   DEFAULT VALUE
-   ====================================================== */
-
+-- STATUS DEFAULT (garantia)
 ALTER TABLE public.leads
 ALTER COLUMN status SET DEFAULT 'NEW';
 
 
-/* ======================================================
-   STATUS CONSTRAINT
-   ====================================================== */
-
+-- STATUS CHECK (idempotente e seguro)
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -42,12 +52,12 @@ BEGIN
 END $$;
 
 
-/* ======================================================
-   INDEXES
-   ====================================================== */
-
+-- INDEXES
 CREATE INDEX IF NOT EXISTS idx_leads_status
     ON public.leads (status);
 
 CREATE INDEX IF NOT EXISTS idx_leads_deleted_at
     ON public.leads (deleted_at);
+
+CREATE INDEX IF NOT EXISTS idx_leads_user_id
+    ON public.leads (user_id);

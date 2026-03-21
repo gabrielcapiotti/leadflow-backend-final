@@ -58,6 +58,21 @@ public final class TenantContext {
             );
         }
 
+        // Idempotent: Allow setting the same tenant twice (silent return)
+        // But prevent setting a DIFFERENT tenant (security check)
+        String currentTenant = CURRENT_TENANT.get();
+        if (currentTenant != null) {
+            if (!currentTenant.equals(normalized)) {
+                throw new IllegalStateException(
+                        "Tenant already set for this thread. " +
+                        "Current: " + currentTenant + ", " +
+                        "Attempted: " + normalized
+                );
+            }
+            // Same tenant already set - just return (idempotent)
+            return;
+        }
+
         CURRENT_TENANT.set(normalized);
 
         if (log.isDebugEnabled()) {
@@ -90,7 +105,9 @@ public final class TenantContext {
 
         if (tenant == null) {
             throw new IllegalStateException(
-                    "No tenant set in current thread"
+                    "Tenant not set in current thread. " +
+                    "Possible causes: filter misconfiguration, " +
+                    "missing X-Tenant-Id header, or JWT missing tenant claim"
             );
         }
 

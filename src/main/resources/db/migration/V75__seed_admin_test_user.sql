@@ -5,17 +5,14 @@
 DO $$
 DECLARE
     admin_role_id UUID;
-    tenant_schema varchar;
+    tenant_schema VARCHAR := 'public';
     users_table_exists BOOLEAN;
 BEGIN
-    -- Get the public tenant schema
-    tenant_schema := 'public';
-    
     -- Check if users table exists in public schema
     SELECT EXISTS (
         SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = 'public' 
-        AND table_name = 'users'
+        WHERE table_schema = tenant_schema
+          AND table_name = 'users'
     ) INTO users_table_exists;
     
     -- Get the ADMIN role ID from the public schema
@@ -26,12 +23,14 @@ BEGIN
     
     -- Insert admin user if doesn't exist (and table exists)
     IF users_table_exists AND admin_role_id IS NOT NULL THEN
+
         INSERT INTO public.users (
             id,
             name,
             email,
             password,
             role_id,
+            tenant_id, -- 🔥 CORREÇÃO CRÍTICA
             failed_attempts,
             lock_until,
             credentials_updated_at,
@@ -43,8 +42,9 @@ BEGIN
             '550e8400-e29b-41d4-a716-446655440000'::uuid,
             'Test Admin',
             'admin.test@leadflow.com',
-            '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36jStoFm',  -- password: 'AdminPassword123!'
+            '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36jStoFm',
             admin_role_id,
+            tenant_schema, -- 🔥 usa variável (melhor que hardcode)
             0,
             NULL,
             CURRENT_TIMESTAMP,
@@ -54,12 +54,14 @@ BEGIN
         WHERE NOT EXISTS (
             SELECT 1 FROM public.users u
             WHERE u.email = 'admin.test@leadflow.com'
+              AND u.tenant_id = tenant_schema -- 🔥 evita duplicação cross-tenant
         );
         
-        RAISE NOTICE 'Admin user seeded successfully';
+        RAISE NOTICE 'Admin user seeded successfully for tenant %', tenant_schema;
+
     ELSE
         IF NOT users_table_exists THEN
-            RAISE NOTICE 'Skipping admin user seed: users table does not exist in public schema';
+            RAISE NOTICE 'Skipping admin user seed: users table does not exist in schema %', tenant_schema;
         ELSIF admin_role_id IS NULL THEN
             RAISE WARNING 'ROLE_ADMIN not found in public schema';
         END IF;

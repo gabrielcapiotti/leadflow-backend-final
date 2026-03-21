@@ -27,7 +27,7 @@ public class Vendor {
     @Column(columnDefinition = "TEXT")
     private String mensagemBoasVindas;
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     private String slug;
 
     @Enumerated(EnumType.STRING)
@@ -55,6 +55,9 @@ public class Vendor {
     @Column(nullable = false)
     private String userEmail;
 
+    @Column(nullable = false, length = 63, updatable = false)
+    private String tenantId;
+
     @Column(nullable = false)
     private boolean emailInvalid = false;
 
@@ -74,7 +77,14 @@ public class Vendor {
     public void onCreate() {
         Instant now = Instant.now();
         this.createdAt = now;
-        this.updatedAt = now;  // Set updatedAt on creation to avoid NOT NULL constraint
+        this.updatedAt = now;
+        
+        // Fail-fast: tenant_id MUST be set before persistence
+        if (this.tenantId == null || this.tenantId.trim().isEmpty()) {
+            throw new IllegalArgumentException(
+                "SECURITY: tenant_id cannot be null - missing X-Tenant-Id context"
+            );
+        }
     }
 
     @PreUpdate
@@ -252,6 +262,14 @@ public class Vendor {
 
     public void setStatusAssinatura(String statusAssinatura) {
         this.subscriptionStatus = SubscriptionStatus.valueOf(statusAssinatura.toUpperCase());
+    }
+
+    public String getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(String tenantId) {
+        this.tenantId = tenantId;
     }
 
     public void setSchemaName(String schemaName) {

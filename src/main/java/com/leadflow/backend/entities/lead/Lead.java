@@ -1,14 +1,21 @@
 package com.leadflow.backend.entities.lead;
 
 import com.leadflow.backend.entities.enums.LeadStatus;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
+@Filter(
+        name = "tenantFilter",
+        condition = "tenant_id = :tenantId"
+)
 @Entity
 @Table(
         name = "leads",
@@ -41,7 +48,18 @@ public class Lead {
         if (id == null) {
             id = UUID.randomUUID();
         }
+        // Automatically set tenant from TenantContext
+        if (tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
     }
+
+    /* ======================================================
+       MULTI-TENANT ISOLATION
+       ====================================================== */
+
+    @Column(name = "tenant_id", nullable = false, length = 63)
+    private String tenantId;
 
     /* ======================================================
        RELATIONSHIPS (SCHEMA MULTI-TENANT SAFE)
@@ -133,6 +151,7 @@ public class Lead {
     public String getEmail() { return email; }
     public String getPhone() { return phone; }
     public LeadStatus getStatus() { return status; }
+    public String getTenantId() { return tenantId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public LocalDateTime getDeletedAt() { return deletedAt; }

@@ -1,6 +1,7 @@
 package com.leadflow.backend.controller;
 
 import com.leadflow.backend.entities.vendor.Vendor;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.service.subscription.TrialService;
 import com.leadflow.backend.service.vendor.UsageService;
@@ -10,8 +11,6 @@ import com.leadflow.backend.service.PlanService;
 import org.springframework.lang.NonNull;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
@@ -21,8 +20,6 @@ import java.util.UUID;
 @RestController
 @RequestMapping(value = {"/vendors", "/api/vendors"})
 public class VendorController {
-
-    private static final Logger log = LoggerFactory.getLogger(VendorController.class);
 
     private final VendorRepository repository;
     private final TrialService trialService;
@@ -37,24 +34,15 @@ public class VendorController {
             QuotaService quotaService,
             PlanService planService
     ) {
-        this.repository =
-                Objects.requireNonNull(repository, "VendorRepository must not be null");
-
-        this.trialService =
-                Objects.requireNonNull(trialService, "TrialService must not be null");
-        
-        this.usageService =
-                Objects.requireNonNull(usageService, "UsageService must not be null");
-
-        this.quotaService =
-                Objects.requireNonNull(quotaService, "QuotaService must not be null");
-        
-        this.planService =
-                Objects.requireNonNull(planService, "PlanService must not be null");
+        this.repository = repository;
+        this.trialService = trialService;
+        this.usageService = usageService;
+        this.quotaService = quotaService;
+        this.planService = planService;
     }
 
     /* ======================================================
-       FILTER
+       FILTER (SEGURA)
        ====================================================== */
 
     @GetMapping
@@ -62,92 +50,61 @@ public class VendorController {
             @RequestParam(required = false) String user_email,
             @RequestParam(required = false) String slug
     ) {
+        String tenant = TenantContext.getTenant();
 
         if (user_email != null) {
-            return repository.findByUserEmail(user_email);
+            return repository.findByUserEmailAndTenantId(user_email, tenant);
         }
 
         if (slug != null) {
-            return repository.findBySlug(slug)
+            return repository.findBySlugAndTenantId(slug, tenant)
                     .map(List::of)
                     .orElse(List.of());
         }
 
-        return List.of();
+        return repository.findAllByTenantId(tenant);
     }
 
     /* ======================================================
-       CREATE
+       CREATE (SEGURA)
        ====================================================== */
 
     @PostMapping
     @Transactional
-    public Vendor create(
-            @RequestBody @NonNull Vendor vendor
-    ) {
+    public Vendor create(@RequestBody @NonNull Vendor vendor) {
 
-        Vendor safeVendor =
-                Objects.requireNonNull(vendor, "Vendor must not be null");
+        String tenant = TenantContext.getTenant();
 
-        // Ensure all required fields are set with defaults
-        safeVendor.setEmailInvalid(false);
-        
-        // Set user email - HARDCODED FOR NOW TO TEST
-        if (safeVendor.getUserEmail() == null || safeVendor.getUserEmail().isBlank()) {
-            safeVendor.setUserEmail("carlos@leadflow.com");  // HARDCODED TO TEST
-        }
-        
-        // Ensure createdAt is set (fixing @PrePersist not being called)
-        if (safeVendor.getCreatedAt() == null) {
-            safeVendor.setCreatedAt(Instant.now());
+        Vendor safe = Objects.requireNonNull(vendor);
+
+        // 🔥 CRÍTICO: set tenant
+        safe.setTenantId(tenant);
+
+        // defaults
+        safe.setEmailInvalid(false);
+
+        if (safe.getCreatedAt() == null) {
+            safe.setCreatedAt(Instant.now());
         }
 
-        try {
-            log.info("🔧 [VENDOR CREATE] Starting vendor creation. Email: {}, Slug: {}", 
-                safeVendor.getUserEmail(), safeVendor.getSlug());
-            
-            trialService.initializeTrial(safeVendor);
-            log.info("✅ [VENDOR CREATE] Trial initialized. Subscription expires at: {}", 
-                safeVendor.getSubscriptionExpiresAt());
-            
-            Vendor savedVendor = repository.save(safeVendor);
-            log.info("✅ [VENDOR CREATE] Vendor saved! ID: {}, createdAt: {}", 
-                savedVendor.getId(), savedVendor.getCreatedAt());
-            
-            // Initialize usage limits for the newly created vendor
-            try {
-                usageService.initializeUsage(savedVendor.getId(), planService.getActivePlan());
-                log.info("✅ [VENDOR CREATE] Usage service initialized");
-            } catch (Exception e) {
-                log.error("❌ [VENDOR CREATE] Error in usageService.initializeUsage: {}", e.getMessage(), e);
-            }
-            
-            // Initialize quota tracking for the newly created vendor
-            try {
-                quotaService.initializePlanLimits(savedVendor.getId());
-                log.info("✅ [VENDOR CREATE] Quota service initialized");
-            } catch (Exception e) {
-                log.error("❌ [VENDOR CREATE] Error in quotaService.initializePlanLimits: {}", e.getMessage(), e);
-            }
-            
-            // Enable trial features (including AI_CHAT)
-            try {
-                trialService.enableTrialFeatures(savedVendor);
-                log.info("✅ [VENDOR CREATE] Trial features enabled");
-            } catch (Exception e) {
-                log.error("❌ [VENDOR CREATE] Error in trialService.enableTrialFeatures: {}", e.getMessage(), e);
-            }
-
-            log.info("✅✅ [VENDOR CREATE] Vendor creation COMPLETE! ID: {}", savedVendor.getId());
-            return savedVendor;
-        } catch (Exception e) {
-            log.error("❌ [VENDOR CREATE] CRITICAL ERROR in vendor creation: {}", e.getMessage(), e);
-            throw e;
+        // 🔒 valida slug único por tenant
+        if (repository.existsBySlugAndTenantId(safe.getSlug(), tenant)) {
+            throw new IllegalArgumentException("Slug already exists in tenant");
         }
+
+        trialService.initializeTrial(safe);
+
+        Vendor saved = repository.save(safe);
+
+        usageService.initializeUsage(saved.getId(), planService.getActivePlan());
+        quotaService.initializePlanLimits(saved.getId());
+        trialService.enableTrialFeatures(saved);
+
+        return saved;
     }
 
     /* ======================================================
-       UPDATE
+       UPDATE (SEGURA)
        ====================================================== */
 
     @PutMapping("/{id}")
@@ -155,47 +112,38 @@ public class VendorController {
             @PathVariable @NonNull UUID id,
             @RequestBody @NonNull Vendor data
     ) {
+        String tenant = TenantContext.getTenant();
 
-        UUID safeId =
-                Objects.requireNonNull(id, "Vendor id must not be null");
-
-        Vendor safeData =
-                Objects.requireNonNull(data, "Vendor data must not be null");
-
-        Vendor vendor = repository.findById(safeId)
+        Vendor vendor = repository
+                .findByIdAndTenantId(id, tenant)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Vendor not found: " + safeId)
+                        new IllegalArgumentException("Vendor not found")
                 );
 
-        vendor.setNomeVendedor(safeData.getNomeVendedor());
-        vendor.setWhatsappVendedor(safeData.getWhatsappVendedor());
-        vendor.setNomeEmpresa(safeData.getNomeEmpresa());
-        vendor.setLogoUrl(safeData.getLogoUrl());
-        vendor.setCorDestaque(safeData.getCorDestaque());
-        vendor.setMensagemBoasVindas(safeData.getMensagemBoasVindas());
-        vendor.setSlug(safeData.getSlug());
-
-        if (safeData.getSubscriptionStatus() != null) {
-            vendor.setSubscriptionStatus(safeData.getSubscriptionStatus());
-        }
+        vendor.setNomeVendedor(data.getNomeVendedor());
+        vendor.setWhatsappVendedor(data.getWhatsappVendedor());
+        vendor.setNomeEmpresa(data.getNomeEmpresa());
+        vendor.setLogoUrl(data.getLogoUrl());
+        vendor.setCorDestaque(data.getCorDestaque());
+        vendor.setMensagemBoasVindas(data.getMensagemBoasVindas());
+        vendor.setSlug(data.getSlug());
 
         return repository.save(vendor);
     }
 
     /* ======================================================
-       DELETE
+       DELETE (SEGURA)
        ====================================================== */
 
     @DeleteMapping("/{id}")
-    public void delete(
-            @PathVariable @NonNull UUID id
-    ) {
-        UUID safeId =
-                Objects.requireNonNull(id, "Vendor id must not be null");
+    public void delete(@PathVariable UUID id) {
 
-        Vendor vendor = repository.findById(safeId)
+        String tenant = TenantContext.getTenant();
+
+        Vendor vendor = repository
+                .findByIdAndTenantId(id, tenant)
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Vendor not found: " + safeId)
+                        new IllegalArgumentException("Vendor not found")
                 );
 
         repository.delete(vendor);
