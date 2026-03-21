@@ -3,14 +3,14 @@ package com.leadflow.backend.controller.user;
 import com.leadflow.backend.dto.user.UpdateUserRequest;
 import com.leadflow.backend.dto.user.UserResponse;
 import com.leadflow.backend.entities.user.User;
-import com.leadflow.backend.exception.UserNotFoundException;  // Importando a exceção personalizada
 import com.leadflow.backend.service.user.UserService;
+import com.leadflow.backend.mapper.user.UserMapper;
+
 import jakarta.validation.Valid;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
-import org.springframework.lang.NonNull;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,9 +22,11 @@ import java.util.UUID;
 public class UserController {
 
     private final UserService userService;
+    private final UserMapper userMapper;
 
-    public UserController(UserService userService) {
+    public UserController(UserService userService, UserMapper userMapper) {
         this.userService = userService;
+        this.userMapper = userMapper;
     }
 
     /* ======================================================
@@ -35,7 +37,8 @@ public class UserController {
     public ResponseEntity<Page<UserResponse>> list(Pageable pageable) {
         Page<UserResponse> response = userService
                 .listActiveUsers(pageable)
-                .map(this::toResponse);
+                .map(userMapper::toResponse);
+
         return ResponseEntity.ok(response);
     }
 
@@ -44,14 +47,9 @@ public class UserController {
        ====================================================== */
 
     @GetMapping("/{id}")
-    public ResponseEntity<UserResponse> getById(
-            @PathVariable @NonNull UUID id
-    ) {
-        User user = userService.getById(id);
-        if (user == null) {
-            throw new UserNotFoundException("User not found with ID: " + id);  // Lançando exceção personalizada
-        }
-        return ResponseEntity.ok(toResponse(user));
+    public ResponseEntity<UserResponse> getById(@PathVariable UUID id) {
+        User user = userService.getByIdOrThrow(id);
+        return ResponseEntity.ok(userMapper.toResponse(user));
     }
 
     /* ======================================================
@@ -60,7 +58,7 @@ public class UserController {
 
     @PutMapping("/{id}")
     public ResponseEntity<UserResponse> update(
-            @PathVariable @NonNull UUID id,
+            @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request
     ) {
         User user = userService.updateUser(
@@ -69,12 +67,8 @@ public class UserController {
                 request.getEmail(),
                 request.getRoleId()
         );
-        
-        if (user == null) {
-            throw new UserNotFoundException("User not found with ID: " + id);  // Lançando exceção personalizada
-        }
 
-        return ResponseEntity.ok(toResponse(user));
+        return ResponseEntity.ok(userMapper.toResponse(user));
     }
 
     /* ======================================================
@@ -82,28 +76,8 @@ public class UserController {
        ====================================================== */
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> delete(
-            @PathVariable @NonNull UUID id
-    ) {
-        userService.softDelete(id); // Call method directly without storing return value
-
+    public ResponseEntity<Void> delete(@PathVariable UUID id) {
+        userService.softDelete(id);
         return ResponseEntity.noContent().build();
-    }
-
-    /* ======================================================
-       MAPPER
-       ====================================================== */
-
-    private UserResponse toResponse(User user) {
-        if (user == null) {
-            throw new IllegalArgumentException("User cannot be null");
-        }
-
-        return new UserResponse(
-                user.getId(),
-                user.getName(),
-                user.getEmail(),
-                user.getRole().getName()
-        );
     }
 }

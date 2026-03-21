@@ -81,10 +81,10 @@ class AdminServiceTest {
     @Test
     void shouldReturnOverviewWithAggregatedMetrics() {
         when(vendorRepository.countAllGlobal()).thenReturn(42L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA)).thenReturn(35L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL)).thenReturn(4L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.INADIMPLENTE)).thenReturn(2L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.EXPIRADA)).thenReturn(1L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA.name())).thenReturn(35L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())).thenReturn(4L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.INADIMPLENTE.name())).thenReturn(2L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.EXPIRADA.name())).thenReturn(1L);
         when(vendorRepository.countActiveSubscriptionsGlobal()).thenReturn(35L);
         when(leadRepository.countAllGlobal()).thenReturn(8123L);
         when(usageRepository.sumUsedByQuotaTypeGlobal(QuotaType.AI_EXECUTIONS.name())).thenReturn(21450L);
@@ -186,8 +186,8 @@ class AdminServiceTest {
         when(historyRepository.countCancellationsSinceGlobal(any())).thenReturn(5L);
         when(historyRepository.countTrialConversionsSinceGlobal(any())).thenReturn(4L);
         when(vendorRepository.countActiveSubscriptionsGlobal()).thenReturn(100L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA)).thenReturn(100L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL)).thenReturn(20L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA.name())).thenReturn(100L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())).thenReturn(20L);
 
         List<ForecastPoint> forecast = adminService.forecastMRR(3);
 
@@ -203,8 +203,8 @@ class AdminServiceTest {
         when(historyRepository.countCancellationsSinceGlobal(any())).thenReturn(5L);
         when(historyRepository.countTrialConversionsSinceGlobal(any())).thenReturn(4L);
         when(vendorRepository.countActiveSubscriptionsGlobal()).thenReturn(100L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA)).thenReturn(100L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL)).thenReturn(20L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA.name())).thenReturn(100L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())).thenReturn(20L);
 
         List<ForecastPoint> forecast = adminService.forecastMRR(0);
 
@@ -217,8 +217,8 @@ class AdminServiceTest {
         when(historyRepository.countCancellationsSinceGlobal(any())).thenReturn(5L);
         when(historyRepository.countTrialConversionsSinceGlobal(any())).thenReturn(4L);
         when(vendorRepository.countActiveSubscriptionsGlobal()).thenReturn(100L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA)).thenReturn(100L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL)).thenReturn(20L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA.name())).thenReturn(100L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())).thenReturn(20L);
 
         List<ForecastPoint> forecast = adminService.forecastMRR(72);
 

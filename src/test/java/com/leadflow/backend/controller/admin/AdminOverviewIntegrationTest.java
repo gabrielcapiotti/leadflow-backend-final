@@ -110,10 +110,10 @@ class AdminOverviewIntegrationTest extends IntegrationTestBase {
         }
 
         when(vendorRepository.countAllGlobal()).thenReturn(10L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA)).thenReturn(5L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL)).thenReturn(3L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.INADIMPLENTE)).thenReturn(1L);
-        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.EXPIRADA)).thenReturn(1L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA.name())).thenReturn(5L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())).thenReturn(3L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.INADIMPLENTE.name())).thenReturn(1L);
+        when(vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.EXPIRADA.name())).thenReturn(1L);
     }
 
     @AfterEach

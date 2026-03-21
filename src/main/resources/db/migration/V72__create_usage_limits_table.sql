@@ -7,6 +7,8 @@ CREATE TABLE public.usage_limits (
     users_used INTEGER NOT NULL DEFAULT 0,
     ai_executions_used INTEGER NOT NULL DEFAULT 0,
     plan_id BIGINT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP,
     
     CONSTRAINT fk_usage_limit_tenant FOREIGN KEY (tenant_id) REFERENCES public.vendors(id) ON DELETE CASCADE,
     CONSTRAINT fk_usage_limit_plan FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE RESTRICT,

@@ -159,6 +159,7 @@ public class SecurityWebConfig {
                 .requestMatchers("/billing/checkout").permitAll()
                 .requestMatchers("/billing/checkout-session").permitAll()
                 .requestMatchers("/billing/webhook").permitAll()
+                .requestMatchers("/api/billing/webhooks/**").permitAll()
 
                 /* =========================================
                    WEBHOOKS

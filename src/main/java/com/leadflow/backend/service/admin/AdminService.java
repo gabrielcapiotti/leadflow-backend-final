@@ -8,6 +8,8 @@ import com.leadflow.backend.service.notification.SendGridEmailService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.sql.Date;
@@ -19,6 +21,7 @@ import java.util.stream.Collectors;
 @Service
 public class AdminService {
 
+    private static final Logger logger = LoggerFactory.getLogger(AdminService.class);
     private static final double PLAN_PRICE = 197.0;
     private static final int DEFAULT_GROWTH_DAYS = 30;
     private static final int DEFAULT_FORECAST_MONTHS = 6;
@@ -51,24 +54,75 @@ public class AdminService {
     }
 
     /* ======================================================
-       OVERVIEW
+       SAFETY HELPERS - CRÍTICO
        ====================================================== */
 
+    /**
+     * Divisão segura: evita NaN/Infinity
+     */
+    private double safeDivide(long numerator, long denominator, String context) {
+        if (denominator == 0) {
+            logger.warn("Division by zero detected in {}: numerator={}, returning 0", context, numerator);
+            return 0;
+        }
+        double result = numerator / (double) denominator;
+        if (!Double.isFinite(result)) {
+            logger.warn("Non-finite result in {}: {} / {} = {}, returning 0", context, numerator, denominator, result);
+            return 0;
+        }
+        return result;
+    }
+
+    /**
+     * Garante que double é always finite
+     */
+    private double safeDouble(double value, String context) {
+        if (!Double.isFinite(value)) {
+            logger.warn("Non-finite double detected in {}: {}, returning 0", context, value);
+            return 0;
+        }
+        return value;
+    }
+
+    /**
+     * Seguro para BigDecimal
+     */
+    private BigDecimal safeBigDecimal(double value, String context) {
+        double safe = safeDouble(value, context);
+        return BigDecimal.valueOf(safe);
+    }
+
     public AdminOverviewResponse getOverview() {
+        long totalVendors = Optional.ofNullable(
+                vendorRepository.countAllGlobal()
+        ).orElse(0L);
+        
+        long active = Optional.ofNullable(
+                vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA.name())
+        ).orElse(0L);
+        
+        long trial = Optional.ofNullable(
+                vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())
+        ).orElse(0L);
+        
+        long overdue = Optional.ofNullable(
+                vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.INADIMPLENTE.name())
+        ).orElse(0L);
+        
+        long expired = Optional.ofNullable(
+                vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.EXPIRADA.name())
+        ).orElse(0L);
 
-        long totalVendors = vendorRepository.countAllGlobal();
-        long active = vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.ATIVA);
-        long trial = vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL);
-        long overdue = vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.INADIMPLENTE);
-        long expired = vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.EXPIRADA);
-
-        long totalLeads = leadRepository.countAllGlobal();
+        long totalLeads = Optional.ofNullable(
+                leadRepository.countAllGlobal()
+        ).orElse(0L);
 
         long totalAi = Optional.ofNullable(
                 usageRepository.sumUsedByQuotaTypeGlobal(QuotaType.AI_EXECUTIONS.name())
         ).orElse(0L);
 
         double mrr = calculateMRR();
+        double mrrReal = calculateMRR();
         double churnRate30d = calculateChurn(30);
         double trialConversion = calculateTrialConversion(30);
         double arpu = calculateARPU();
@@ -83,13 +137,13 @@ public class AdminService {
                 expired,
                 totalLeads,
                 totalAi,
-                BigDecimal.valueOf(mrr),
-                BigDecimal.valueOf(mrr),
-                churnRate30d,
-                trialConversion,
-                BigDecimal.valueOf(arpu),
-                churnRate,
-                BigDecimal.valueOf(ltv)
+                safeBigDecimal(mrr, "overview.mrr"),
+                safeBigDecimal(mrrReal, "overview.mrrReal"),
+                safeDouble(churnRate30d, "overview.churnRate30d"),
+                safeDouble(trialConversion, "overview.trialConversion"),
+                safeBigDecimal(arpu, "overview.arpu"),
+                safeDouble(churnRate, "overview.churnRate"),
+                safeBigDecimal(ltv, "overview.ltv")
         );
     }
 
@@ -98,13 +152,18 @@ public class AdminService {
        ====================================================== */
 
     public double calculateMRR() {
-        long active = vendorRepository.countActiveSubscriptionsGlobal();
+        long active = Optional.ofNullable(
+                vendorRepository.countActiveSubscriptionsGlobal()
+        ).orElse(0L);
         return active * PLAN_PRICE;
     }
 
     public double calculateARPU() {
 
-        long active = vendorRepository.countActiveSubscriptionsGlobal();
+        long active = Optional.ofNullable(
+                vendorRepository.countActiveSubscriptionsGlobal()
+        ).orElse(0L);
+        
         if (active == 0) {
             return 0;
         }
@@ -113,21 +172,20 @@ public class AdminService {
     }
 
     public double calculateMonthlyChurn() {
-
         Instant since = Instant.now().minus(30, ChronoUnit.DAYS);
 
-        long cancellations = historyRepository.countCancellationsSinceGlobal(since);
-        long activeBase = vendorRepository.countActiveSubscriptionsGlobal();
+        Long cancellations = Optional.ofNullable(
+                historyRepository.countCancellationsSinceGlobal(since)
+        ).orElse(0L);
+        
+        Long activeBase = Optional.ofNullable(
+                vendorRepository.countActiveSubscriptionsGlobal()
+        ).orElse(0L);
 
-        if (activeBase == 0) {
-            return 0;
-        }
-
-        return cancellations / (double) activeBase;
+        return safeDivide(cancellations, activeBase, "calculateMonthlyChurn");
     }
 
     public double calculateLTV() {
-
         double arpu = calculateARPU();
         double churn = calculateMonthlyChurn();
 
@@ -135,39 +193,43 @@ public class AdminService {
             return arpu * 24;
         }
 
-        return arpu / churn;
+        if (churn >= 1.0) {
+            logger.warn("Churn rate >= 1.0 detected, returning 0");
+            return 0;
+        }
+
+        double ltv = arpu / churn;
+        return safeDouble(ltv, "calculateLTV");
     }
 
     public double calculateChurn(int days) {
-
         int safeDays = days > 0 ? days : DEFAULT_GROWTH_DAYS;
-
         Instant since = Instant.now().minus(safeDays, ChronoUnit.DAYS);
 
-        long cancellations = historyRepository.countCancellationsSinceGlobal(since);
-        long activeBase = vendorRepository.countActiveSubscriptionsGlobal();
+        Long cancellations = Optional.ofNullable(
+                historyRepository.countCancellationsSinceGlobal(since)
+        ).orElse(0L);
+        
+        Long activeBase = Optional.ofNullable(
+                vendorRepository.countActiveSubscriptionsGlobal()
+        ).orElse(0L);
 
-        if (activeBase == 0) {
-            return 0;
-        }
-
-        return cancellations / (double) activeBase;
+        return safeDivide(cancellations, activeBase, "calculateChurn");
     }
 
     public double calculateTrialConversion(int days) {
-
         int safeDays = days > 0 ? days : DEFAULT_GROWTH_DAYS;
-
         Instant since = Instant.now().minus(safeDays, ChronoUnit.DAYS);
 
-        long conversions = historyRepository.countTrialConversionsSinceGlobal(since);
-        long trials = vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL);
+        Long conversions = Optional.ofNullable(
+                historyRepository.countTrialConversionsSinceGlobal(since)
+        ).orElse(0L);
+        
+        Long trials = Optional.ofNullable(
+                vendorRepository.countBySubscriptionStatusGlobal(SubscriptionStatus.TRIAL.name())
+        ).orElse(0L);
 
-        if (trials == 0) {
-            return 0;
-        }
-
-        return conversions / (double) trials;
+        return safeDivide(conversions, trials, "calculateTrialConversion");
     }
 
     /* ======================================================
@@ -259,42 +321,42 @@ public class AdminService {
        ====================================================== */
 
     public List<ForecastPoint> forecastMRR(int months) {
-
         int safeMonths =
                 months <= 0
                         ? DEFAULT_FORECAST_MONTHS
                         : Math.min(months, MAX_FORECAST_MONTHS);
 
-        double churnRate = calculateMonthlyChurn();
-        double conversionRate = calculateTrialConversion(30);
+        // CRÍTICO: sanitizar antes de usar
+        double churnRate = safeDouble(calculateMonthlyChurn(), "forecastMRR.churnRate");
+        double conversionRate = safeDouble(calculateTrialConversion(30), "forecastMRR.conversionRate");
 
-        long active =
+        long active = Optional.ofNullable(
                 vendorRepository.countBySubscriptionStatusGlobal(
-                        SubscriptionStatus.ATIVA
-                );
+                        SubscriptionStatus.ATIVA.name()
+                )
+        ).orElse(0L);
 
-        long trials =
+        long trials = Optional.ofNullable(
                 vendorRepository.countBySubscriptionStatusGlobal(
-                        SubscriptionStatus.TRIAL
-                );
+                        SubscriptionStatus.TRIAL.name()
+                )
+        ).orElse(0L);
 
         YearMonth current = YearMonth.now(ZoneOffset.UTC);
-
         List<ForecastPoint> forecast = new ArrayList<>();
 
         for (int month = 1; month <= safeMonths; month++) {
-
-            long churned = Math.round(active * churnRate);
-            long converted = Math.round(trials * conversionRate);
+            long churned = active > 0 ? Math.round(Math.max(0, Math.min(active, (long)(active * churnRate)))) : 0;
+            long converted = trials > 0 ? Math.round(Math.max(0, Math.min(trials, (long)(trials * conversionRate)))) : 0;
 
             active = Math.max(0, active + converted - churned);
 
             double projectedMRR = active * PLAN_PRICE;
-
+            
             forecast.add(
                     new ForecastPoint(
                             current.plusMonths(month).toString(),
-                            projectedMRR
+                            safeDouble(projectedMRR, "forecastMRR.projectedMRR")
                     )
             );
         }
@@ -307,11 +369,16 @@ public class AdminService {
        ====================================================== */
 
     public VendorHealthResponse calculateHealth(@NonNull UUID vendorId) {
-
         UUID safeVendorId = Objects.requireNonNull(vendorId);
 
-        Vendor vendor = vendorRepository.findById(safeVendorId)
-                .orElseThrow(() -> new RuntimeException("Vendor não encontrado"));
+        Optional<Vendor> vendorOpt = vendorRepository.findById(safeVendorId);
+        
+        if (vendorOpt.isEmpty()) {
+            logger.error("Vendor not found for health calculation: {}", safeVendorId);
+            throw new IllegalArgumentException("Vendor não encontrado: " + safeVendorId);
+        }
+
+        Vendor vendor = vendorOpt.get();
 
         double score =
                 scoreUsage(vendor) * 0.30 +
@@ -320,13 +387,14 @@ public class AdminService {
                 scoreSubscription(vendor) * 0.15 +
                 scorePaymentHistory(vendor) * 0.10;
 
-        int finalScore = Math.min(100, (int) Math.round(score));
+        int finalScore = Math.min(100, (int) Math.round(safeDouble(score, "calculateHealth.score")));
 
         String riskLevel =
                 finalScore >= 75 ? "LOW"
                         : finalScore >= 50 ? "MEDIUM"
                         : "HIGH";
 
+        logger.debug("Health calculation for {}: score={}, riskLevel={}", safeVendorId, finalScore, riskLevel);
         return new VendorHealthResponse(safeVendorId, finalScore, riskLevel);
     }
 
@@ -372,7 +440,10 @@ public class AdminService {
 
     public void evaluateAllVendorsRiskDaily() {
         vendorRepository.findAll()
-            .forEach(vendor -> evaluateRisk(vendor.getId()));
+            .stream()
+            .map(Vendor::getId)
+            .filter(Objects::nonNull)
+            .forEach(this::evaluateRisk);
     }
 
     private void notifyVendorAtRisk(UUID vendorId,

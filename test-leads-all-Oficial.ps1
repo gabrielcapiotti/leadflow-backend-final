@@ -415,7 +415,7 @@ Write-Step "13" "Update Vendor Lead Stage"
 if ($VendorLeadId) {
     try {
         $updateStageBody = @{
-            stage = "DISCUSSING"
+            stage = "CONTATO"
         } | ConvertTo-Json
 
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId/stage" `

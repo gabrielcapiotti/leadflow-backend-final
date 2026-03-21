@@ -72,7 +72,9 @@ public class Vendor {
 
     @PrePersist
     public void onCreate() {
-        this.createdAt = Instant.now();
+        Instant now = Instant.now();
+        this.createdAt = now;
+        this.updatedAt = now;  // Set updatedAt on creation to avoid NOT NULL constraint
     }
 
     @PreUpdate

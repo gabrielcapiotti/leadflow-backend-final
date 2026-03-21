@@ -12,6 +12,7 @@ import com.leadflow.backend.security.jwt.JwtToken;
 import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
+import com.leadflow.backend.service.vendor.VendorService;
 import com.leadflow.domain.auth.service.PasswordResetService;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -44,6 +45,7 @@ public class AuthController {
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
     private final PasswordResetService passwordResetService;
+    private final VendorService vendorService;
 
     public AuthController(
             AuthService authService,
@@ -51,7 +53,8 @@ public class AuthController {
             RefreshTokenService refreshTokenService,
             UserSessionService userSessionService,
             TenantService tenantService,
-            PasswordResetService passwordResetService
+            PasswordResetService passwordResetService,
+            VendorService vendorService
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
@@ -59,6 +62,7 @@ public class AuthController {
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
         this.passwordResetService = passwordResetService;
+        this.vendorService = vendorService;
     }
 
     /* ======================================================
@@ -81,6 +85,9 @@ public class AuthController {
                 request.password(),
                 tenant
         );
+
+        // Garantir que Vendor existe após registro
+        vendorService.ensureVendorExists(user.getEmail());
 
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
@@ -118,6 +125,9 @@ public class AuthController {
                 request.password(),
                 tenant
         );
+
+        // Garantir que Vendor existe após login (arquitetura: todo User autenticado tem Vendor)
+        vendorService.ensureVendorExists(user.getEmail());
 
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 

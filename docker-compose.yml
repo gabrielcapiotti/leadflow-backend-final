@@ -4,8 +4,10 @@ services:
     image: postgres:15-alpine
     container_name: leadflow_postgres
     restart: unless-stopped
+    ports:
+      - "2411:5432"
     environment:
-      POSTGRES_DB: leadflow
+      POSTGRES_DB: leadflow_test
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       AWS_ACCESS_KEY_ID: 

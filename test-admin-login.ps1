@@ -1,13 +1,41 @@
-Write-Host "Testing Admin Login..." -ForegroundColor Cyan
+#!/usr/bin/env pwsh
+
+$payload = '{
+  "email": "admin@leadflow.com",
+  "password": "Admin@Lead123"
+}'
+
+Write-Host "Admin Login Test" -ForegroundColor Cyan
+Write-Host "Payload: $payload" -ForegroundColor Cyan
 Write-Host ""
+Write-Host "Sending login request..." -ForegroundColor Cyan
 
-$uri = "http://localhost:8081/auth/login"
-$body = @{
-    email = "admin@leadflow.com"
-    password = "Admin@123456"
-} | ConvertTo-Json
-
-Write-Host "Email: admin@leadflow.com" -ForegroundColor Yellow
+try {
+    $response = Invoke-WebRequest -Uri 'http://localhost:8081/auth/login' `
+        -Method POST `
+        -ContentType 'application/json' `
+        -Body $payload `
+        -UseBasicParsing `
+        -ErrorAction Stop
+    
+    Write-Host "✅ Status: $($response.StatusCode)" -ForegroundColor Green
+    Write-Host "Response:" -ForegroundColor Cyan
+    Write-Host ($response.Content | ConvertFrom-Json | ConvertTo-Json -Depth 10)
+}
+catch {
+    $statusCode = $_.Exception.Response.StatusCode.Value__
+    Write-Host "❌ Status: $statusCode" -ForegroundColor Red
+    
+    try {
+        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+        $body = $reader.ReadToEnd()
+        $reader.Close()
+        Write-Host "Error Response: $body" -ForegroundColor Red
+    }
+    catch {
+        Write-Host "Error: $_" -ForegroundColor Red
+    }
+}
 Write-Host "Password: Admin@123456" -ForegroundColor Yellow
 Write-Host ""
 

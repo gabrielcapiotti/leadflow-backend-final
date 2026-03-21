@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/leads")
+@RequestMapping(value = {"/leads", "/api/leads"})
 public class LeadController {
 
     private static final Logger log = LoggerFactory.getLogger(LeadController.class);

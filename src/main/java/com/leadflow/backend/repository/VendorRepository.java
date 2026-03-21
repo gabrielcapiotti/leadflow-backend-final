@@ -54,7 +54,7 @@ public interface VendorRepository extends JpaRepository<Vendor, UUID> {
         WHERE subscription_status = :status
         """, nativeQuery = true)
     long countBySubscriptionStatusGlobal(
-            @Param("status") SubscriptionStatus status
+            @Param("status") String status
     );
 
     @Query(value = """

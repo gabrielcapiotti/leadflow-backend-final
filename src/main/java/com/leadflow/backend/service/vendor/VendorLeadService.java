@@ -394,6 +394,20 @@ public class VendorLeadService {
                         new RuntimeException("Lead não encontrado ou acesso negado"));
     }
 
+    public void deleteLead(UUID leadId) {
+
+        UUID vendorId = vendorContext.getCurrentVendor().getId();
+
+        VendorLead lead = repository
+                .findByIdAndVendorId(leadId, vendorId)
+                .orElseThrow(() ->
+                        new RuntimeException("Lead não encontrado ou acesso negado"));
+
+        repository.delete(lead);
+
+        log.info("Lead deletado: vendorId={}, leadId={}", vendorId, leadId);
+    }
+
     private int calculateScore(VendorLead lead) {
 
         int base =
@@ -420,7 +434,8 @@ public class VendorLeadService {
                     };
         }
 
-        return base + bonus;
+        // Garantir que o score nunca ultrapasse 100 (constraint do banco)
+        return Math.min(base + bonus, 100);
     }
 
     public StageTimeMetricsResponse calculateAverageStageTimeForCurrentVendor() {

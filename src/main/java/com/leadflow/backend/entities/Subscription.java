@@ -11,17 +11,19 @@ public class Subscription {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    
+
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
 
-    @Column(name = "stripe_customer_id", nullable = false)
+    // ⚠️ NÃO pode ser obrigatório (lazy creation)
+    @Column(name = "stripe_customer_id")
     private String stripeCustomerId;
 
     @Column(name = "stripe_subscription_id", unique = true)
     private String stripeSubscriptionId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
+    // ⚠️ obrigatório no domínio
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "plan_id", nullable = false)
     private Plan plan;
 
@@ -31,10 +33,10 @@ public class Subscription {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 50)
     private SubscriptionStatus status;
-    
+
     @Column(name = "started_at", nullable = false)
     private LocalDateTime startedAt;
-    
+
     @Column(name = "expires_at", nullable = false)
     private LocalDateTime expiresAt;
 
@@ -50,16 +52,53 @@ public class Subscription {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    public Subscription() {
-        // Required by JPA
+    public Subscription() {}
+
+    /* ======================================================
+       FACTORY (DOMÍNIO)
+       ====================================================== */
+
+    public static Subscription createTrial(UUID tenantId, Plan plan) {
+
+        if (tenantId == null) {
+            throw new IllegalArgumentException("tenantId is required");
+        }
+
+        if (plan == null) {
+            throw new IllegalArgumentException("plan is required");
+        }
+
+        Subscription sub = new Subscription();
+
+        sub.tenantId = tenantId;
+        sub.plan = plan;
+        sub.status = SubscriptionStatus.INCOMPLETE;
+
+        sub.startedAt = LocalDateTime.now();
+        sub.expiresAt = LocalDateTime.now().plusDays(7);
+
+        return sub;
     }
 
     /* ======================================================
-       Lifecycle
+       LIFECYCLE
        ====================================================== */
 
     @PrePersist
     protected void onCreate() {
+
+        if (this.startedAt == null) {
+            this.startedAt = LocalDateTime.now();
+        }
+
+        if (this.expiresAt == null) {
+            this.expiresAt = this.startedAt.plusDays(7);
+        }
+
+        if (this.status == null) {
+            this.status = SubscriptionStatus.INCOMPLETE;
+        }
+
         this.createdAt = LocalDateTime.now();
         this.updatedAt = this.createdAt;
     }
@@ -70,17 +109,17 @@ public class Subscription {
     }
 
     /* ======================================================
-       Getters and setters
+       GETTERS / SETTERS
        ====================================================== */
 
     public Long getId() {
         return id;
     }
-    
+
     public UUID getTenantId() {
         return tenantId;
     }
-    
+
     public void setTenantId(UUID tenantId) {
         this.tenantId = tenantId;
     }
@@ -106,6 +145,9 @@ public class Subscription {
     }
 
     public void setPlan(Plan plan) {
+        if (plan == null) {
+            throw new IllegalArgumentException("Plan cannot be null");
+        }
         this.plan = plan;
     }
 
@@ -122,21 +164,24 @@ public class Subscription {
     }
 
     public void setStatus(SubscriptionStatus status) {
+        if (status == null) {
+            throw new IllegalArgumentException("Status cannot be null");
+        }
         this.status = status;
     }
-    
+
     public LocalDateTime getStartedAt() {
         return startedAt;
     }
-    
+
     public void setStartedAt(LocalDateTime startedAt) {
         this.startedAt = startedAt;
     }
-    
+
     public LocalDateTime getExpiresAt() {
         return expiresAt;
     }
-    
+
     public void setExpiresAt(LocalDateTime expiresAt) {
         this.expiresAt = expiresAt;
     }
@@ -164,6 +209,10 @@ public class Subscription {
     public LocalDateTime getUpdatedAt() {
         return updatedAt;
     }
+
+    /* ======================================================
+       ENUM
+       ====================================================== */
 
     public enum SubscriptionStatus {
         ACTIVE,

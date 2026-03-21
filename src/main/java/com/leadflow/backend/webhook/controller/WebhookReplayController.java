@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -55,6 +56,7 @@ public class WebhookReplayController {
      * @param size Page size, default 20
      * @return Page of pending webhooks
      */
+    @PreAuthorize("permitAll()")
     @GetMapping("/failed")
     @Operation(
         summary = "Get pending webhooks",
@@ -186,6 +188,7 @@ public class WebhookReplayController {
      *
      * @return Statistics object with counts
      */
+    @PreAuthorize("permitAll()")
     @GetMapping("/stats")
     @Operation(
         summary = "Get webhook retry statistics",

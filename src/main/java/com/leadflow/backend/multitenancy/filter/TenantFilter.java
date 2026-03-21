@@ -52,8 +52,12 @@ public class TenantFilter extends OncePerRequestFilter {
         // Public API endpoints (no authentication or tenant required)
         boolean isPublicApi = path.startsWith("/public/");
         
+        // Admin endpoints (global/system-wide, no tenant required)
+        boolean isAdminEndpoint = path.startsWith("/admin/");
+        
         return isPublicAuth
                 || isPublicApi
+                || isAdminEndpoint
                 || path.startsWith("/actuator")
                 || path.startsWith("/health")
                 || path.startsWith("/swagger")

@@ -19,6 +19,7 @@ import com.leadflow.backend.service.vendor.VendorService;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -107,7 +108,33 @@ public class VendorLeadController {
         // Vendor already exists at this point, service.create() will find it
         VendorLead createdLead = service.create(request);
 
-        return ResponseEntity.ok(createdLead);
+        return ResponseEntity.status(HttpStatus.CREATED).body(createdLead);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<VendorLead> getById(@PathVariable UUID id) {
+
+        subscriptionGuard.assertActive();
+        ensureVendorExists();
+
+        try {
+            return ResponseEntity.ok(service.getLeadForCurrentVendor(id));
+        } catch (RuntimeException e) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteLead(@PathVariable UUID id) {
+
+        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        ensureVendorExists();
+        service.deleteLead(id);
+
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping

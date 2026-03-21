@@ -3,7 +3,7 @@ spring:
     name: leadflow-backend
 
   datasource:
-    url: jdbc:postgresql://localhost:2411/leadflow  # Conexão com o banco de dados
+    url: jdbc:postgresql://localhost:2411/leadflow_test  # Conexão com o banco de dados
     username: postgres                            # Usuário do banco
     password: venusia                             # Senha do banco
     driver-class-name: org.postgresql.Driver      # Driver JDBC para PostgreSQL
