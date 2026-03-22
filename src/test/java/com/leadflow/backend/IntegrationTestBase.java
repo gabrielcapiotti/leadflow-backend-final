@@ -2,11 +2,11 @@ package com.leadflow.backend;
 
 import com.leadflow.backend.multitenancy.identifier.CurrentTenantIdentifierResolverImpl;
 import com.leadflow.backend.multitenancy.provider.MultiTenantConnectionProviderImpl;
-import com.leadflow.backend.multitenancy.service.TenantProvisioningService;
+// import com.leadflow.backend.multitenancy.service.TenantProvisioningService;  // Not in codebase
 import com.leadflow.backend.security.RateLimitService;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.admin.AdminService;
-import com.leadflow.backend.service.ai.AiRateLimiter;
+// import com.leadflow.backend.service.ai.AiRateLimiter;  // Not in codebase
 import com.leadflow.backend.service.ai.AiService;
 import com.leadflow.backend.service.audit.AuditService;
 import com.leadflow.backend.service.conversation.ConversationService;
@@ -74,8 +74,8 @@ public abstract class IntegrationTestBase {
     @MockBean
     protected AuditService auditService;
 
-    @MockBean
-    protected AiRateLimiter aiRateLimiter;
+    // @MockBean
+    // protected AiRateLimiter aiRateLimiter;  // Not in codebase
 
     @MockBean
     protected AiMetricsService aiMetricsService;
@@ -92,8 +92,8 @@ public abstract class IntegrationTestBase {
     @MockBean
     protected AdminService adminService;
 
-    @MockBean
-    protected TenantProvisioningService tenantProvisioningService;
+    // @MockBean
+    // protected TenantProvisioningService tenantProvisioningService;  // Not in codebase
 
     @MockBean
     protected RateLimitService rateLimitService;

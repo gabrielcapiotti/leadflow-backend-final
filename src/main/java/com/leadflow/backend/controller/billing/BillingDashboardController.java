@@ -2,6 +2,7 @@ package com.leadflow.backend.controller.billing;
 
 import com.leadflow.backend.dto.billing.BillingDashboardDTO;
 import com.leadflow.backend.dto.billing.SubscriptionDetailsDTO;
+import com.leadflow.backend.dto.billing.WebhookDashboardDTO;
 import com.leadflow.backend.entities.StripeEventLog;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.billing.BillingDashboardService;
@@ -208,6 +209,100 @@ public class BillingDashboardController {
         } catch (Exception e) {
             log.error("Failed to resolve vendor from context", e);
             return null;
+        }
+    }
+
+    // =====================================================
+    // WEBHOOK DASHBOARD ENDPOINTS (ETAPA 2)
+    // =====================================================
+
+    @GetMapping("/webhooks/dashboard")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<WebhookDashboardDTO> getWebhookDashboard() {
+        log.info("Fetching webhook dashboard metrics");
+
+        try {
+            WebhookDashboardDTO dashboard = billingDashboardService.getWebhookDashboard();
+            return ResponseEntity.ok(dashboard);
+        } catch (Exception e) {
+            log.error("Error fetching webhook dashboard", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/webhooks/recent")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<List<WebhookDashboardDTO.RecentWebhookDTO>> getRecentWebhooks(
+            @RequestParam(defaultValue = "20") int limit) {
+
+        log.info("Fetching last {} recent webhooks", limit);
+
+        try {
+            List<WebhookDashboardDTO.RecentWebhookDTO> recentEvents =
+                    billingDashboardService.getRecentWebhooks(Math.min(limit, 100));
+
+            return ResponseEntity.ok(recentEvents);
+        } catch (Exception e) {
+            log.error("Error fetching recent webhooks", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/webhooks/failures")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<WebhookDashboardDTO.FailureAnalysisDTO> analyzeWebhookFailures() {
+        log.info("Analyzing webhook failures");
+
+        try {
+            WebhookDashboardDTO.FailureAnalysisDTO analysis =
+                    billingDashboardService.analyzeFailures();
+
+            return ResponseEntity.ok(analysis);
+        } catch (Exception e) {
+            log.error("Error analyzing webhook failures", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/webhooks/breakdown/by-tenant")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Long>> getWebhooksByTenant() {
+        log.info("Fetching webhook breakdown by tenant");
+
+        try {
+            Map<String, Long> breakdown = billingDashboardService.getWebhooksByTenant();
+            return ResponseEntity.ok(breakdown);
+        } catch (Exception e) {
+            log.error("Error fetching webhook breakdown by tenant", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/webhooks/breakdown/by-type")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Long>> getWebhooksByEventType() {
+        log.info("Fetching webhook breakdown by event type");
+
+        try {
+            Map<String, Long> breakdown = billingDashboardService.getWebhooksByEventType();
+            return ResponseEntity.ok(breakdown);
+        } catch (Exception e) {
+            log.error("Error fetching webhook breakdown by event type", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/webhooks/breakdown/by-status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Long>> getWebhooksByStatus() {
+        log.info("Fetching webhook breakdown by status");
+
+        try {
+            Map<String, Long> breakdown = billingDashboardService.getWebhooksByStatus();
+            return ResponseEntity.ok(breakdown);
+        } catch (Exception e) {
+            log.error("Error fetching webhook breakdown by status", e);
+            return ResponseEntity.internalServerError().build();
         }
     }
 
