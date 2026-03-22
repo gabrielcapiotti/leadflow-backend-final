@@ -3,6 +3,7 @@ package com.leadflow.backend.security;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
 import com.leadflow.backend.entities.vendor.SubscriptionStatus;
 import com.leadflow.backend.entities.vendor.Vendor;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.service.vendor.SubscriptionService;
 
@@ -43,17 +44,20 @@ public class SubscriptionGuard {
     public SubscriptionAccessLevel resolveAccess() {
 
         if (!billingEnabled) {
-            log.debug("Billing validation disabled - granting FULL access level");
+            log.debug("Billing disabled → FULL access granted");
             return SubscriptionAccessLevel.FULL;
         }
 
-        Vendor vendor = resolveVendor();
+        Vendor vendor = resolveVendorStrict();
 
         SubscriptionAccessLevel level =
                 subscriptionService.getAccessLevel(vendor);
 
         if (isExpired(vendor) &&
             level != SubscriptionAccessLevel.BLOCKED) {
+
+            log.warn("Subscription expired → forcing BLOCKED (vendorId={})",
+                    vendor.getId());
 
             return SubscriptionAccessLevel.BLOCKED;
         }
@@ -66,7 +70,6 @@ public class SubscriptionGuard {
        ====================================================== */
 
     public boolean isActive() {
-
         try {
             return resolveAccess() != SubscriptionAccessLevel.BLOCKED;
         } catch (AccessDeniedException ex) {
@@ -75,24 +78,22 @@ public class SubscriptionGuard {
     }
 
     public void assertActive() {
-
         if (resolveAccess() == SubscriptionAccessLevel.BLOCKED) {
             throw new AccessDeniedException("Subscription inactive");
         }
     }
 
     public void assertFullAccess() {
-
         if (resolveAccess() != SubscriptionAccessLevel.FULL) {
-            throw new AccessDeniedException("Subscription does not allow write operations");
+            throw new AccessDeniedException("Write operation not allowed for current subscription");
         }
     }
 
     /* ======================================================
-       INTERNAL RESOLUTION
+       INTERNAL RESOLUTION (STRICT)
        ====================================================== */
 
-    private Vendor resolveVendor() {
+    private Vendor resolveVendorStrict() {
 
         Authentication authentication =
                 SecurityContextHolder.getContext().getAuthentication();
@@ -110,16 +111,39 @@ public class SubscriptionGuard {
             throw new AccessDeniedException("Invalid authentication principal");
         }
 
+        String tenant = TenantContext.getTenant();
+
+        if (tenant == null || tenant.isBlank()) {
+            log.error("TenantContext is NULL or empty for user={}", maskEmail(email));
+            throw new AccessDeniedException("Tenant context not resolved");
+        }
+
+        log.debug("Resolving vendor → user={}, tenant={}",
+                maskEmail(email), tenant);
+
         return vendorRepository
-                .findByUserEmail(email)
+                .findByUserEmailAndTenantId(email, tenant)
                 .stream()
                 .findFirst()
-                .orElseThrow(() ->
-                        new AccessDeniedException("Vendor not found for user"));
+                .orElseThrow(() -> {
+                    log.error("Vendor not found → user={}, tenant={}",
+                            maskEmail(email), tenant);
+                    return new AccessDeniedException("Vendor not found for current tenant");
+                });
+    }
+
+    /* ======================================================
+       HELPERS
+       ====================================================== */
+
+    private String maskEmail(String email) {
+        if (email == null || email.length() < 5) {
+            return "***";
+        }
+        return email.substring(0, 2) + "***@***";
     }
 
     private boolean isExpired(Vendor vendor) {
-
         return vendor.getSubscriptionExpiresAt() != null &&
                vendor.getSubscriptionExpiresAt().isBefore(Instant.now()) &&
                vendor.getSubscriptionStatus() != SubscriptionStatus.INADIMPLENTE;

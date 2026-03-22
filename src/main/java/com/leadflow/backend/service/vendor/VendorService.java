@@ -3,6 +3,7 @@ package com.leadflow.backend.service.vendor;
 import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.vendor.SubscriptionStatus;
 import com.leadflow.backend.entities.vendor.Vendor;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.PlanRepository;
 import com.leadflow.backend.repository.VendorRepository;
 
@@ -39,6 +40,8 @@ public class VendorService {
         vendor.setWhatsappVendedor("0000000000");
         vendor.setSlug(generateSlug(email));
         vendor.setSubscriptionStatus(SubscriptionStatus.TRIAL);
+        // CRÍTICO: Settar tenantId com valor do context ANTES de salvar
+        vendor.setTenantId(TenantContext.getTenant());
         Vendor savedVendor = vendorRepository.save(vendor);
 
         // Inicializar usage para o novo vendor com o plano ativo padrão

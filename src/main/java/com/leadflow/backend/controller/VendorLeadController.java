@@ -5,31 +5,24 @@ import com.leadflow.backend.dto.vendor.StageConversionResponse;
 import com.leadflow.backend.dto.vendor.StageTimeMetricsResponse;
 import com.leadflow.backend.dto.vendor.UpdateStageRequest;
 import com.leadflow.backend.dto.vendor.VendorLeadMetricsResponse;
-import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
-import com.leadflow.backend.entities.vendor.Vendor;
+import com.leadflow.backend.entities.vendor.VendorLead;
 import com.leadflow.backend.entities.vendor.VendorLeadAlert;
 import com.leadflow.backend.entities.vendor.VendorLeadConversation;
-import com.leadflow.backend.entities.vendor.VendorLead;
 import com.leadflow.backend.repository.VendorLeadAlertRepository;
-import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.service.vendor.ResumoService;
 import com.leadflow.backend.service.vendor.VendorLeadService;
-import com.leadflow.backend.service.vendor.VendorService;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.transaction.Transactional;
 import jakarta.validation.Valid;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -40,65 +33,43 @@ public class VendorLeadController {
     private final ResumoService resumoService;
     private final VendorLeadAlertRepository alertRepository;
     private final SubscriptionGuard subscriptionGuard;
-    private final VendorService vendorService;
-    private final VendorRepository vendorRepository;
 
     public VendorLeadController(VendorLeadService service,
                                 ResumoService resumoService,
                                 VendorLeadAlertRepository alertRepository,
-                                SubscriptionGuard subscriptionGuard,
-                                VendorService vendorService,
-                                VendorRepository vendorRepository) {
+                                SubscriptionGuard subscriptionGuard) {
         this.service = service;
         this.resumoService = resumoService;
         this.alertRepository = alertRepository;
         this.subscriptionGuard = subscriptionGuard;
-        this.vendorService = vendorService;
-        this.vendorRepository = vendorRepository;
     }
+
+    /* ======================================================
+       CREATE
+       ====================================================== */
 
     @PostMapping("/leads")
     @Transactional
-    public ResponseEntity<?> createLead(
+    public ResponseEntity<VendorLead> createLead(
             @Valid @RequestBody CreateLeadRequest request) {
 
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(
-                Map.of(
-                    "error", "SUBSCRIPTION_READ_ONLY",
-                    "message", "Assinatura não permite criar leads."
-                )
-            );
-        }
+        subscriptionGuard.assertFullAccess();
 
-        // Vendor already exists at this point, service.create() will find it
         VendorLead createdLead = service.create(request);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(createdLead);
     }
+
+    /* ======================================================
+       READ
+       ====================================================== */
 
     @GetMapping("/{id}")
     public ResponseEntity<VendorLead> getById(@PathVariable UUID id) {
 
         subscriptionGuard.assertActive();
 
-        try {
-            return ResponseEntity.ok(service.getLeadForCurrentVendor(id));
-        } catch (RuntimeException e) {
-            return ResponseEntity.notFound().build();
-        }
-    }
-
-    @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteLead(@PathVariable UUID id) {
-
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
-        }
-
-        service.deleteLead(id);
-
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(service.getLeadForCurrentVendor(id));
     }
 
     @GetMapping
@@ -109,30 +80,49 @@ public class VendorLeadController {
         return ResponseEntity.ok(service.listForCurrentVendor(pageable));
     }
 
+    /* ======================================================
+       DELETE
+       ====================================================== */
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteLead(@PathVariable UUID id) {
+
+        subscriptionGuard.assertFullAccess();
+
+        service.deleteLead(id);
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /* ======================================================
+       UPDATE
+       ====================================================== */
+
     @PutMapping("/{id}/stage")
-    public ResponseEntity<?> updateStage(
+    public ResponseEntity<VendorLead> updateStage(
             @PathVariable UUID id,
             @RequestBody UpdateStageRequest request) {
 
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(
-                Map.of(
-                    "error", "SUBSCRIPTION_READ_ONLY",
-                    "message", "Assinatura não permite editar leads."
-                )
-            );
-        }
+        subscriptionGuard.assertFullAccess();
 
-        try {
-            VendorLead updated =
-                    service.updateStage(id, request.getStage());
+        VendorLead updated =
+                service.updateStage(id, request.getStage());
 
-            return ResponseEntity.ok(updated);
-
-        } catch (IllegalStateException e) {
-            return ResponseEntity.badRequest().body(e.getMessage());
-        }
+        return ResponseEntity.ok(updated);
     }
+
+    @PutMapping("/{id}/owner")
+    public ResponseEntity<VendorLead> assignOwner(
+            @PathVariable UUID id) {
+
+        subscriptionGuard.assertFullAccess();
+
+        return ResponseEntity.ok(service.assignOwner(id));
+    }
+
+    /* ======================================================
+       METRICS
+       ====================================================== */
 
     @GetMapping("/metrics")
     public ResponseEntity<VendorLeadMetricsResponse> getMetrics() {
@@ -142,47 +132,36 @@ public class VendorLeadController {
         return ResponseEntity.ok(service.getMetricsForCurrentVendor());
     }
 
+    @GetMapping("/metrics/stage-time")
+    public ResponseEntity<StageTimeMetricsResponse> getStageTimeMetrics() {
+
+        subscriptionGuard.assertActive();
+
+        return ResponseEntity.ok(
+                service.calculateAverageStageTimeForCurrentVendor()
+        );
+    }
+
+    @GetMapping("/metrics/conversion")
+    public ResponseEntity<StageConversionResponse> getConversionMetrics() {
+
+        subscriptionGuard.assertActive();
+
+        return ResponseEntity.ok(
+                service.calculateConversionRatesForCurrentVendor()
+        );
+    }
+
+    /* ======================================================
+       EXTRA
+       ====================================================== */
+
     @GetMapping("/ranking")
     public ResponseEntity<List<VendorLead>> getRanking() {
 
         subscriptionGuard.assertActive();
 
-        return ResponseEntity.ok(
-            service.getRankingForCurrentVendor()
-        );
-    }
-
-    @PutMapping("/{id}/owner")
-    public ResponseEntity<VendorLead> assignOwner(
-            @PathVariable UUID id) {
-
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).build();
-        }
-
-        return ResponseEntity.ok(
-                service.assignOwner(id)
-        );
-    }
-
-    @GetMapping("/metrics/stage-time")
-        public ResponseEntity<StageTimeMetricsResponse> getStageTimeMetrics() {
-
-        subscriptionGuard.assertActive();
-
-        return ResponseEntity.ok(
-            service.calculateAverageStageTimeForCurrentVendor()
-        );
-    }
-
-    @GetMapping("/metrics/conversion")
-        public ResponseEntity<StageConversionResponse> getConversionMetrics() {
-
-        subscriptionGuard.assertActive();
-
-        return ResponseEntity.ok(
-            service.calculateConversionRatesForCurrentVendor()
-        );
+        return ResponseEntity.ok(service.getRankingForCurrentVendor());
     }
 
     @GetMapping("/{id}/conversation")
@@ -212,12 +191,8 @@ public class VendorLeadController {
     @PutMapping("/{id}/resumo")
     public ResponseEntity<String> gerarResumo(@PathVariable UUID id) {
 
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body("Assinatura não permite editar leads.");
-        }
+        subscriptionGuard.assertFullAccess();
 
-        String resumo = resumoService.gerarResumo(id);
-
-        return ResponseEntity.ok(resumo);
+        return ResponseEntity.ok(resumoService.gerarResumo(id));
     }
 }

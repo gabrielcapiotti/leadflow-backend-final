@@ -3,6 +3,7 @@ package com.leadflow.backend.security;
 import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.security.exception.UnauthorizedException;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -29,6 +30,9 @@ public class VendorContext {
      *
      * Fluxo:
      * JWT Filter → SecurityContextHolder → VendorContext → VendorRepository
+     * 
+     * ⚠️ MULTI-TENANT AWARE:
+     * Busca por (email, tenantId) para garantir isolamento
      */
     public Vendor getCurrentVendor() {
 
@@ -40,11 +44,17 @@ public class VendorContext {
             throw new UnauthorizedException("Authenticated user email not found");
         }
 
+        String tenant = TenantContext.getTenant();
+        
+        if (tenant == null || tenant.isBlank()) {
+            throw new UnauthorizedException("Tenant context not resolved - cannot lookup vendor");
+        }
+
         return vendorRepository
-                .findFirstByUserEmailIgnoreCase(email)
+                .findFirstByUserEmailIgnoreCaseAndTenantId(email, tenant)
                 .orElseThrow(() ->
                         new UnauthorizedException(
-                                "Authenticated user does not belong to any vendor"
+                                "Authenticated user does not belong to any vendor in tenant '" + tenant + "'"
                         ));
     }
 

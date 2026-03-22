@@ -43,6 +43,8 @@ public interface VendorRepository extends JpaRepository<Vendor, UUID> {
     Optional<Vendor> findBySlugAndTenantId(String slug, String tenantId);
 
     List<Vendor> findByUserEmailAndTenantId(String email, String tenantId);
+    
+    Optional<Vendor> findFirstByUserEmailIgnoreCaseAndTenantId(String email, String tenantId);
 
     List<Vendor> findAllByTenantId(String tenantId);
 

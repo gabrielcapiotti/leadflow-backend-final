@@ -1,8 +1,10 @@
 package com.leadflow.backend.security;
 
 import com.leadflow.backend.multitenancy.filter.TenantFilter;
+import com.leadflow.backend.multitenancy.resolver.TenantResolver;
 import com.leadflow.backend.security.jwt.JwtAuthenticationFilter;
 import com.leadflow.backend.security.jwt.JwtService;
+import com.leadflow.backend.security.tenant.HibernateFilterService;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.service.auth.UserSessionService;
 
@@ -71,6 +73,18 @@ public class SecurityWebConfig {
                 userSessionService,
                 tenantService
         );
+    }
+
+    /* =====================================================
+       TENANT FILTER
+       ===================================================== */
+
+    @Bean
+    public TenantFilter tenantFilter(
+            TenantResolver tenantResolver,
+            HibernateFilterService hibernateFilterService
+    ) {
+        return new TenantFilter(tenantResolver, hibernateFilterService);
     }
 
     /* =====================================================
@@ -183,6 +197,7 @@ public class SecurityWebConfig {
 
                 .requestMatchers("/vendors").authenticated()
                 .requestMatchers("/vendor-leads/**").authenticated()
+                .requestMatchers("/api/vendor-leads/**").authenticated()
 
                 /* =========================================
                    EVERYTHING ELSE

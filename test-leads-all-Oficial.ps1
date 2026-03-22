@@ -26,6 +26,15 @@ $ColorTitle = "Cyan"
 $ColorStep = "Yellow"
 $ColorInfo = "White"
 
+# Helper function to get fresh headers (prevents state inconsistency)
+function Get-Headers {
+    return @{
+        "X-Tenant-Id" = $TenantHeader
+        "Authorization" = "Bearer $LoginToken"
+        "Content-Type" = "application/json"
+    }
+}
+
 function Write-Title {
     Write-Host "`n════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
     Write-Host "LEADFLOW COMPLETE LEADS + VENDORS TEST SUITE" -ForegroundColor $ColorTitle
@@ -149,11 +158,9 @@ try {
     $data = $response.Content | ConvertFrom-Json
     $LoginToken = $data.accessToken
     
-    # Setup headers for subsequent requests (PATTERN from Settings)
-    $Global:CurrentHeaders = @{
-        "X-Tenant-Id" = $TenantHeader
-        "Authorization" = "Bearer $LoginToken"
-        "Content-Type" = "application/json"
+    # Validate token before using
+    if (-not $LoginToken -or $LoginToken.Length -lt 20) {
+        throw "Invalid token returned from login"
     }
     
     Write-Success "Login & Headers Setup" $response.StatusCode
@@ -174,7 +181,7 @@ Write-Step "4" "Get Current User Profile"
 try {
     $response = Invoke-WebRequest -Uri "$MeUrl" `
         -Method Get `
-        -Headers $Global:CurrentHeaders `
+        -Headers (Get-Headers) `
         -UseBasicParsing `
         -ErrorAction Stop
     
@@ -185,6 +192,59 @@ try {
     }
 } catch {
     Write-Fail "Get User Profile" $_.Exception.Response.StatusCode $_.Exception.Message
+}
+
+# ============================================================================
+# TEST 4B: CREATE VENDOR FOR USER (NEW - REQUIRED FOR VENDOR-LEADS ACCESS)
+# This must be done BEFORE accessing vendor-leads endpoints
+# ============================================================================
+Write-Step "4b" "Create Vendor for User"
+$VendorCreated = $false
+$VendorId = $null
+
+try {
+    # Create unique slug: vendor-YYYYMMDDHHMMSSFFFFF-RANDOMNNNN
+    $randomPart = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 15 | % {[char]$_})
+    $combinedSlug = ("vendor-{0}-{1}" -f $timestamp, $randomPart).ToLower()
+    $uniqueSlug = $combinedSlug.Substring(0, [Math]::Min(63, $combinedSlug.Length))
+    
+    $vendorBody = @{
+        name = "Vendor $timestamp"
+        userEmail = $newEmail
+        nomeEmpresa = "Empresa Teste $timestamp"
+        nomeVendedor = $newName
+        whatsappVendedor = "+5511999999999"
+        slug = $uniqueSlug
+    } | ConvertTo-Json
+
+    $response = Invoke-WebRequest -Uri "$BaseUrl/vendors" `
+        -Method Post `
+        -Headers (Get-Headers) `
+        -Body $vendorBody `
+        -UseBasicParsing `
+        -ErrorAction Stop
+    
+    $data = $response.Content | ConvertFrom-Json
+    $VendorId = $data.id
+    $VendorCreated = $true
+    
+    Write-Success "Create Vendor" $response.StatusCode
+    Write-Host "   Vendor ID: $VendorId" -ForegroundColor DarkGray
+    Write-Host "   Vendor Email: $($data.userEmail)" -ForegroundColor DarkGray
+    Write-Host "   Slug: $uniqueSlug" -ForegroundColor DarkGray
+    Write-Host "   Subscription: $($data.subscriptionStatus)" -ForegroundColor DarkGray
+} catch {
+    Write-Fail "Create Vendor" $_.Exception.Response.StatusCode $_.Exception.Message
+    
+    # Try to extract error detail
+    try {
+        $errorObj = $_.Exception.Response.GetResponseStream() | % {$sr = New-Object System.IO.StreamReader($_); $sr.ReadToEnd()}
+        if ($errorObj) {
+            Write-Host "       Details: $errorObj" -ForegroundColor DarkRed
+        }
+    } catch {}
+    
+    Write-Host "`n⚠️ Cannot continue without vendor. Stopping vendor-leads tests.`n" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -204,7 +264,7 @@ try {
 
     $response = Invoke-WebRequest -Uri "$LeadsUrl" `
         -Method Post `
-        -Headers $Global:CurrentHeaders `
+        -Headers (Get-Headers) `
         -Body $leadBody `
         -UseBasicParsing `
         -ErrorAction Stop
@@ -226,7 +286,7 @@ if ($LeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId" `
             -Method Get `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -UseBasicParsing `
             -ErrorAction Stop
         
@@ -249,7 +309,7 @@ if ($LeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId/status?status=CONTACTED" `
             -Method Patch `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -UseBasicParsing `
             -ErrorAction Stop
         
@@ -275,7 +335,7 @@ Write-Step "8" "List Leads with Pagination"
 try {
     $response = Invoke-WebRequest -Uri "$LeadsUrl`?page=0&size=10" `
         -Method Get `
-        -Headers $Global:CurrentHeaders `
+        -Headers (Get-Headers) `
         -UseBasicParsing `
         -ErrorAction Stop
     
@@ -402,7 +462,7 @@ if ($LeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId" `
             -Method Delete `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -UseBasicParsing `
             -ErrorAction Stop
         
@@ -420,41 +480,37 @@ if ($LeadId) {
 
 # ============================================================================
 # TEST 10: CREATE VENDOR LEAD (Pattern: test-all-Settings-Oficial.ps1)
-# This also auto-creates the Vendor through implicit vendor relationship
 # ============================================================================
-Write-Step "10" "Create Vendor Lead (Auto-create Vendor)"
+Write-Step "10" "Create Vendor Lead"
 $VendorLeadId = $null
-$VendorId = $null
 
-try {
-    $vendorLeadBody = @{
-        nomeCompleto = "Maria Silva Consortium"
-        whatsapp = "21987654321"
-        tipoConsorcio = "VEICULO"
-        valorCredito = "100000"
-        urgencia = "quero_fechar"
-    } | ConvertTo-Json
+if (-not $VendorCreated) {
+    Write-Host "    ⚠️  Skipped - Vendor was not created in TEST 4b" -ForegroundColor Yellow
+} else {
+    try {
+        $vendorLeadBody = @{
+            nomeCompleto = "Maria Silva Consortium"
+            whatsapp = "21987654321"
+            tipoConsorcio = "VEICULO"
+            valorCredito = "100000"
+            urgencia = "quero_fechar"
+        } | ConvertTo-Json
 
-    $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/leads" `
-        -Method Post `
-        -Headers $Global:CurrentHeaders `
-        -Body $vendorLeadBody `
-        -UseBasicParsing `
-        -ErrorAction Stop
-    
-    $data = $response.Content | ConvertFrom-Json
-    $VendorLeadId = $data.id
-    if ($data.vendor) {
-        $VendorId = $data.vendor.id
+        $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/leads" `
+            -Method Post `
+            -Headers (Get-Headers) `
+            -Body $vendorLeadBody `
+            -UseBasicParsing `
+            -ErrorAction Stop
+        
+        $data = $response.Content | ConvertFrom-Json
+        $VendorLeadId = $data.id
+        
+        Write-Success "Create Vendor Lead" $response.StatusCode
+        Write-Host "   Lead ID: $VendorLeadId" -ForegroundColor DarkGray
+    } catch {
+        Write-Fail "Create Vendor Lead" $_.Exception.Response.StatusCode $_.Exception.Message
     }
-    
-    Write-Success "Create Vendor Lead" $response.StatusCode
-    Write-Host "   Lead ID: $VendorLeadId" -ForegroundColor DarkGray
-    if ($VendorId) {
-        Write-Host "   Vendor ID: $VendorId (auto-created)" -ForegroundColor DarkGray
-    }
-} catch {
-    Write-Fail "Create Vendor Lead" $_.Exception.Response.StatusCode $_.Exception.Message
 }
 
 # ============================================================================
@@ -466,7 +522,7 @@ if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
             -Method Get `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -UseBasicParsing `
             -ErrorAction Stop
         
@@ -484,20 +540,25 @@ if ($VendorLeadId) {
 # TEST 12: LIST VENDOR LEADS (Pattern: test-all-Settings-Oficial.ps1)
 # ============================================================================
 Write-Step "12" "List Vendor Leads with Pagination"
-try {
-    $response = Invoke-WebRequest -Uri "$VendorLeadsUrl`?page=0&size=10" `
-        -Method Get `
-        -Headers $Global:CurrentHeaders `
-        -UseBasicParsing `
-        -ErrorAction Stop
-    
-    $data = $response.Content | ConvertFrom-Json
-    Write-Success "List Vendor Leads" $response.StatusCode
-    if ($data.totalElements) {
-        Write-Host "   Total Vendor Leads: $($data.totalElements)" -ForegroundColor DarkGray
+
+if (-not $VendorCreated) {
+    Write-Host "    ⚠️  Skipped - Vendor was not created in TEST 4b" -ForegroundColor Yellow
+} else {
+    try {
+        $response = Invoke-WebRequest -Uri "$VendorLeadsUrl`?page=0&size=10" `
+            -Method Get `
+            -Headers (Get-Headers) `
+            -UseBasicParsing `
+            -ErrorAction Stop
+        
+        $data = $response.Content | ConvertFrom-Json
+        Write-Success "List Vendor Leads" $response.StatusCode
+        if ($data.totalElements) {
+            Write-Host "   Total Vendor Leads: $($data.totalElements)" -ForegroundColor DarkGray
+        }
+    } catch {
+        Write-Fail "List Vendor Leads" $_.Exception.Response.StatusCode $_.Exception.Message
     }
-} catch {
-    Write-Fail "List Vendor Leads" $_.Exception.Response.StatusCode $_.Exception.Message
 }
 
 # ============================================================================
@@ -506,14 +567,13 @@ try {
 Write-Step "12b" "Cross-Tenant Vendor Lead Access (SECURITY)"
 
 if ($VendorLeadId) {
-    $originalTenant = $TenantHeader
-    $TenantHeader = "tenant_attack_test"
+    $attackTenant = "tenant_attack_test"
 
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
             -Method Get `
             -Headers @{
-                "X-Tenant-Id" = $TenantHeader
+                "X-Tenant-Id" = $attackTenant
                 "Authorization" = "Bearer $LoginToken"
                 "Content-Type" = "application/json"
             } `
@@ -531,8 +591,6 @@ if ($VendorLeadId) {
             Write-Fail "Unexpected response" $statusCode $_.Exception.Message
         }
     }
-
-    $TenantHeader = $originalTenant
 }
 
 # ============================================================================
@@ -548,7 +606,7 @@ if ($VendorLeadId) {
 
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId/stage" `
             -Method Put `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -Body $updateStageBody `
             -UseBasicParsing `
             -ErrorAction Stop
@@ -576,7 +634,7 @@ if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
             -Method Delete `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -UseBasicParsing `
             -ErrorAction Stop
         
@@ -601,16 +659,17 @@ if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
             -Method Get `
-            -Headers $Global:CurrentHeaders `
+            -Headers (Get-Headers) `
             -UseBasicParsing `
             -ErrorAction Stop
         
         Write-Fail "Validate Deletion" 200 "Should not return success - item was deleted"
     } catch {
         $statusCode = $_.Exception.Response.StatusCode.Value__
-        if ($statusCode -in @(400, 404)) {
+        # Accept 404 NOT_FOUND as success (proper error response)
+        if ($statusCode -eq 404) {
             Write-Success "Validate Deletion" $statusCode
-            Write-Host "   Item properly deleted" -ForegroundColor DarkGray
+            Write-Host "   Item properly deleted (HTTP 404)" -ForegroundColor DarkGray
         } else {
             Write-Fail "Validate Deletion" $statusCode $_.Exception.Message
         }

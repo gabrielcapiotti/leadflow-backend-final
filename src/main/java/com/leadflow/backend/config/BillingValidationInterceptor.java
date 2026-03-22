@@ -3,6 +3,7 @@ package com.leadflow.backend.config;
 import com.leadflow.backend.exception.SubscriptionInactiveException;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.vendor.SubscriptionService;
+import com.leadflow.backend.service.vendor.VendorService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +29,7 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
 
     private final SubscriptionService subscriptionService;
     private final VendorContext vendorContext;
+    private final VendorService vendorService;
 
     @Value("${app.billing.enabled:false}")
     private boolean billingEnabled;
@@ -46,9 +48,11 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
 
     public BillingValidationInterceptor(
             SubscriptionService subscriptionService,
-            VendorContext vendorContext) {
+            VendorContext vendorContext,
+            VendorService vendorService) {
         this.subscriptionService = subscriptionService;
         this.vendorContext = vendorContext;
+        this.vendorService = vendorService;
         log.info("🔧 BillingValidationInterceptor initialized - billingEnabled={}", billingEnabled);
     }
 
@@ -86,8 +90,28 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
                 return true; // Let Spring Security handle unauthenticated requests
             }
 
-            // Get tenantId (vendorId) from VendorContext
-            UUID tenantId = vendorContext.getCurrentVendorId();
+            String userEmail = authentication.getName();
+
+            // Try to get existing vendor, or create one if needed
+            UUID tenantId;
+            try {
+                tenantId = vendorContext.getCurrentVendorId();
+                log.debug("Found existing vendor for user: {}", maskEmail(userEmail));
+            } catch (Exception ex) {
+                log.warn("No vendor found for user: {}. Attempting auto-creation...", maskEmail(userEmail));
+                try {
+                    // Auto-create vendor for first-time vendor lead creation
+                    var newVendor = vendorService.createVendor(userEmail);
+                    tenantId = newVendor.getId();
+                    log.info("✅ Auto-created vendor for user: {} with ID: {}", maskEmail(userEmail), tenantId);
+                } catch (Exception createEx) {
+                    log.error("❌ Failed to auto-create vendor for user: {}", maskEmail(userEmail), createEx);
+                    throw new SubscriptionInactiveException(
+                        "Could not create vendor for user",
+                        "VENDOR_CREATION_FAILED"
+                    );
+                }
+            }
 
             if (tenantId == null) {
                 log.warn("Could not extract vendorId from VendorContext for path: {}", requestPath);
@@ -132,5 +156,12 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
             }
         }
         return false;
+    }
+
+    private String maskEmail(String email) {
+        if (email == null || email.length() < 5) {
+            return "***";
+        }
+        return email.substring(0, 2) + "***" + email.substring(email.length() - 3);
     }
 }

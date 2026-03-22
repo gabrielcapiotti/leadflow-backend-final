@@ -81,6 +81,8 @@ public class TenantFilter extends OncePerRequestFilter {
 
         boolean tenantSetByThisFilter = false;
 
+        logger.info("✅ TENANT FILTER EXECUTING for path: {}", request.getRequestURI());
+
         try {
 
             /* =============================================
@@ -152,6 +154,18 @@ public class TenantFilter extends OncePerRequestFilter {
 
             response.sendError(
                     HttpServletResponse.SC_BAD_REQUEST,
+                    ex.getMessage()
+            );
+
+        } catch (org.springframework.web.server.ResponseStatusException ex) {
+
+            logger.warn(
+                    "Tenant validation failed: {}",
+                    LogSanitizer.sanitize(ex.getMessage())
+            );
+
+            response.sendError(
+                    ex.getStatusCode().value(),
                     ex.getMessage()
             );
 

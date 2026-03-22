@@ -176,6 +176,17 @@ public class GlobalExceptionHandler {
     }
 
     /* =========================================================
+       RESOURCES
+       ========================================================= */
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleResourceNotFound(
+            ResourceNotFoundException ex
+    ) {
+        return build(HttpStatus.NOT_FOUND, safe(ex));
+    }
+
+    /* =========================================================
        FALLBACK
        ========================================================= */
 
