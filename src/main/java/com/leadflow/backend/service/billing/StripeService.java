@@ -156,14 +156,28 @@ public class StripeService {
         }
 
         if (webhookSecret == null || webhookSecret.isBlank()) {
+            log.error("[STRIPESERVICE] CRITICAL: Webhook secret is empty! Value: '{}'", webhookSecret);
             throw new IllegalStateException("Stripe webhook secret is not configured");
         }
 
+        log.info("[STRIPESERVICE] Webhook validation starting");
+        log.info("[STRIPESERVICE] Webhook secret length: {}", webhookSecret.length());
+        log.info("[STRIPESERVICE] Payload length: {}", payload.length());
+        log.info("[STRIPESERVICE] Signature header: {}", signature.substring(0, Math.min(50, signature.length())));
+
         try {
-            return Webhook.constructEvent(payload, signature, webhookSecret);
+            Event event = Webhook.constructEvent(payload, signature, webhookSecret);
+            log.info("[STRIPESERVICE] ✅ Webhook.constructEvent() succeeded - Event ID: {}, Type: {}", 
+                event.getId(), event.getType());
+            return event;
         } catch (SignatureVerificationException e) {
-            log.error("Invalid Stripe webhook signature", e);
+            log.error("[STRIPESERVICE] ❌ Webhook.constructEvent() failed with SignatureVerificationException: {}", 
+                e.getMessage());
             throw new RuntimeException("Invalid webhook signature", e);
+        } catch (Exception e) {
+            log.error("[STRIPESERVICE] ❌ Webhook.constructEvent() failed with exception: {}", 
+                e.getClass().getSimpleName() + ": " + e.getMessage());
+            throw new RuntimeException("Webhook processing failed", e);
         }
     }
 

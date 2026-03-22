@@ -51,10 +51,16 @@ public class TenantFilter extends OncePerRequestFilter {
                 || path.startsWith("/auth/refresh")
                 || path.startsWith("/auth/debug");
         
+        // Webhook endpoints (use signature-based auth, not tenant-based)
+        boolean isWebhook = path.startsWith("/stripe/webhook")
+                || path.startsWith("/webhooks/")
+                || path.startsWith("/webhook/");
+        
         // Public API endpoints (no authentication or tenant required)
         boolean isPublicApi = path.startsWith("/public/");
         
         return isPublicAuth
+                || isWebhook
                 || isPublicApi
                 || path.startsWith("/actuator")
                 || path.startsWith("/health")

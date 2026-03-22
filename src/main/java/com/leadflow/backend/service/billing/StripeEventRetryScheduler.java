@@ -4,10 +4,12 @@ import com.leadflow.backend.entities.StripeEventLog;
 import com.leadflow.backend.repository.StripeEventLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 /**
@@ -35,15 +37,18 @@ public class StripeEventRetryScheduler {
 
     private final StripeEventLogRepository eventLogRepository;
     private final StripeWebhookProcessor webhookProcessor;
+    private final WebhookLoggingService webhookLoggingService;
 
     private static final long INITIAL_DELAY_SECONDS = 1;
     private static final double BACKOFF_MULTIPLIER = 2.0;
 
     /**
-     * Executa a cada 5 segundos para processar eventos com retry pendente.
+     * Executa a cada 60 segundos para processar eventos com retry pendente.
      * Processa em lotes de até 10 eventos por execução.
+     * 
+     * Ativado em 22/03/2026 - Fase 1 Implementation
      */
-    // @Scheduled(fixedDelay = 5000, initialDelay = 10000) // DESABILITADO: Causava loop durante boot
+    @Scheduled(fixedDelay = 60000, initialDelay = 10000)  // 60s fixed delay, 10s initial
     @Transactional
     public void processFailedEvents() {
         try {
@@ -156,6 +161,10 @@ public class StripeEventRetryScheduler {
             
             eventLogRepository.save(event);
             
+            // Log structured JSON
+            long totalTimeMs = ChronoUnit.MILLIS.between(event.getCreatedAt(), event.getProcessedAt());
+            webhookLoggingService.logWebhookRetrySuccess(event, event.getRetryCount(), totalTimeMs);
+            
             log.info("✅ Webhook event retry succeeded: eventId={}, type={}, totalRetries={}",
                 event.getEventId(), event.getEventType(), event.getRetryCount());
             
@@ -181,12 +190,18 @@ public class StripeEventRetryScheduler {
                 event.setStatus(StripeEventLog.EventProcessingStatus.RETRY_PENDING);
                 event.setNextRetryAt(nextRetryAt);
                 
+                // Log structured JSON
+                webhookLoggingService.logWebhookRetry(event, event.getRetryCount(), nextRetryAt, error.getMessage());
+                
                 log.warn("⚠️ Webhook event retry failed, scheduling next retry: eventId={}, nextRetryIn={}s, retryCount={}/{}",
                     event.getEventId(), nextDelaySeconds, event.getRetryCount(), event.getMaxRetries());
             } else {
                 // Máximo de retries excedido
                 event.setStatus(StripeEventLog.EventProcessingStatus.FAILED);
                 event.setNextRetryAt(null);
+                
+                // Log structured JSON
+                webhookLoggingService.logWebhookRetryPermanentFailure(event, event.getRetryCount(), error.getMessage());
                 
                 log.error("❌ Webhook event failed permanently (max retries exceeded): eventId={}, error={}",
                     event.getEventId(), error.getMessage());

@@ -38,23 +38,32 @@ public class StripeWebhookValidator {
             throws StripeSignatureVerificationException {
         
         try {
+            // Get webhook secret from properties
+            String secret = stripeProperties.getWebhook().getSecret();
+            log.info("[STRIPEVALIDATOR] Secret configured: {}", secret != null && !secret.isEmpty());
+            log.info("[STRIPEVALIDATOR] Secret length: {}", secret != null ? secret.length() : 0);
+            
             // Construct signed content: "{timestamp}.{payload}"
             String signedContent = timestamp + "." + payload;
+            log.info("[STRIPEVALIDATOR] Timestamp: {}", timestamp);
+            log.info("[STRIPEVALIDATOR] Payload length: {}", payload.length());
+            log.info("[STRIPEVALIDATOR] SignedContent length: {}", signedContent.length());
             
             // Compute HMAC-SHA256 hash
-            String computedSignature = computeHmacSha256(signedContent, stripeProperties.getWebhook().getSecret());
+            String computedSignature = computeHmacSha256(signedContent, secret);
             
-            log.debug("Signature Validation: Expected={}, Received={}", 
-                computedSignature.substring(0, 16) + "...", 
-                signatureHash.substring(0, Math.min(16, signatureHash.length())) + "...");
+            log.info("[STRIPEVALIDATOR] Signature comparison - Computed: {}, Received: {}", 
+                computedSignature.substring(0, Math.min(16, computedSignature.length())), 
+                signatureHash.substring(0, Math.min(16, signatureHash.length())));
             
             // Compare in constant time to prevent timing attacks
             if (!constantTimeEquals(computedSignature, signatureHash)) {
-                log.warn("❌ Invalid webhook signature detected. Payload may be tampered.");
+                log.warn("❌ Invalid webhook signature detected. Payload may be tampered. Computed length: {}, Received length: {}", 
+                    computedSignature.length(), signatureHash.length());
                 throw new StripeSignatureVerificationException("Webhook signature verification failed");
             }
             
-            log.debug("✅ Webhook signature verification successful");
+            log.info("✅ StripeWebhookValidator: Signature verification successful");
             
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             log.error("Failed to compute HMAC-SHA256", e);

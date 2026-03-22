@@ -333,7 +333,7 @@ class TenantIsolationTest extends IntegrationTestBase {
                     )
             );
 
-            return Objects.requireNonNull(leadA.getId());
+            return Objects.requireNonNull(leadA.getId(), "Lead ID should not be null after save");
         });
 
         entityManager.clear();
