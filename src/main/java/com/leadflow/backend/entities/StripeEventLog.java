@@ -7,13 +7,17 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "stripe_event_logs", schema = "public", indexes = {
     @Index(name = "idx_event_id", columnList = "event_id", unique = true),
     @Index(name = "idx_event_type", columnList = "event_type"),
     @Index(name = "idx_status", columnList = "status"),
-    @Index(name = "idx_created_at", columnList = "created_at")
+    @Index(name = "idx_created_at", columnList = "created_at"),
+    @Index(name = "idx_stripe_event_logs_tenant_id", columnList = "tenant_id"),
+    @Index(name = "idx_stripe_event_logs_tenant_status", columnList = "tenant_id,status"),
+    @Index(name = "idx_stripe_event_logs_customer_id", columnList = "customer_id")
 })
 @Data
 @NoArgsConstructor
@@ -33,6 +37,12 @@ public class StripeEventLog {
 
     @Column(name = "payload", columnDefinition = "TEXT", nullable = false)
     private String payload;
+
+    @Column(name = "tenant_id")
+    private UUID tenantId;
+
+    @Column(name = "customer_id", length = 100)
+    private String customerId;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 50)

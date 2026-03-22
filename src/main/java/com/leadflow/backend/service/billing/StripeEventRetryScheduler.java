@@ -1,6 +1,7 @@
 package com.leadflow.backend.service.billing;
 
 import com.leadflow.backend.entities.StripeEventLog;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.StripeEventLogRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -11,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Processador de retry de eventos Stripe com schedule automático.
@@ -44,9 +46,16 @@ public class StripeEventRetryScheduler {
 
     /**
      * Executa a cada 60 segundos para processar eventos com retry pendente.
-     * Processa em lotes de até 10 eventos por execução.
+     * Processa em lotes de até 10 eventos por execução, respeitando isolamento de tenant.
+     * 
+     * **Phase 2 Enhancement:**
+     * - Queries por tenant com findPendingRetriesByTenant()
+     * - Sets TenantContext antes de processar cada tenant
+     * - Clears TenantContext após processing (no finally block)
+     * - Garante isolamento total entre tenants
      * 
      * Ativado em 22/03/2026 - Fase 1 Implementation
+     * Atualizado em 22/03/2026 - Fase 2 Multi-tenant Isolation
      */
     @Scheduled(fixedDelay = 60000, initialDelay = 10000)  // 60s fixed delay, 10s initial
     @Transactional
@@ -54,26 +63,70 @@ public class StripeEventRetryScheduler {
         try {
             log.debug("Starting scheduled retry processor for failed webhook events");
             
-            // Buscar eventos que estão prontos para retry
-            List<StripeEventLog> pendingRetries = eventLogRepository.findPendingRetries(
+            // Buscar todos os tenants que têm eventos com retry pendente
+            List<UUID> tenantsWithPendingRetries = eventLogRepository.findDistinctTenantsWithPendingRetries(
                 StripeEventLog.EventProcessingStatus.RETRY_PENDING
             );
 
-            if (pendingRetries.isEmpty()) {
+            if (tenantsWithPendingRetries.isEmpty()) {
                 log.debug("No webhook events pending retry at this time");
                 return;
             }
 
-            log.info("Found {} webhook events ready for retry processing", pendingRetries.size());
+            log.info("Found {} tenants with webhook events ready for retry processing", 
+                tenantsWithPendingRetries.size());
 
-            for (StripeEventLog event : pendingRetries) {
-                processEventWithRetry(event);
+            // Processar eventos para cada tenant isoladamente
+            for (UUID tenantId : tenantsWithPendingRetries) {
+                processRetryEventsForTenant(tenantId);
             }
 
-            log.info("✅ Retry processing cycle completed: processed {} events", pendingRetries.size());
+            log.info("✅ Retry processing cycle completed: processed {} tenants", 
+                tenantsWithPendingRetries.size());
 
         } catch (Exception e) {
             log.error("❌ Unexpected error in scheduled retry processor", e);
+        }
+    }
+
+    /**
+     * Processa todos os eventos de retry de um tenant específico com isolamento.
+     * 
+     * @param tenantId o identificador do tenant
+     */
+    private void processRetryEventsForTenant(UUID tenantId) {
+        try {
+            // Definir contexto do tenant
+            TenantContext.setTenant(tenantId.toString());
+
+            try {
+                // Buscar eventos prontos para retry APENAS DESTE TENANT
+                List<StripeEventLog> pendingRetries = eventLogRepository.findPendingRetriesByTenant(
+                    tenantId,
+                    StripeEventLog.EventProcessingStatus.RETRY_PENDING
+                );
+
+                log.info("Processing {} retry events for tenant: {}", pendingRetries.size(), tenantId);
+
+                for (StripeEventLog event : pendingRetries) {
+                    processEventWithRetry(event);
+                }
+
+                log.info("✅ Tenant retry processing completed: tenantId={}, processedCount={}", 
+                    tenantId, pendingRetries.size());
+
+            } catch (Exception e) {
+                log.error("Error processing retry events for tenant: tenantId={}, error={}", 
+                    tenantId, e.getMessage(), e);
+            } finally {
+                // CRITICAL: Always clear tenant context to prevent leakage
+                TenantContext.clear();
+            }
+
+        } catch (IllegalStateException e) {
+            // TenantContext.setTenant() throws if already set (shouldn't happen here)
+            log.error("Unexpected state error setting tenant context: tenantId={}, error={}", 
+                tenantId, e.getMessage());
         }
     }
 

@@ -9,6 +9,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
 public interface StripeEventLogRepository extends JpaRepository<StripeEventLog, Long> {
@@ -33,5 +34,43 @@ public interface StripeEventLogRepository extends JpaRepository<StripeEventLog, 
         @Param("eventType") String eventType,
         @Param("status") StripeEventLog.EventProcessingStatus status,
         @Param("since") LocalDateTime since
+    );
+
+    // ========== TENANT ISOLATION QUERIES ==========
+
+    @Query("SELECT s FROM StripeEventLog s WHERE s.tenantId = :tenantId " +
+           "AND s.status = :status " +
+           "AND s.nextRetryAt IS NOT NULL AND s.nextRetryAt <= CURRENT_TIMESTAMP " +
+           "ORDER BY s.nextRetryAt ASC LIMIT 10")
+    List<StripeEventLog> findPendingRetriesByTenant(
+        @Param("tenantId") UUID tenantId,
+        @Param("status") StripeEventLog.EventProcessingStatus status
+    );
+
+    @Query("SELECT s FROM StripeEventLog s WHERE s.tenantId = :tenantId " +
+           "AND s.status IN :statuses ORDER BY s.createdAt DESC")
+    List<StripeEventLog> findByTenantIdAndStatuses(
+        @Param("tenantId") UUID tenantId,
+        @Param("statuses") List<StripeEventLog.EventProcessingStatus> statuses
+    );
+
+    @Query("SELECT COUNT(s) FROM StripeEventLog s WHERE s.tenantId = :tenantId " +
+           "AND s.status = :status")
+    long countByTenantIdAndStatus(
+        @Param("tenantId") UUID tenantId,
+        @Param("status") StripeEventLog.EventProcessingStatus status
+    );
+
+    @Query("SELECT s FROM StripeEventLog s WHERE s.tenantId = :tenantId " +
+           "AND s.customerId = :customerId ORDER BY s.createdAt DESC")
+    List<StripeEventLog> findByTenantIdAndCustomerId(
+        @Param("tenantId") UUID tenantId,
+        @Param("customerId") String customerId
+    );
+
+    @Query("SELECT DISTINCT s.tenantId FROM StripeEventLog s WHERE s.status = :status " +
+           "AND s.nextRetryAt IS NOT NULL AND s.nextRetryAt <= CURRENT_TIMESTAMP")
+    List<UUID> findDistinctTenantsWithPendingRetries(
+        @Param("status") StripeEventLog.EventProcessingStatus status
     );
 }
