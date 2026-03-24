@@ -37,12 +37,31 @@ public class CurrentTenantIdentifierResolverImpl
 
     private static final String DEFAULT_TENANT = "public";
 
-    private final ApplicationContext applicationContext;
+    // Use ApplicationContext to lazy-load repository
+    private ApplicationContext applicationContext;
+    
+    // Cached lazy reference to avoid repeated lookups
+    private TenantRepository cachedTenantRepository;
 
     public CurrentTenantIdentifierResolverImpl(ApplicationContext applicationContext) {
         this.applicationContext = applicationContext;
     }
-
+    /**
+     * Lazy-load TenantRepository to avoid circular dependency during initialization
+     */
+    private TenantRepository getTenantRepository() {
+        if (cachedTenantRepository != null) {
+            return cachedTenantRepository;
+        }
+        
+        try {
+            cachedTenantRepository = applicationContext.getBean(TenantRepository.class);
+            return cachedTenantRepository;
+        } catch (Exception e) {
+            log.debug("TenantRepository not yet available (startup phase): {}", e.getMessage());
+            return null;
+        }
+    }
     /* ======================================================
        SECURE TENANT RESOLUTION
        ====================================================== */
@@ -86,14 +105,20 @@ public class CurrentTenantIdentifierResolverImpl
             log.debug("Tenant ID is not a UUID: {}", tenantId);
         }
 
+        TenantRepository repo = getTenantRepository();
+        
+        // If repository is not available (startup phase), return safe default
+        if (repo == null) {
+            log.debug("Repository not available yet, returning default for: {}", tenantId);
+            return DEFAULT_TENANT;
+        }
+
         try {
-            TenantRepository tenantRepository = applicationContext.getBean(TenantRepository.class);
-            
             if (tenantUuid != null) {
                 // It was a valid UUID, lookup by UUID
                 // Create final variable for use in lambda
                 final UUID finalTenantUuid = tenantUuid;
-                return tenantRepository.findById(tenantUuid)
+                return repo.findById(tenantUuid)
                         .filter(tenant -> !tenant.isDeleted())
                         .map(Tenant::getSchemaName)
                         .orElseThrow(() -> {
@@ -103,14 +128,15 @@ public class CurrentTenantIdentifierResolverImpl
                         });
             } else {
                 // It's not a UUID, assume it's a schema name
-                return tenantRepository.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenantId)
+                return repo.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenantId)
                         .map(Tenant::getSchemaName)
                         .orElse(tenantId);  // Fallback: use provided ID as schema name
             }
 
         } catch (Exception e) {
-            log.error("Error resolving tenant: {}", tenantId, e);
-            throw new RuntimeException("Failed to resolve tenant context", e);
+            log.warn("Error resolving tenant: {}", tenantId, e);
+            // During initialization or errors, use the provided ID or default
+            return tenantId;
         }
     }
 

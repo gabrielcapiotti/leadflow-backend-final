@@ -6,6 +6,7 @@ import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.user.RoleRepository;
 import com.leadflow.backend.repository.user.UserRepository;
+import com.leadflow.backend.security.tenant.HibernateFilterService;
 import com.leadflow.backend.service.audit.SecurityAuditService;
 
 import org.junit.jupiter.api.AfterEach;
@@ -56,7 +57,6 @@ class AuthServiceTest {
                 auditService,
                 loginAuditService,
                 bruteForceService,
-
                 5,
                 5
         );

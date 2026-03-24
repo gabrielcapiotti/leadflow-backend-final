@@ -1,6 +1,8 @@
 package com.leadflow.backend.dto.user;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -23,10 +25,11 @@ public final class UpdateUserRequest {
     @NotNull(message = "RoleId é obrigatório")
     private final UUID roleId;
 
+    @JsonCreator
     public UpdateUserRequest(
-            String name,
-            String email,
-            UUID roleId
+            @JsonProperty("name") String name,
+            @JsonProperty("email") String email,
+            @JsonProperty("roleId") UUID roleId
     ) {
         this.name = name;
         this.email = email;

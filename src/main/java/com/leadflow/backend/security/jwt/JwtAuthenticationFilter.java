@@ -23,8 +23,7 @@ import org.springframework.security.web.authentication.WebAuthenticationDetailsS
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import java.time.*;
 import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.Objects;
@@ -57,26 +56,18 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-                if (path.startsWith("/api/")) {
-                        path = path.substring(4);
-                }
+        if (path.startsWith("/api/")) {
+            path = path.substring(4);
+        }
 
-        boolean skip =
-                path.equals("/auth/register")
-                        || path.equals("/auth/login")
-                        || path.equals("/auth/refresh")
-                        || path.equals("/auth/debug")
-                        || path.startsWith("/actuator")
-                        || path.startsWith("/swagger")
-                        || path.startsWith("/v3/api-docs")
-                        || path.startsWith("/public/")
-                        || path.startsWith("/webhooks")
-                        || path.startsWith("/billing/checkout")
-                        || path.startsWith("/billing/webhook")
-                        || path.startsWith("/stripe/webhook")
-                        || path.startsWith("/payments/webhook");
-
-        return skip;
+        return path.startsWith("/auth/")
+                || path.startsWith("/actuator")
+                || path.startsWith("/swagger")
+                || path.startsWith("/v3/api-docs")
+                || path.startsWith("/public/")
+                || path.startsWith("/webhooks")
+                || path.startsWith("/billing")
+                || path.startsWith("/stripe");
     }
 
     @Override
@@ -107,6 +98,30 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
+            /* =====================================================
+               TENANT CONTEXT SETUP (EARLY)
+               ===================================================== */
+            String tenant = jwtService.extractTenant(token);
+            
+            if (tenant == null || tenant.isBlank()) {
+                logger.warn("Tenant missing in JWT for {}", request.getRequestURI());
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
+                return;
+            }
+
+            // ✅ SET CONTEXT BEFORE loading user (TenantFilter handles hibernateFilterService)
+            TenantContext.setTenant(tenant);
+
+            logger.debug(
+                    "AUTH CONTEXT | email={} | tenant={}",
+                    LogSanitizer.sanitize(email),
+                    LogSanitizer.sanitize(tenant)
+            );
+
+            /* =====================================================
+               LOAD USER (WITH CONTEXT)
+               ===================================================== */
+
             UserDetails userDetails =
                     userDetailsService.loadUserByUsername(email);
 
@@ -118,55 +133,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             UUID userId = customUser.getId();
 
             /* =====================================================
-               TENANT RESOLUTION (deterministic order)
+               TOKEN VALIDATION (WITH TENANT)
                ===================================================== */
 
-            // Priority 1: Extract from JWT token (source of truth)
-            String tenant = jwtService.extractTenant(token);
-
-            // Priority 2: Fallback to X-Tenant-ID header
-            if (tenant == null || tenant.isBlank()) {
-                tenant = request.getHeader("X-Tenant-ID");
-            }
-
-            // Priority 3: Check if already set in context (should be set by TenantFilter)
-            if (tenant == null || tenant.isBlank()) {
-                try {
-                    tenant = TenantContext.getTenant();
-                } catch (Exception ex) {
-                    logger.debug("TenantContext not initialized: {}", ex.getMessage());
-                }
-            }
-
-            if (tenant == null || tenant.isBlank()) {
-
-                logger.warn(
-                        "Tenant could not be resolved for request {}",
-                        request.getRequestURI()
-                );
-
-                response.sendError(
-                        HttpServletResponse.SC_UNAUTHORIZED,
-                        "Tenant not resolved"
-                );
-                return;
-            }
-
-            TenantContext.setTenant(tenant);
-
-            logger.debug(
-                    "Tenant resolved: {}",
-                    LogSanitizer.sanitize(tenant)
-            );
-
-            /* =====================================================
-               TOKEN VALIDATION
-               ===================================================== */
-
-            boolean baseValid =
-                    jwtService.isTokenValid(token, userDetails, userId, tenant);
-
-            if (!baseValid) {
+            if (!jwtService.isTokenValid(token, userDetails, userId, tenant)) {
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -181,9 +151,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                ===================================================== */
 
             String tokenId = jwtService.extractTokenId(token);
-
-            UUID tenantId =
-                    tenantService.getTenantIdBySchema(tenant);
+            UUID tenantId = tenantService.getTenantIdBySchema(tenant);
 
             userSessionService.processSessionActivity(
                     tokenId,
@@ -191,10 +159,6 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     request.getRemoteAddr(),
                     request.getHeader("User-Agent")
             );
-
-            /* =====================================================
-               AUTHENTICATION
-               ===================================================== */
 
             UsernamePasswordAuthenticationToken authToken =
                     new UsernamePasswordAuthenticationToken(
@@ -204,60 +168,20 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     );
 
             authToken.setDetails(
-                    new WebAuthenticationDetailsSource()
-                            .buildDetails(request)
+                    new WebAuthenticationDetailsSource().buildDetails(request)
             );
 
-            SecurityContextHolder
-                    .getContext()
-                    .setAuthentication(authToken);
+            SecurityContextHolder.getContext().setAuthentication(authToken);
 
         } catch (Exception ex) {
 
-            logger.debug(
-                    "JWT authentication failed: {}",
+            logger.error(
+                    "Unexpected JWT authentication error: {}",
                     LogSanitizer.sanitize(ex.getMessage())
             );
-
         }
 
         filterChain.doFilter(request, response);
-    }
-
-    private boolean isTokenStillValidAfterPasswordChange(
-            String token,
-            CustomUserDetails userDetails
-    ) {
-
-        Date issuedAt = jwtService.extractIssuedAt(token);
-
-        if (issuedAt == null) {
-            return false;
-        }
-
-        LocalDateTime tokenIssuedAt =
-                issuedAt.toInstant()
-                        .atZone(ZoneId.systemDefault())
-                        .toLocalDateTime()
-                        .truncatedTo(ChronoUnit.SECONDS);
-
-        LocalDateTime credentialsUpdatedAt =
-                userDetails.getCredentialsUpdatedAt();
-
-        if (credentialsUpdatedAt == null) {
-            return true;
-        }
-
-        LocalDateTime normalizedCredentialsUpdatedAt =
-                credentialsUpdatedAt.truncatedTo(ChronoUnit.SECONDS);
-
-        boolean withinGracePeriod =
-                normalizedCredentialsUpdatedAt.isBefore(
-                        tokenIssuedAt.plusSeconds(30)
-                );
-
-        return !tokenIssuedAt.isBefore(normalizedCredentialsUpdatedAt)
-                || withinGracePeriod;
     }
 
     private String extractToken(HttpServletRequest request) {
@@ -269,5 +193,33 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         }
 
         return authHeader.substring(7);
+    }
+
+    private boolean isTokenStillValidAfterPasswordChange(
+            String token,
+            CustomUserDetails userDetails
+    ) {
+
+        Date issuedAt = jwtService.extractIssuedAt(token);
+        if (issuedAt == null) return false;
+
+        LocalDateTime tokenIssuedAt =
+                issuedAt.toInstant()
+                        .atZone(ZoneId.systemDefault())
+                        .toLocalDateTime()
+                        .truncatedTo(ChronoUnit.SECONDS);
+
+        LocalDateTime credentialsUpdatedAt =
+                userDetails.getCredentialsUpdatedAt();
+
+        if (credentialsUpdatedAt == null) return true;
+
+        LocalDateTime normalized =
+                credentialsUpdatedAt.truncatedTo(ChronoUnit.SECONDS);
+
+        boolean grace =
+                normalized.isBefore(tokenIssuedAt.plusSeconds(30));
+
+        return !tokenIssuedAt.isBefore(normalized) || grace;
     }
 }

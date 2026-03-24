@@ -23,11 +23,11 @@ import java.util.stream.Collectors;
 public class StripeWebhookController {
 
     private final StripeService stripeService;
-    private final SubscriptionService subscriptionService;
     private final StripeWebhookProcessingService webhookProcessingService;
     private final StripeWebhookProcessor webhookProcessor;
     private final StripeEventLogRepository eventLogRepository;
     private final WebhookLoggingService webhookLoggingService;
+    private final WebhookMetricsTracker metricsTracker;
 
     @PostMapping("/webhook")
     public ResponseEntity<String> handleWebhook(HttpServletRequest request) throws IOException {
@@ -47,9 +47,15 @@ public class StripeWebhookController {
             // 1. VALIDAR ASSINATURA
             Event event = stripeService.constructWebhookEvent(payload, signatureHeader);
 
-            // 2. EXTRAIR DADOS
-            String customerId = extractCustomerIdFromEvent(event);
+            // Record metric: event received
             String tenantId = stripeService.extractTenantIdFromEvent(event);
+            String customerId = extractCustomerIdFromEvent(event);
+            
+            metricsTracker.recordEventReceived(
+                    parseUUID(tenantId),
+                    event.getType(),
+                    event.getId()
+            );
 
             long duration = System.currentTimeMillis() - startTime;
             webhookLoggingService.logWebhookReceived(event, true, customerId, duration);
@@ -106,6 +112,13 @@ public class StripeWebhookController {
                 eventLog.setProcessedAt(LocalDateTime.now());
                 eventLogRepository.save(eventLog);
 
+                // Record metric: event processed successfully
+                metricsTracker.recordEventProcessed(
+                        parseUUID(tenantId),
+                        event.getType(),
+                        duration
+                );
+
                 webhookLoggingService.logWebhookProcessed(
                         event,
                         false,
@@ -119,6 +132,14 @@ public class StripeWebhookController {
                 eventLog.setLastError(e.getMessage());
                 eventLog.setNextRetryAt(calculateNextRetry(0));
                 eventLogRepository.save(eventLog);
+
+                // Record metric: event failed
+                metricsTracker.recordEventFailed(
+                        parseUUID(tenantId),
+                        event.getType(),
+                        "processing_error",
+                        duration
+                );
 
                 webhookLoggingService.logWebhookFailed(
                         event.getId(),
@@ -172,5 +193,14 @@ public class StripeWebhookController {
             }
         } catch (Exception ignored) {}
         return "unknown";
+    }
+
+    private UUID parseUUID(String tenantId) {
+        try {
+            if (tenantId != null && !tenantId.isBlank() && !"public".equals(tenantId)) {
+                return UUID.fromString(tenantId);
+            }
+        } catch (IllegalArgumentException ignored) {}
+        return UUID.fromString("00000000-0000-0000-0000-000000000000");
     }
 }

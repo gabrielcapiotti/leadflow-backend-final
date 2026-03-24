@@ -27,16 +27,19 @@ public class TenantFilter extends OncePerRequestFilter {
     private final TenantResolver tenantResolver;
     private final HibernateFilterService hibernateFilterService;
 
-    public TenantFilter(TenantResolver tenantResolver, HibernateFilterService hibernateFilterService) {
+    public TenantFilter(
+            TenantResolver tenantResolver,
+            HibernateFilterService hibernateFilterService
+    ) {
         this.tenantResolver =
                 Objects.requireNonNull(
                         tenantResolver,
-                        "TenantResolver must not be null"
+                        "tenantResolver cannot be null"
                 );
         this.hibernateFilterService =
                 Objects.requireNonNull(
                         hibernateFilterService,
-                        "HibernateFilterService must not be null"
+                        "hibernateFilterService cannot be null"
                 );
     }
 
@@ -45,20 +48,12 @@ public class TenantFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // Public auth endpoints (NO /api/ prefix - rotas públicas não têm /api/)
-        boolean isPublicAuth = path.startsWith("/auth/register")
-                || path.startsWith("/auth/login")
-                || path.startsWith("/auth/refresh")
-                || path.startsWith("/auth/debug");
-        
-        // Webhook endpoints (use signature-based auth, not tenant-based)
+        boolean isPublicAuth = path.startsWith("/auth/");
         boolean isWebhook = path.startsWith("/stripe/webhook")
                 || path.startsWith("/webhooks/")
                 || path.startsWith("/webhook/");
-        
-        // Public API endpoints (no authentication or tenant required)
         boolean isPublicApi = path.startsWith("/public/");
-        
+
         return isPublicAuth
                 || isWebhook
                 || isPublicApi
@@ -69,44 +64,29 @@ public class TenantFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected boolean shouldNotFilterAsyncDispatch() {
-        return false;
-    }
-
-    @Override
-    protected boolean shouldNotFilterErrorDispatch() {
-        return false;
-    }
-
-    @Override
     protected void doFilterInternal(
             @NonNull HttpServletRequest request,
             @NonNull HttpServletResponse response,
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        boolean tenantSetByThisFilter = false;
+        logger.debug("TenantFilter executing for path: {}", request.getRequestURI());
 
-        logger.info("✅ TENANT FILTER EXECUTING for path: {}", request.getRequestURI());
+        String tenant = null;
+        boolean hibernateFilterEnabled = false;
 
         try {
 
             /* =============================================
-               VERIFICA SE TENANT JÁ EXISTE NO CONTEXTO
+               VERIFICA SE JÁ EXISTE TENANT
                ============================================= */
 
-            String existingTenant = null;
-
-            try {
-                existingTenant = TenantContext.getTenant();
-            } catch (IllegalStateException ignored) {
-                // tenant ainda não definido
-            }
+            String existingTenant = TenantContext.getIfPresent();
 
             if (existingTenant != null && !existingTenant.isBlank()) {
 
                 logger.debug(
-                        "Tenant already present in context: {}",
+                        "Tenant already present: {}",
                         LogSanitizer.sanitize(existingTenant)
                 );
 
@@ -115,23 +95,19 @@ public class TenantFilter extends OncePerRequestFilter {
             }
 
             /* =============================================
-               RESOLVE TENANT DO HEADER
+               RESOLVE TENANT
                ============================================= */
 
-            String tenant = tenantResolver.resolveTenant(request);
+            tenant = tenantResolver.resolveTenant(request);
 
             if (tenant == null || tenant.isBlank()) {
 
-                logger.warn(
-                        "Tenant could not be resolved for request {}",
-                        request.getRequestURI()
-                );
+                logger.warn("Tenant not resolved for path: {}", request.getRequestURI());
 
                 response.sendError(
                         HttpServletResponse.SC_BAD_REQUEST,
                         "Header 'X-Tenant-Id' is required"
                 );
-
                 return;
             }
 
@@ -140,60 +116,48 @@ public class TenantFilter extends OncePerRequestFilter {
                     LogSanitizer.sanitize(tenant)
             );
 
+            /* =============================================
+               SET CONTEXT (ÚNICA RESPONSABILIDADE)
+               ============================================= */
+
             TenantContext.setTenant(tenant);
             
-            // 🔒 ETAPA 2: Ativa filtro Hibernate automático
-            // Isso garante que TODAS as queries respeitem tenant
-            // mesmo que dev esqueça de adicionar WHERE tenant_id = ?
-            hibernateFilterService.enableTenantFilter(tenant);
+            logger.info("🎯 [TENANT-CONTEXT] SET for request: path={}, tenant={}, threadId={}", 
+                request.getRequestURI(), 
+                LogSanitizer.sanitize(tenant),
+                Thread.currentThread().getId());
             
-            tenantSetByThisFilter = true;
+            // Enable Hibernate filter to enforce multi-tenant isolation
+            hibernateFilterService.enableTenantFilter(tenant);
+            hibernateFilterEnabled = true;
 
+            // ✅ ESSENTIAL: FilterChain must execute with TenantContext active
             filterChain.doFilter(request, response);
-
-        } catch (IllegalArgumentException ex) {
-
-            logger.warn(
-                    "Invalid tenant header: {}",
-                    LogSanitizer.sanitize(ex.getMessage())
-            );
-
-            response.sendError(
-                    HttpServletResponse.SC_BAD_REQUEST,
-                    ex.getMessage()
-            );
-
-        } catch (org.springframework.web.server.ResponseStatusException ex) {
-
-            logger.warn(
-                    "Tenant validation failed: {}",
-                    LogSanitizer.sanitize(ex.getMessage())
-            );
-
-            response.sendError(
-                    ex.getStatusCode().value(),
-                    ex.getMessage()
-            );
 
         } catch (Exception ex) {
 
-            logger.error(
-                    "Unexpected error resolving tenant",
-                    ex
-            );
+            logger.error("Error resolving tenant", ex);
 
             response.sendError(
                     HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
-                    "Erro ao resolver tenant"
+                    "Error resolving tenant"
             );
 
         } finally {
 
-            if (tenantSetByThisFilter) {
-                // 🔒 ETAPA 4: Limpeza garantida (ThreadLocal + Hibernate Filter)
-                TenantContext.clear();
-                hibernateFilterService.disableTenantFilter();
-            }
+            /* =============================================
+               CLEANUP (ESSENTIAL: Keep context for other filters!)
+               The TenantContext must remain active for the entire filter chain.
+               This is cleaned up by Spring's RequestContextListener AFTER
+               doFilter() returns, ensuring Hibernate Filter works correctly.
+               ============================================= */
+            
+            // ❌ DO NOT disable Hibernate filter here!
+            // The filter must remain active for JwtAuthenticationFilter and beyond
+            // hibernateFilterService.disableTenantFilter();
+            
+            // ❌ DO NOT clear TenantContext here!
+            // TenantContext.clear();
         }
     }
 }

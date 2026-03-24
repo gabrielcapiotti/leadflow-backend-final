@@ -73,4 +73,47 @@ public interface StripeEventLogRepository extends JpaRepository<StripeEventLog, 
     List<UUID> findDistinctTenantsWithPendingRetries(
         @Param("status") StripeEventLog.EventProcessingStatus status
     );
+
+    // ========== WEBHOOK ALERTS MONITORING ==========
+
+    @Query("SELECT DISTINCT s.tenantId FROM StripeEventLog s WHERE s.createdAt >= :since")
+    List<UUID> findDistinctTenantsWithRecentEvents(@Param("since") LocalDateTime since);
+
+    @Query("SELECT COUNT(s) FROM StripeEventLog s WHERE s.tenantId = :tenantId AND s.createdAt >= :since")
+    long countByTenantIdAndCreatedAtAfter(
+        @Param("tenantId") UUID tenantId,
+        @Param("since") LocalDateTime since
+    );
+
+    @Query("SELECT COUNT(s) FROM StripeEventLog s WHERE s.tenantId = :tenantId AND s.createdAt >= :since " +
+           "AND s.status = 'FAILED'")
+    long countFailedByTenantIdAndCreatedAtAfter(
+        @Param("tenantId") UUID tenantId,
+        @Param("since") LocalDateTime since
+    );
+
+    @Query("SELECT s FROM StripeEventLog s WHERE s.tenantId = :tenantId " +
+           "AND s.processedAt IS NOT NULL ORDER BY s.processedAt DESC LIMIT 1")
+    Optional<StripeEventLog> findLastProcessedByTenant(@Param("tenantId") UUID tenantId);
+
+    @Query("SELECT s FROM StripeEventLog s WHERE s.tenantId = :tenantId AND s.retryCount >= :threshold " +
+           "AND s.createdAt >= :since ORDER BY s.retryCount DESC")
+    List<StripeEventLog> findExcessiveRetryEvents(
+        @Param("tenantId") UUID tenantId,
+        @Param("threshold") int threshold,
+        @Param("since") LocalDateTime since
+    );
+
+    @Query("SELECT AVG(CAST((EXTRACT(EPOCH FROM s.processedAt) - EXTRACT(EPOCH FROM s.createdAt)) * 1000 AS DOUBLE)) " +
+           "FROM StripeEventLog s WHERE s.tenantId = :tenantId " +
+           "AND s.processedAt IS NOT NULL AND s.createdAt >= :since")
+    Double getAverageProcessingTimeMs(
+        @Param("tenantId") UUID tenantId,
+        @Param("since") LocalDateTime since
+    );
+
+    // ========== FAILURE ANALYSIS QUERIES ==========
+
+    @Query("SELECT s FROM StripeEventLog s WHERE s.createdAt >= :since ORDER BY s.createdAt DESC")
+    List<StripeEventLog> findByCreatedAtAfter(@Param("since") LocalDateTime since);
 }

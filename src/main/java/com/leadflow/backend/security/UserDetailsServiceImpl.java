@@ -1,6 +1,7 @@
 package com.leadflow.backend.security;
 
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.user.UserRepository;
 
 import org.slf4j.Logger;
@@ -39,18 +40,35 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         String normalizedEmail = normalizeEmail(email);
 
-        log.debug("Loading user details for email: {}", normalizedEmail);
+        String tenant = TenantContext.getTenant();
+
+        if (tenant == null) {
+            log.error("Tenant is null during authentication for email: {}", normalizedEmail);
+            throw new IllegalStateException("Tenant not resolved in context");
+        }
+
+        log.info(
+                "Loading user: email={}, tenant={}",
+                normalizedEmail,
+                tenant
+        );
 
         User user = userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
+                        normalizedEmail,
+                        tenant
+                )
                 .orElseThrow(() -> {
-                    log.warn("User not found in database: {}", normalizedEmail);
+                    log.error(
+                            "User NOT FOUND - email={}, tenant={}",
+                            normalizedEmail,
+                            tenant
+                    );
                     return new UsernameNotFoundException("User not found");
                 });
 
         validateUser(user);
 
-        log.debug("User details loaded successfully for: {}", normalizedEmail);
         return new CustomUserDetails(user);
     }
 
@@ -87,7 +105,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             throw new UsernameNotFoundException("Email cannot be null");
         }
 
-        String normalized = email.trim();
+        String normalized = email.trim().toLowerCase();
 
         if (normalized.isBlank()) {
             throw new UsernameNotFoundException("Email cannot be blank");

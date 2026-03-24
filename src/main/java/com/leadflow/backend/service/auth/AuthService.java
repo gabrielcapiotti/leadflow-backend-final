@@ -14,6 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 
+import java.util.UUID;
+
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -72,31 +74,15 @@ public class AuthService {
         if (userRepository
                 .existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)) {
 
-            audit(SecurityAction.USER_REGISTERED, normalizedEmail, false, tenant);
+            audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, false);
             throw new IllegalArgumentException("Email already in use");
         }
 
-        // Assign VENDOR role for test/vendor emails
-        Role userRole;
-        if (normalizedEmail.endsWith("@leadflow.dev") || normalizedEmail.endsWith("@email.com")) {
-            userRole = roleRepository
-                    .findByNameIgnoreCase("ROLE_VENDOR")
-                    .orElse(null);
-            
-            if (userRole == null) {
-                userRole = roleRepository
-                        .findByNameIgnoreCase("ROLE_USER")
-                        .orElseThrow(() ->
-                                new IllegalStateException("Default role ROLE_USER not found")
-                        );
-            }
-        } else {
-            userRole = roleRepository
-                    .findByNameIgnoreCase("ROLE_USER")
-                    .orElseThrow(() ->
-                            new IllegalStateException("Default role ROLE_USER not found")
-                    );
-        }
+        Role userRole = roleRepository
+                .findByNameIgnoreCase("ROLE_USER")
+                .orElseThrow(() ->
+                        new IllegalStateException("Default role ROLE_USER not found")
+                );
 
         User user = new User(
                 name.trim(),
@@ -104,15 +90,15 @@ public class AuthService {
                 passwordEncoder.encode(password),
                 userRole
         );
-
         user.setTenantId(tenant);
-        userRepository.save(user);
 
-        audit(SecurityAction.USER_REGISTERED, normalizedEmail, true, tenant);
+        User savedUser = userRepository.save(user);
 
-        logger.info("User registered successfully: {} with role: {}", normalizedEmail, userRole.getName());
+        logger.info("User registered successfully: {} (tenant={})", normalizedEmail, tenant);
 
-        return user;
+        audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, true);
+
+        return savedUser;
     }
 
     /* ====================================================== */
@@ -127,23 +113,25 @@ public class AuthService {
         if (email == null || email.isBlank()
                 || password == null || password.isBlank()) {
 
-            recordFailureAudit(email, "Invalid credentials", tenant);
+            recordFailureAudit(email, "Invalid credentials");
             throw new IllegalArgumentException("Invalid credentials");
         }
 
         String normalizedEmail = normalizeEmail(email);
-        String tenantSchema = tenant != null ? tenant : TenantContext.getTenant();
+
+        if (tenant == null) {
+            tenant = TenantContext.getIfPresent();
+        }
+
         String ip = request != null ? request.getRemoteAddr() : "unknown";
 
-        String emailKey = "bf:email:" + tenantSchema + ":" + normalizedEmail;
-        String ipKey = "bf:ip:" + tenantSchema + ":" + ip;
+        String emailKey = "bf:email:" + tenant + ":" + normalizedEmail;
+        String ipKey = "bf:ip:" + tenant + ":" + ip;
 
         if (bruteForceService.isBlocked(emailKey, maxAttempts)
                 || bruteForceService.isBlocked(ipKey, maxAttempts)) {
 
-            recordFailureAudit(normalizedEmail, "Brute force detected", tenant);
-
-            logger.warn("Brute-force blocked for email {}", normalizedEmail);
+            recordFailureAudit(normalizedEmail, "Brute force detected");
 
             throw new IllegalStateException(
                     "Too many failed attempts. Try again later."
@@ -153,15 +141,13 @@ public class AuthService {
         User user = userRepository
                 .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
                 .orElseThrow(() -> {
-                    recordFailureAudit(normalizedEmail, "User not found", tenant);
+                    recordFailureAudit(normalizedEmail, "User not found");
                     return new IllegalArgumentException("Invalid credentials");
                 });
 
         if (user.isAccountLocked()) {
 
-            recordFailureAudit(normalizedEmail, "Account locked", tenant);
-
-            logger.warn("Blocked login for locked account: {}", normalizedEmail);
+            recordFailureAudit(normalizedEmail, "Account locked");
 
             throw new IllegalStateException(
                     "Account temporarily locked. Try again later."
@@ -176,9 +162,7 @@ public class AuthService {
             bruteForceService.recordFailure(emailKey, windowMinutes);
             bruteForceService.recordFailure(ipKey, windowMinutes);
 
-            recordFailureAudit(normalizedEmail, "Wrong password", tenant);
-
-            logger.warn("Invalid password attempt for {}", normalizedEmail);
+            recordFailureAudit(normalizedEmail, "Wrong password");
 
             throw new IllegalArgumentException("Invalid credentials");
         }
@@ -189,7 +173,7 @@ public class AuthService {
         bruteForceService.reset(emailKey);
         bruteForceService.reset(ipKey);
 
-        recordSuccessAudit(user, tenant);
+        recordSuccessAudit(user);
 
         logger.info("User authenticated successfully: {}", normalizedEmail);
 
@@ -197,69 +181,63 @@ public class AuthService {
     }
 
     /* ====================================================== */
-    /* AUDIT HELPERS                                          */
+    /* HELPERS                                                */
     /* ====================================================== */
 
-    private void recordSuccessAudit(User user, String tenant) {
-
+    private void recordSuccessAudit(User user) {
         HttpServletRequest request = currentRequest();
-        
-        String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
 
         loginAuditService.recordSuccess(
                 user.getId(),
-                tenantToUse,
+                TenantContext.getIfPresent(),
                 user.getEmail(),
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,
                 false
         );
 
-        audit(SecurityAction.LOGIN_SUCCESS, user.getEmail(), true, tenant);
+        audit(SecurityAction.LOGIN_SUCCESS, user.getEmail(), true);
     }
 
-    private void recordFailureAudit(String email, String reason, String tenant) {
-
+    private void recordFailureAudit(String email, String reason) {
         HttpServletRequest request = currentRequest();
-        
-        String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
 
         loginAuditService.recordFailure(
-                tenantToUse,
+                TenantContext.getIfPresent(),
                 email,
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,
                 reason
         );
 
-        audit(SecurityAction.LOGIN_FAILED, email, false, tenant);
+        audit(SecurityAction.LOGIN_FAILED, email, false);
     }
 
-    private void audit(SecurityAction action, String email, boolean success, String tenant) {
-
+    private void audit(SecurityAction action, String email, String tenant, boolean success) {
         try {
             HttpServletRequest request = currentRequest();
-            
-            // Use tenant parameter, fallback to TenantContext if not provided
-            String tenantToUse = tenant != null ? tenant : TenantContext.getIfPresent();
+
+            String auditTenant = tenant != null ? tenant : TenantContext.getIfPresent();
 
             auditService.log(
                     action,
                     email,
-                    tenantToUse,
+                    auditTenant,
                     success,
                     request != null ? request.getRemoteAddr() : null,
                     request != null ? request.getHeader("User-Agent") : null,
                     MDC.get("correlationId")
             );
         } catch (Exception e) {
-            // Audit failure should not block authentication operations
             logger.warn("Audit log failed: {}", e.getMessage());
         }
     }
 
-    private HttpServletRequest currentRequest() {
+    private void audit(SecurityAction action, String email, boolean success) {
+        audit(action, email, null, success);
+    }
 
+    private HttpServletRequest currentRequest() {
         ServletRequestAttributes attributes =
                 (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
 
@@ -288,32 +266,43 @@ public class AuthService {
     /* PASSWORD MANAGEMENT                                    */
     /* ====================================================== */
 
-    @Transactional
-    public void validatePassword(String email, String rawPassword) {
+    @Transactional(readOnly = true)
+    public void validatePassword(String email, String password) {
+        if (email == null || email.isBlank() || password == null || password.isBlank()) {
+            throw new IllegalArgumentException("Email and password cannot be blank");
+        }
+
         String normalizedEmail = normalizeEmail(email);
-        
+
         User user = userRepository
                 .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        
-        if (!passwordEncoder.matches(rawPassword, user.getPassword())) {
-            audit(SecurityAction.LOGIN_FAILED, normalizedEmail, false, null);
+
+        if (!passwordEncoder.matches(password, user.getPassword())) {
             throw new IllegalArgumentException("Current password is incorrect");
         }
     }
 
     @Transactional
-    public void changePassword(java.util.UUID userId, String newPassword) {
-        if (newPassword == null || newPassword.length() < 8) {
-            throw new IllegalArgumentException("Password must contain at least 8 characters");
+    public void changePassword(UUID userId, String newPassword) {
+        if (userId == null) {
+            throw new IllegalArgumentException("User ID cannot be null");
         }
-        
-        User user = userRepository.findById(userId)
+
+        if (newPassword == null || newPassword.length() < 8) {
+            throw new IllegalArgumentException(
+                    "New password must contain at least 8 characters"
+            );
+        }
+
+        User user = userRepository
+                .findByIdAndDeletedAtIsNull(userId)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        
+
         user.changePassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
-        
+
         logger.info("Password changed for user: {}", user.getEmail());
+        audit(SecurityAction.PASSWORD_CHANGED, user.getEmail(), true);
     }
 }

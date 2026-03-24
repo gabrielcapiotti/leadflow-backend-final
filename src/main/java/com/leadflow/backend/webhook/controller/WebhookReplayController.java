@@ -162,6 +162,14 @@ public class WebhookReplayController {
 
         log.info("Manual replay requested for webhook: {}", webhookId);
         try {
+            // Validate webhook ID format first
+            try {
+                java.util.UUID.fromString(webhookId);
+            } catch (IllegalArgumentException e) {
+                log.warn("Invalid webhook ID format: {}", webhookId);
+                return ResponseEntity.notFound().build();
+            }
+            
             String tenantId = TenantContext.getTenant();
             
             // Validate webhook belongs to current tenant

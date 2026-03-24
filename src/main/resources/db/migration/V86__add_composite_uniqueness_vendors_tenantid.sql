@@ -12,9 +12,17 @@ ALTER TABLE vendors
 DROP CONSTRAINT IF EXISTS uk_vendors_slug;
 
 -- Add composite unique constraint on (slug, tenant_id)
-ALTER TABLE vendors
-ADD CONSTRAINT uk_vendors_slug_tenant_id 
-UNIQUE (slug, tenant_id);
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE table_name = 'vendors' AND constraint_name = 'uk_vendors_slug_tenant_id'
+    ) THEN
+        ALTER TABLE vendors
+        ADD CONSTRAINT uk_vendors_slug_tenant_id 
+        UNIQUE (slug, tenant_id);
+    END IF;
+END$$;
 
 -- Create index for efficient lookups by slug and tenant_id
 CREATE INDEX IF NOT EXISTS idx_vendors_slug_tenant_id

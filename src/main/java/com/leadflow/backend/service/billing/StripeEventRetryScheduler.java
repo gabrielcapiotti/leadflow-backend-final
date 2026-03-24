@@ -40,6 +40,8 @@ public class StripeEventRetryScheduler {
     private final StripeEventLogRepository eventLogRepository;
     private final StripeWebhookProcessor webhookProcessor;
     private final WebhookLoggingService webhookLoggingService;
+    private final CircuitBreakerConfig circuitBreaker;
+    private final WebhookMetricsTracker metricsTracker;
 
     private static final long INITIAL_DELAY_SECONDS = 1;
     private static final double BACKOFF_MULTIPLIER = 2.0;
@@ -91,11 +93,23 @@ public class StripeEventRetryScheduler {
 
     /**
      * Processa todos os eventos de retry de um tenant específico com isolamento.
+     * Respeita o Circuit Breaker para evitar retry infinito.
+     * 
+     * **Phase 3 Enhancement:**
+     * - Check circuit breaker state ANTES de processar
+     * - Registrar sucesso/falha para manter métricas
      * 
      * @param tenantId o identificador do tenant
      */
     private void processRetryEventsForTenant(UUID tenantId) {
         try {
+            // Check circuit breaker ANTES de processar
+            if (!circuitBreaker.canAttemptRetry()) {
+                log.warn("⏭️  Circuit breaker is OPEN. Skipping retry processing for tenant: {}", tenantId);
+                circuitBreaker.recordFailure(); // Incrementar counter
+                return;
+            }
+
             // Definir contexto do tenant
             TenantContext.setTenant(tenantId.toString());
 
@@ -108,8 +122,33 @@ public class StripeEventRetryScheduler {
 
                 log.info("Processing {} retry events for tenant: {}", pendingRetries.size(), tenantId);
 
+                // Track success/failure for circuit breaker
+                boolean allSucceeded = true;
                 for (StripeEventLog event : pendingRetries) {
-                    processEventWithRetry(event);
+                    long startTime = System.currentTimeMillis();
+                    try {
+                        processEventWithRetry(event);
+                        
+                        // Record metric: successful retry
+                        long duration = System.currentTimeMillis() - startTime;
+                        metricsTracker.recordRetrySuccess(tenantId, duration);
+                        
+                    } catch (Exception e) {
+                        log.error("Error processing event during retry: {}", event.getEventId(), e);
+                        allSucceeded = false;
+                        
+                        // Record metric: failed retry
+                        metricsTracker.recordRetryFailure(tenantId, "processing_error");
+                    }
+                }
+
+                // Record result for circuit breaker
+                if (allSucceeded && !pendingRetries.isEmpty()) {
+                    circuitBreaker.recordSuccess();
+                    log.debug("Circuit breaker recorded success for tenant: {}", tenantId);
+                } else if (!pendingRetries.isEmpty()) {
+                    circuitBreaker.recordFailure();
+                    log.debug("Circuit breaker recorded failure for tenant: {}", tenantId);
                 }
 
                 log.info("✅ Tenant retry processing completed: tenantId={}, processedCount={}", 
@@ -139,6 +178,14 @@ public class StripeEventRetryScheduler {
         try {
             log.info("Processing retry for webhook event: eventId={}, type={}, retryCount={}/{}",
                 event.getEventId(), event.getEventType(), event.getRetryCount(), event.getMaxRetries());
+            
+            // Record metric: retry attempt
+            metricsTracker.recordRetryAttempt(
+                    event.getTenantId() != null ? event.getTenantId() : UUID.fromString("00000000-0000-0000-0000-000000000000"),
+                    event.getEventId(),
+                    event.getRetryCount(),
+                    event.getMaxRetries()
+            );
 
             // Validar se ainda há tentativas disponíveis
             if (event.getRetryCount() >= event.getMaxRetries()) {

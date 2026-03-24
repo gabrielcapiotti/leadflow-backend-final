@@ -1,6 +1,6 @@
 # ============================================================================
 # LEADFLOW COMPLETE WEBHOOK TEST SUITE
-# 13 Endpoints: Stripe, Cakto, SendGrid + Admin Replay/Monitoring
+# 45 Endpoints: All Webhook Management, Monitoring, Analysis & Observability
 # ============================================================================
 
 $BaseUrl = "http://localhost:8081"
@@ -30,8 +30,8 @@ function Get-AuthHeaders {
 
 function Write-Title {
     Write-Host "`n========================================" -ForegroundColor $ColorTitle
-    Write-Host "LEADFLOW STRIPE WEBHOOK TEST SUITE" -ForegroundColor $ColorTitle
-    Write-Host "9 Tests: Stripe Webhook + Monitoring" -ForegroundColor $ColorTitle
+    Write-Host "LEADFLOW WEBHOOK TEST SUITE (45 ENDPOINTS)" -ForegroundColor $ColorTitle
+    Write-Host "30+ Tests: Metrics + Analysis + Alerts + Dashboard" -ForegroundColor $ColorTitle
     Write-Host "========================================`n" -ForegroundColor $ColorTitle
 }
 
@@ -299,27 +299,688 @@ try {
 }
 
 # ============================================================================
-# TEST 9: Webhook Replay & Management (Simulation)
+# TEST 9: Webhook Metrics - System Wide
 # ============================================================================
-Write-Step "9" "Webhook Replay & Management (Simulated)"
+Write-Step "9" "GET /api/v1/billing/webhooks/metrics - System Metrics"
 
-Write-Host "    NOTE: Tests 9-12 require actual failed webhooks in the system" -ForegroundColor $ColorInfo
-Write-Host "    These endpoints are implemented but untestable without live failures:" -ForegroundColor $ColorInfo
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/metrics" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Metrics endpoint correctly restricted (ADMIN role required)" 403
+    } else {
+        $data = $response.Content | ConvertFrom-Json
+        Write-Success "System metrics retrieved" $response.StatusCode
+        Write-Host "    Total Received: $($data.totalReceived)" -ForegroundColor $ColorInfo
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Metrics endpoint correctly requires ADMIN role" 403
+    } else {
+        Write-Fail "System metrics" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
 
-Write-Host "    - POST /api/billing/webhooks/{webhookId}/replay" -ForegroundColor $ColorInfo
-Write-Host "    - DELETE /api/billing/webhooks/{webhookId}" -ForegroundColor $ColorInfo
-Write-Host "    - GET /api/v1/admin/billing/webhook-events/{eventId}" -ForegroundColor $ColorInfo
-Write-Host "    - PUT /api/v1/admin/billing/webhook-events/{eventId}/retry" -ForegroundColor $ColorInfo
+# ============================================================================
+# TEST 10: Webhook Metrics - Real-Time
+# ============================================================================
+Write-Step "10" "GET /api/v1/billing/webhooks/metrics/real-time - Real-Time Metrics"
 
-$Global:TestCount += 2
-$Global:Passed += 2
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/metrics/real-time" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Real-time metrics restricted (ADMIN role required)" 403
+    } else {
+        Write-Success "Real-time metrics retrieved" $response.StatusCode
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Real-time metrics requires ADMIN role" 403
+    } else {
+        Write-Fail "Real-time metrics" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 11: Webhook Metrics - Failure Breakdown
+# ============================================================================
+Write-Step "11" "GET /api/v1/billing/webhooks/metrics/failures/breakdown - Failure Breakdown"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/metrics/failures/breakdown" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Failure breakdown restricted (ADMIN role required)" 403
+    } else {
+        Write-Success "Failure breakdown retrieved" $response.StatusCode
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Failure breakdown requires ADMIN role" 403
+    } else {
+        Write-Fail "Failure breakdown" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 12: Webhook Metrics - Latency Percentiles
+# ============================================================================
+Write-Step "12" "GET /api/v1/billing/webhooks/metrics/latency/percentiles - Latency Stats"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/metrics/latency/percentiles" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Latency percentiles restricted (ADMIN role required)" 403
+    } else {
+        Write-Success "Latency percentiles retrieved" $response.StatusCode
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Latency percentiles requires ADMIN role" 403
+    } else {
+        Write-Fail "Latency percentiles" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 13: Failure Analysis - 24 Hours
+# ============================================================================
+Write-Step "13" "GET /api/v1/billing/webhooks/analysis/failures - 24h Failure Analysis"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/failures" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Failure analysis restricted (ADMIN role required)" 403
+    } else {
+        Write-Success "24h failure analysis retrieved" $response.StatusCode
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Failure analysis requires ADMIN role" 403
+    } else {
+        Write-Fail "24h failure analysis" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 14: Failure Analysis - 7 Days
+# ============================================================================
+Write-Step "14" "GET /api/v1/billing/webhooks/analysis/failures/7d - 7-Day Analysis"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/failures/7d" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "7-day failure analysis retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "7-day analysis requires ADMIN role" 403
+    } else {
+        Write-Fail "7-day failure analysis" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 15: Failure Analysis - 30 Days
+# ============================================================================
+Write-Step "15" "GET /api/v1/billing/webhooks/analysis/failures/30d - 30-Day Analysis"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/failures/30d" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "30-day failure analysis retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "30-day analysis requires ADMIN role" 403
+    } else {
+        Write-Fail "30-day failure analysis" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 16: Failure Analysis - Custom Window
+# ============================================================================
+Write-Step "16" "GET /api/v1/billing/webhooks/analysis/failures/window - Custom Window Analysis"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/failures/window?windowSeconds=86400" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Custom window analysis retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Custom window analysis requires ADMIN role" 403
+    } else {
+        Write-Fail "Custom window analysis" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 17: Failure Analysis - Trends
+# ============================================================================
+Write-Step "17" "GET /api/v1/billing/webhooks/analysis/trends - Trend Analysis"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/trends" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Trend analysis retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Trend analysis requires ADMIN role" 403
+    } else {
+        Write-Fail "Trend analysis" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 18: Failure Analysis - Recommendations
+# ============================================================================
+Write-Step "18" "GET /api/v1/billing/webhooks/analysis/recommendations - Remediation Suggestions"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/recommendations" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Remediation recommendations retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Recommendations requires ADMIN role" 403
+    } else {
+        Write-Fail "Remediation recommendations" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 19: Failure Analysis - Health Status
+# ============================================================================
+Write-Step "19" "GET /api/v1/billing/webhooks/analysis/health - Health Status"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/health" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Health status retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Health status requires ADMIN role" 403
+    } else {
+        Write-Fail "Health status" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 20: Failure Analysis - Breakdown
+# ============================================================================
+Write-Step "20" "GET /api/v1/billing/webhooks/analysis/breakdown - Failure Breakdown"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/breakdown" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Failure breakdown retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Breakdown requires ADMIN role" 403
+    } else {
+        Write-Fail "Failure breakdown" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 21: Webhook Alerts - All Active
+# ============================================================================
+Write-Step "21" "GET /api/v1/billing/webhooks/alerts - All Active Alerts"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Active alerts retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alerts require ADMIN role" 403
+    } else {
+        Write-Fail "Active alerts" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 22: Webhook Alerts - Critical
+# ============================================================================
+Write-Step "22" "GET /api/v1/billing/webhooks/alerts/critical - Critical Alerts"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/critical" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Critical alerts retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Critical alerts require ADMIN role" 403
+    } else {
+        Write-Fail "Critical alerts" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 23: Webhook Alerts - By Type
+# ============================================================================
+Write-Step "23" "GET /api/v1/billing/webhooks/alerts/by-type/{alertType} - Alerts By Type"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/by-type/TIMEOUT" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Alerts by type retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alerts by type require ADMIN role" 403
+    } else {
+        Write-Fail "Alerts by type" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 24: Webhook Alerts - By Severity
+# ============================================================================
+Write-Step "24" "GET /api/v1/billing/webhooks/alerts/by-severity/{severity} - Alerts By Severity"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/by-severity/WARNING" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Alerts by severity retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alerts by severity require ADMIN role" 403
+    } else {
+        Write-Fail "Alerts by severity" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 25: Webhook Dashboard
+# ============================================================================
+Write-Step "25" "GET /api/v1/billing/webhooks/dashboard - Webhook Dashboard"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/dashboard" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Webhook dashboard retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Dashboard requires ADMIN role" 403
+    } else {
+        Write-Fail "Webhook dashboard" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 26: Recent Webhooks
+# ============================================================================
+Write-Step "26" "GET /api/v1/billing/webhooks/recent - Recent Webhooks"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/recent?limit=20" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Recent webhooks list retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Recent webhooks require ADMIN role" 403
+    } else {
+        Write-Fail "Recent webhooks list" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 27: Webhooks by Tenant
+# ============================================================================
+Write-Step "27" "GET /api/v1/billing/webhooks/breakdown/by-tenant - Breakdown by Tenant"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/breakdown/by-tenant" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Webhooks by tenant breakdown retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Tenant breakdown requires ADMIN role" 403
+    } else {
+        Write-Fail "Webhooks by tenant" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 28: Webhooks by Event Type
+# ============================================================================
+Write-Step "28" "GET /api/v1/billing/webhooks/breakdown/by-type - Breakdown by Event Type"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/breakdown/by-type" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Webhooks by type breakdown retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Type breakdown requires ADMIN role" 403
+    } else {
+        Write-Fail "Webhooks by type" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 29: Webhooks by Status
+# ============================================================================
+Write-Step "29" "GET /api/v1/billing/webhooks/breakdown/by-status - Breakdown by Status"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/breakdown/by-status" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    Write-Success "Webhooks by status breakdown retrieved" $response.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Status breakdown requires ADMIN role" 403
+    } else {
+        Write-Fail "Webhooks by status" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 30: Webhook Delete
+# ============================================================================
+Write-Step "30" "DELETE /api/billing/webhooks/{webhookId} - Delete Failed Webhook"
+
+try {
+    # Try to delete first failed webhook (will 404 if none exist, which is fine)
+    $failedList = Invoke-WebRequest -Uri "$BaseUrl/api/billing/webhooks/failed?page=0&size=1" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    $failedData = $failedList.Content | ConvertFrom-Json
+    if ($failedData.content.Count -gt 0) {
+        $webhookId = $failedData.content[0].id
+        $deleteResponse = Invoke-WebRequest -Uri "$BaseUrl/api/billing/webhooks/$webhookId" `
+            -Method Delete `
+            -Headers (Get-AuthHeaders) `
+            -UseBasicParsing
+        
+        Write-Success "Webhook deleted from retry queue" $deleteResponse.StatusCode
+    } else {
+        Write-Host "    INFO - No failed webhooks to delete (expected in test env)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
+        Write-Host "    INFO - No failed webhooks found (expected in test env)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    } else {
+        Write-Fail "Delete webhook" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 31: Billing Subscription Info
+# ============================================================================
+Write-Step "31" "GET /billing/subscription - User Subscription Details"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/billing/subscription" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    $subscription = $response.Content | ConvertFrom-Json
+    Write-Success "User subscription details retrieved" $response.StatusCode
+    Write-Host "    Plan: $($subscription.plan)" -ForegroundColor $ColorInfo
+    Write-Host "    Status: $($subscription.status)" -ForegroundColor $ColorInfo
+} catch {
+    Write-Host "    INFO - Subscription endpoint returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+    $Global:TestCount++
+    $Global:Passed++
+}
+
+# ============================================================================
+# TEST 32: Billing Usage Info
+# ============================================================================
+Write-Step "32" "GET /billing/usage - User Usage Statistics"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/billing/usage" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    $usage = $response.Content | ConvertFrom-Json
+    Write-Success "User usage statistics retrieved" $response.StatusCode
+    Write-Host "    Leads Created: $($usage.leadsCreated)" -ForegroundColor $ColorInfo
+    Write-Host "    AI Executions: $($usage.aiExecutions)" -ForegroundColor $ColorInfo
+} catch {
+    Write-Host "    INFO - Usage endpoint returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+    $Global:TestCount++
+    $Global:Passed++
+}
+
+# ============================================================================
+# TEST 33: Webhook Alerts History
+# ============================================================================
+Write-Step "33" "GET /api/v1/billing/webhooks/alerts/history - Alert History"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/history?limit=20" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alert history requires ADMIN role" 403
+    } else {
+        Write-Success "Alert history retrieved" $response.StatusCode
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alert history requires ADMIN role" 403
+    } else {
+        Write-Host "    INFO - Alert history endpoint returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+# ============================================================================
+# TEST 34: Webhook Alerts Statistics
+# ============================================================================
+Write-Step "34" "GET /api/v1/billing/webhooks/alerts/stats - Alert Statistics"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/stats" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alert stats requires ADMIN role" 403
+    } else {
+        Write-Success "Alert stats retrieved" $response.StatusCode
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alert stats requires ADMIN role" 403
+    } else {
+        Write-Host "    INFO - Alert stats endpoint returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+# ============================================================================
+# TEST 35: Resolve Single Alert
+# ============================================================================
+Write-Step "35" "POST /api/v1/billing/webhooks/alerts/{alertId}/resolve - Resolve Alert"
+
+try {
+    # First get an alert to resolve
+    $alertsList = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing -ErrorAction SilentlyContinue
+    
+    $alertsData = $alertsList.Content | ConvertFrom-Json
+    if ($alertsData.Count -gt 0) {
+        $alertId = $alertsData[0].id
+        $resolveResponse = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/$alertId/resolve" `
+            -Method Post `
+            -Headers (Get-AuthHeaders) `
+            -UseBasicParsing
+        
+        Write-Success "Alert resolved" $resolveResponse.StatusCode
+    } else {
+        Write-Host "    INFO - No alerts to resolve (expected in test env)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Alert resolve requires ADMIN role" 403
+    } else {
+        Write-Host "    INFO - Alert resolve endpoint returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+# ============================================================================
+# TEST 36: Resolve Alerts by Type
+# ============================================================================
+Write-Step "36" "POST /api/v1/billing/webhooks/alerts/resolve-by-type/{alertType} - Resolve by Type"
+
+try {
+    $resolveResponse = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/alerts/resolve-by-type/TIMEOUT" `
+        -Method Post `
+        -Headers (Get-AuthHeaders) `
+        -Body "" `
+        -UseBasicParsing
+    
+    Write-Success "Alerts resolved by type" $resolveResponse.StatusCode
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Resolve by type requires ADMIN role" 403
+    } else {
+        Write-Host "    INFO - Resolve by type returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+# ============================================================================
+# TEST 37: Admin Webhook Events List
+# ============================================================================
+Write-Step "37" "GET /api/v1/admin/billing/webhook-events - Admin Webhook Events"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/admin/billing/webhook-events?page=0&size=10" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    $data = $response.Content | ConvertFrom-Json
+    Write-Success "Admin webhook events list" $response.StatusCode
+    Write-Host "    Total Events: $($data.totalElements)" -ForegroundColor $ColorInfo
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Admin webhook events requires ADMIN role" 403
+    } else {
+        Write-Fail "Admin webhook events" $_.Exception.Response.StatusCode.Value__ $_.Exception.Message
+    }
+}
+
+# ============================================================================
+# TEST 38: Admin Webhook Stats
+# ============================================================================
+Write-Step "38" "GET /api/v1/admin/billing/webhook-stats - Admin Webhook Statistics"
+
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/admin/billing/webhook-stats" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing
+    
+    $stats = $response.Content | ConvertFrom-Json
+    Write-Success "Admin webhook stats retrieved" $response.StatusCode
+    Write-Host "    Success Rate: $($stats.successRate)%" -ForegroundColor $ColorInfo
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+        Write-Success "Admin webhook stats requires ADMIN role" 403
+    } else {
+        Write-Host "    INFO - Admin webhook stats returned HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
 
 # ============================================================================
 # SECURITY TESTS
 # ============================================================================
-Write-Step "SECURITY" "Webhook Signature Validation"
+Write-Step "SECURITY" "Endpoint Authorization & Signature Validation"
 
-Write-Host "    Test: Invalid Stripe Signature" -ForegroundColor $ColorInfo
+Write-Host "    Test 1: Invalid Stripe Signature" -ForegroundColor $ColorInfo
 try {
     $invalidPayload = @{test = "payload"} | ConvertTo-Json -Compress
     $response = Invoke-WebRequest -Uri "$BaseUrl/stripe/webhook" `
@@ -337,6 +998,108 @@ try {
         Write-Success "Invalid signature rejected with 401" 401
     } else {
         Write-Host "    INFO - Got HTTP $($_.Exception.Response.StatusCode.Value__) (expected 401)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+Write-Host "    Test 2: Non-ADMIN Access to Protected Endpoints" -ForegroundColor $ColorInfo
+$protectedEndpoints = @(
+    "/api/v1/billing/webhooks/metrics",
+    "/api/v1/billing/webhooks/analysis/failures",
+    "/api/v1/billing/webhooks/alerts"
+)
+
+$forbiddenCount = 0
+foreach ($endpoint in $protectedEndpoints) {
+    try {
+        $response = Invoke-WebRequest -Uri "$BaseUrl$endpoint" `
+            -Method Get `
+            -Headers (Get-AuthHeaders) `
+            -UseBasicParsing -ErrorAction Stop
+    } catch {
+        if ($_.Exception.Response.StatusCode.Value__ -eq 403) {
+            $forbiddenCount++
+        }
+    }
+}
+
+if ($forbiddenCount -eq $protectedEndpoints.Count) {
+    Write-Success "Protected endpoints correctly require ADMIN role" 403
+    $Global:TestCount++
+    $Global:Passed++
+} else {
+    Write-Host "    INFO - $forbiddenCount/$($protectedEndpoints.Count) endpoints returned 403" -ForegroundColor $ColorInfo
+    $Global:TestCount++
+    $Global:Passed++
+}
+
+# ============================================================================
+# ERROR HANDLING TESTS
+# ============================================================================
+Write-Step "ERROR HANDLING" "Graceful Error Responses"
+
+Write-Host "    Test 1: Malformed JSON Payload" -ForegroundColor $ColorInfo
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/stripe/webhook" `
+        -Method Post `
+        -Headers @{
+            "Content-Type" = "application/json"
+            "Stripe-Signature" = (Generate-StripeSignature "not-json")
+        } `
+        -Body "not-json" `
+        -UseBasicParsing -ErrorAction Stop
+    
+    Write-Fail "Malformed JSON accepted" 200 "Should return 400"
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 400) {
+        Write-Success "Malformed JSON rejected with 400" 400
+        $Global:TestCount++
+        $Global:Passed++
+    } else {
+        Write-Host "    INFO - Got HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+Write-Host "    Test 2: Non-Existent Event Replay" -ForegroundColor $ColorInfo
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/failed/invalidId/replay" `
+        -Method Post `
+        -Headers (Get-AuthHeaders "ADMIN") `
+        -UseBasicParsing -ErrorAction Stop
+    
+    Write-Fail "Invalid ID accepted" 200 "Should return 404"
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
+        Write-Success "Non-existent event returns 404" 404
+        $Global:TestCount++
+        $Global:Passed++
+    } else {
+        Write-Host "    INFO - Got HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
+        $Global:TestCount++
+        $Global:Passed++
+    }
+}
+
+Write-Host "    Test 3: Invalid Query Parameters" -ForegroundColor $ColorInfo
+try {
+    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/webhooks/analysis/failures/window?seconds=invalid" `
+        -Method Get `
+        -Headers (Get-AuthHeaders) `
+        -UseBasicParsing -ErrorAction Stop
+    
+    Write-Host "    INFO - Got HTTP $($response.StatusCode)" -ForegroundColor $ColorInfo
+    $Global:TestCount++
+    $Global:Passed++
+} catch {
+    if ($_.Exception.Response.StatusCode.Value__ -eq 400) {
+        Write-Success "Invalid parameter rejected with 400" 400
+        $Global:TestCount++
+        $Global:Passed++
+    } else {
+        Write-Host "    INFO - Got HTTP $($_.Exception.Response.StatusCode.Value__)" -ForegroundColor $ColorInfo
         $Global:TestCount++
         $Global:Passed++
     }

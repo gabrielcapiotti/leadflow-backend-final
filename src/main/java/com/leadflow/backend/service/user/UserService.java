@@ -6,10 +6,15 @@ import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.exception.UserNotFoundException;
 import com.leadflow.backend.repository.user.RoleRepository;
 import com.leadflow.backend.repository.user.UserRepository;
+import com.leadflow.backend.security.CustomUserDetails;
 import com.leadflow.backend.service.vendor.UsageService;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -97,6 +102,10 @@ public class UserService {
             throw new IllegalArgumentException("Email cannot be blank");
         }
 
+        // ===== OWNERSHIP VALIDATION (Fallback) =====
+        // Verify user is either ADMIN or updating themselves
+        validateUpdateAuthorization(id);
+
         User user = getByIdOrThrow(id);
 
         Role role = roleRepository.findById(roleId)
@@ -118,7 +127,8 @@ public class UserService {
         user.changeEmail(normalizedEmail);
         user.changeRole(role);
 
-        return user;
+        // Persist changes
+        return userRepository.save(user);
     }
 
     /* ======================================================
@@ -178,5 +188,40 @@ public class UserService {
 
         // Executa após persistência (consistência)
         usageService.consumeUser(vendor.getId());
+    }
+
+    /* ======================================================
+       HELPER: AUTHORIZATION VALIDATION (Fallback)
+       ====================================================== */
+
+    /**
+     * Validate that the current user is authorized to update the target user.
+     * Only admins or the user themselves can update.
+     *
+     * @param targetUserId The user ID being updated
+     * @throws AccessDeniedException if not authorized
+     */
+    private void validateUpdateAuthorization(UUID targetUserId) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            throw new AccessDeniedException("User not authenticated");
+        }
+
+        CustomUserDetails currentUser = (CustomUserDetails) authentication.getPrincipal();
+        UUID currentUserId = currentUser.getId();
+
+        // Check if user is admin
+        boolean isAdmin = authentication.getAuthorities()
+                .stream()
+                .map(GrantedAuthority::getAuthority)
+                .anyMatch(auth -> auth.equals("ROLE_ADMIN"));
+
+        // Allow if: (1) is admin OR (2) is updating own profile
+        if (!isAdmin && !currentUserId.equals(targetUserId)) {
+            throw new AccessDeniedException(
+                    "You can only update your own profile. Contact an administrator for other updates."
+            );
+        }
     }
 }

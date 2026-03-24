@@ -40,6 +40,11 @@ public class HibernateFilterService {
             EntityManager entityManager = entityManagerProvider.getObject();
             Session session = entityManager.unwrap(Session.class);
             
+            // Check if already enabled to avoid double-enabling
+            if (session.getEnabledFilter("tenantFilter") != null) {
+                return;
+            }
+            
             // Ativa o filtro 'tenantFilter' definido em @FilterDef
             session.enableFilter("tenantFilter")
                     .setParameter("tenantId", tenantId);
@@ -49,19 +54,16 @@ public class HibernateFilterService {
         }
     }
 
-    /**
-     * 🗑️ Desativa o filtro (limpeza)
-     * 
-     * Chamado em finally block do TenantFilter HTTP
-     */
     public void disableTenantFilter() {
         try {
             EntityManager entityManager = entityManagerProvider.getObject();
             Session session = entityManager.unwrap(Session.class);
-            session.disableFilter("tenantFilter");
+            
+            if (session.getEnabledFilter("tenantFilter") != null) {
+                session.disableFilter("tenantFilter");
+            }
         } catch (Exception e) {
-            // Log mas não explode - pode ser já desativado
-            System.err.println("Failed to disable tenant filter: " + e.getMessage());
+            // Log mas não explode
         }
     }
 

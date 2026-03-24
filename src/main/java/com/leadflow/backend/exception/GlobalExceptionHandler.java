@@ -12,7 +12,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -184,6 +184,15 @@ public class GlobalExceptionHandler {
             ResourceNotFoundException ex
     ) {
         return build(HttpStatus.NOT_FOUND, safe(ex));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ApiErrorResponse> handleNoResourceFound(
+            NoResourceFoundException ex
+    ) {
+        log.warn("Resource not found: {}", ex.getResourcePath());
+        return build(HttpStatus.NOT_FOUND,
+                "Resource not found: " + ex.getResourcePath());
     }
 
     /* =========================================================

@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
@@ -197,9 +198,12 @@ public class BillingController {
 
     /**
      * Get vendor's current subscription details
+     * 
+     * Returns 204 No Content if:
+     * - No vendor context (user not properly linked)
+     * - No subscription found for vendor
      */
     @GetMapping("/subscription")
-    @PreAuthorize("@subscriptionGuard.isActive()")
     @Operation(
         summary = "Get subscription details",
         description = "Returns the current subscription status and details for the authenticated vendor",
@@ -208,21 +212,32 @@ public class BillingController {
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Subscription details retrieved",
             content = @Content(schema = @Schema(implementation = SubscriptionDetailsDTO.class))),
-        @ApiResponse(responseCode = "401", description = "Unauthorized"),
-        @ApiResponse(responseCode = "404", description = "Subscription not found")
+        @ApiResponse(responseCode = "204", description = "No subscription found for user"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
     public ResponseEntity<SubscriptionDetailsDTO> getSubscriptionDetails() {
+        UUID vendorId;
+
         try {
-            var subscription = subscriptionService.getSubscriptionByVendorId(vendorContext.getCurrentVendorId());
-            if (subscription.isEmpty()) {
-                return ResponseEntity.notFound().build();
-            }
-            SubscriptionDetailsDTO details = SubscriptionDetailsDTO.fromEntity(subscription.get());
-            return ResponseEntity.ok(details);
+            vendorId = vendorContext.getCurrentVendorId();
         } catch (Exception e) {
-            log.error("Error fetching subscription details", e);
-            return ResponseEntity.internalServerError().build();
+            log.warn("Vendor context resolution failed: {}", e.getMessage());
+            return ResponseEntity.noContent().build();
         }
+
+        if (vendorId == null) {
+            return ResponseEntity.noContent().build();
+        }
+
+        var subscription = subscriptionService.getSubscriptionByVendorId(vendorId);
+
+        if (subscription.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+
+        return ResponseEntity.ok(
+                SubscriptionDetailsDTO.fromEntity(subscription.get())
+        );
     }
 
     /**

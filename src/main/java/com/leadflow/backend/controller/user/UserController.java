@@ -18,7 +18,6 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/users")
-@PreAuthorize("hasRole('ADMIN')")
 public class UserController {
 
     private final UserService userService;
@@ -34,6 +33,7 @@ public class UserController {
        ====================================================== */
 
     @GetMapping
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Page<UserResponse>> list(Pageable pageable) {
         Page<UserResponse> response = userService
                 .listActiveUsers(pageable)
@@ -47,6 +47,7 @@ public class UserController {
        ====================================================== */
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal.id")
     public ResponseEntity<UserResponse> getById(@PathVariable UUID id) {
         User user = userService.getByIdOrThrow(id);
         return ResponseEntity.ok(userMapper.toResponse(user));
@@ -57,6 +58,7 @@ public class UserController {
        ====================================================== */
 
     @PutMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal.id")
     public ResponseEntity<UserResponse> update(
             @PathVariable UUID id,
             @Valid @RequestBody UpdateUserRequest request
@@ -76,6 +78,7 @@ public class UserController {
        ====================================================== */
 
     @DeleteMapping("/{id}")
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal.id")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         userService.softDelete(id);
         return ResponseEntity.noContent().build();
