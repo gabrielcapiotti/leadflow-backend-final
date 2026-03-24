@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 import java.util.Base64;
 
 import com.leadflow.backend.service.notification.SendGridEmailService;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -59,6 +60,8 @@ public class PasswordResetService {
      * Gera token seguro de redefinição de senha.
      * Retorna o token RAW apenas para envio por email.
      * Nunca armazena o token em texto plano no banco.
+     * 
+     * ✅ CORRIGIDO: Agora usa tenant explicitamente
      */
     @Transactional
     public String requestPasswordReset(String email) {
@@ -68,9 +71,10 @@ public class PasswordResetService {
         }
 
         String normalizedEmail = email.trim().toLowerCase();
+        String tenant = TenantContext.requireTenant();
 
         return userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)
                 .map(user -> {
 
                     // Remove tokens antigos

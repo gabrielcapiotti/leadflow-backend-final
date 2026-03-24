@@ -72,7 +72,7 @@ public class AuthService {
         String normalizedEmail = normalizeEmail(email);
 
         if (userRepository
-                .existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)) {
+                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)) {
 
             audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, false);
             throw new IllegalArgumentException("Email already in use");
@@ -92,7 +92,7 @@ public class AuthService {
         );
         user.setTenantId(tenant);
 
-        User savedUser = userRepository.save(user);
+        User savedUser = userRepository.saveAndFlush(user); // 🔥 saveAndFlush garante visibilidade imediata
 
         logger.info("User registered successfully: {} (tenant={})", normalizedEmail, tenant);
 
@@ -138,8 +138,12 @@ public class AuthService {
             );
         }
 
+        if (tenant == null) {
+            tenant = TenantContext.requireTenant();
+        }
+
         User user = userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)
                 .orElseThrow(() -> {
                     recordFailureAudit(normalizedEmail, "User not found");
                     return new IllegalArgumentException("Invalid credentials");
@@ -273,9 +277,10 @@ public class AuthService {
         }
 
         String normalizedEmail = normalizeEmail(email);
+        String tenant = TenantContext.requireTenant();
 
         User user = userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         if (!passwordEncoder.matches(password, user.getPassword())) {

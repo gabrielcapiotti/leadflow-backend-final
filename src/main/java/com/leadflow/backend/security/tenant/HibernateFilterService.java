@@ -1,84 +1,90 @@
 package com.leadflow.backend.security.tenant;
 
-import org.hibernate.Session;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.stereotype.Service;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
+
+import org.hibernate.Session;
+import org.hibernate.Filter;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
 
 /**
  * 🔒 MULTI-TENANT SECURITY: Hibernate Filter Service
- * 
- * Ativa AUTOMATICAMENTE o filtro tenantFilter em toda sessão Hibernate.
- * Isso garante que NENHUMA query dirá dados de outro tenant,
- * mesmo que o desenvolvedor esqueça de adicionar WHERE tenant_id = ?
- * 
- * Padrão: Chain of responsibility + decorator no filters Spring
+ *
+ * Garante que o filtro tenantFilter seja aplicado corretamente
+ * na MESMA sessão Hibernate da transação atual.
+ *
+ * ⚠️ IMPORTANTE:
+ * - Usa EntityManager transacional (@PersistenceContext)
+ * - Evita inconsistência entre sessões
  */
 @Service
 public class HibernateFilterService {
 
-    private final ObjectProvider<EntityManager> entityManagerProvider;
+    private static final Logger log =
+            LoggerFactory.getLogger(HibernateFilterService.class);
 
-    public HibernateFilterService(ObjectProvider<EntityManager> entityManagerProvider) {
-        this.entityManagerProvider = entityManagerProvider;
-    }
+    @PersistenceContext
+    private EntityManager entityManager;
 
     /**
-     * ✅ Ativa o filtro multi-tenant para a sessão atual
-     * 
-     * 🔥 OBRIGATÓRIO ser chamado em @Component TenantFilter
-     * 
-     * @param tenantId tenant a ser isolado
-     * @throws IllegalArgumentException se tenantId for null/vazio
+     * ✅ Ativa o filtro multi-tenant na sessão atual
      */
     public void enableTenantFilter(String tenantId) {
+
         if (tenantId == null || tenantId.trim().isEmpty()) {
             throw new IllegalArgumentException("Tenant ID cannot be null or empty");
         }
 
         try {
-            EntityManager entityManager = entityManagerProvider.getObject();
             Session session = entityManager.unwrap(Session.class);
-            
-            // Check if already enabled to avoid double-enabling
-            if (session.getEnabledFilter("tenantFilter") != null) {
+
+            Filter existingFilter = session.getEnabledFilter("tenantFilter");
+
+            if (existingFilter != null) {
+                // Evita sobrescrever se já estiver ativo
                 return;
             }
-            
-            // Ativa o filtro 'tenantFilter' definido em @FilterDef
+
             session.enableFilter("tenantFilter")
-                    .setParameter("tenantId", tenantId);
-            
+                   .setParameter("tenantId", tenantId);
+
+            log.debug("Tenant filter ENABLED for tenant={}", tenantId);
+
         } catch (Exception e) {
+            log.error("Failed to enable tenant filter", e);
             throw new RuntimeException("Failed to enable tenant filter", e);
         }
     }
 
+    /**
+     * ✅ Desativa o filtro após a request
+     */
     public void disableTenantFilter() {
+
         try {
-            EntityManager entityManager = entityManagerProvider.getObject();
             Session session = entityManager.unwrap(Session.class);
-            
+
             if (session.getEnabledFilter("tenantFilter") != null) {
                 session.disableFilter("tenantFilter");
+                log.debug("Tenant filter DISABLED");
             }
+
         } catch (Exception e) {
-            // Log mas não explode
+            log.warn("Failed to disable tenant filter: {}", e.getMessage());
         }
     }
 
     /**
-     * ✅ Valida isolamento ativo
-     * 
-     * Debug/Audit: confirma que o filtro está ativo
-     * 
-     * @return true se o filtro está ativo
+     * 🔍 Verifica se o filtro está ativo (debug / auditoria)
      */
     public boolean isTenantFilterEnabled() {
+
         try {
-            EntityManager entityManager = entityManagerProvider.getObject();
             Session session = entityManager.unwrap(Session.class);
             return session.getEnabledFilter("tenantFilter") != null;
+
         } catch (Exception e) {
             return false;
         }

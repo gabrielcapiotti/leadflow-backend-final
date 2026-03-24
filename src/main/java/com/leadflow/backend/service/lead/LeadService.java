@@ -4,6 +4,7 @@ import com.leadflow.backend.entities.enums.LeadStatus;
 import com.leadflow.backend.entities.lead.Lead;
 import com.leadflow.backend.entities.lead.LeadStatusHistory;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.lead.LeadRepository;
 import com.leadflow.backend.repository.lead.LeadStatusHistoryRepository;
 import com.leadflow.backend.repository.user.UserRepository;
@@ -52,9 +53,10 @@ public class LeadService {
     public User resolveUser(String email) {
 
         String normalized = normalizeEmail(email);
+        String tenant = TenantContext.requireTenant();
 
         return userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalized)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalized, tenant)
                 .orElseThrow(() ->
                         new IllegalArgumentException("User not found")
                 );

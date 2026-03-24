@@ -2,7 +2,6 @@ package com.leadflow.backend.multitenancy.filter;
 
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.resolver.TenantResolver;
-import com.leadflow.backend.security.tenant.HibernateFilterService;
 import com.leadflow.backend.util.LogSanitizer;
 
 import jakarta.servlet.FilterChain;
@@ -25,21 +24,14 @@ public class TenantFilter extends OncePerRequestFilter {
             LoggerFactory.getLogger(TenantFilter.class);
 
     private final TenantResolver tenantResolver;
-    private final HibernateFilterService hibernateFilterService;
 
     public TenantFilter(
-            TenantResolver tenantResolver,
-            HibernateFilterService hibernateFilterService
+            TenantResolver tenantResolver
     ) {
         this.tenantResolver =
                 Objects.requireNonNull(
                         tenantResolver,
                         "tenantResolver cannot be null"
-                );
-        this.hibernateFilterService =
-                Objects.requireNonNull(
-                        hibernateFilterService,
-                        "hibernateFilterService cannot be null"
                 );
     }
 
@@ -73,26 +65,15 @@ public class TenantFilter extends OncePerRequestFilter {
         logger.debug("TenantFilter executing for path: {}", request.getRequestURI());
 
         String tenant = null;
-        boolean hibernateFilterEnabled = false;
 
         try {
 
             /* =============================================
-               VERIFICA SE JÁ EXISTE TENANT
+               LIMPEZA OBRIGATÓRIA (ThreadLocal reset)
+               Cada request começa limpo - threads são reutilizadas!
                ============================================= */
 
-            String existingTenant = TenantContext.getIfPresent();
-
-            if (existingTenant != null && !existingTenant.isBlank()) {
-
-                logger.debug(
-                        "Tenant already present: {}",
-                        LogSanitizer.sanitize(existingTenant)
-                );
-
-                filterChain.doFilter(request, response);
-                return;
-            }
+            TenantContext.clear();
 
             /* =============================================
                RESOLVE TENANT
@@ -127,11 +108,10 @@ public class TenantFilter extends OncePerRequestFilter {
                 LogSanitizer.sanitize(tenant),
                 Thread.currentThread().getId());
             
-            // Enable Hibernate filter to enforce multi-tenant isolation
-            hibernateFilterService.enableTenantFilter(tenant);
-            hibernateFilterEnabled = true;
+            // ✅ Multi-tenancy is enforced via explicit tenantId parameter in queries
+            // ✅ NOT via Hibernate Filter (non-deterministic, session-dependent)
+            // ✅ TenantContext is available for audit/logging only
 
-            // ✅ ESSENTIAL: FilterChain must execute with TenantContext active
             filterChain.doFilter(request, response);
 
         } catch (Exception ex) {
@@ -146,18 +126,13 @@ public class TenantFilter extends OncePerRequestFilter {
         } finally {
 
             /* =============================================
-               CLEANUP (ESSENTIAL: Keep context for other filters!)
-               The TenantContext must remain active for the entire filter chain.
-               This is cleaned up by Spring's RequestContextListener AFTER
-               doFilter() returns, ensuring Hibernate Filter works correctly.
+               LIMPEZA CRÍTICA (ThreadLocal cleanup)
+               Garante que próximas requests não reutilizam contexto
                ============================================= */
             
-            // ❌ DO NOT disable Hibernate filter here!
-            // The filter must remain active for JwtAuthenticationFilter and beyond
-            // hibernateFilterService.disableTenantFilter();
+            TenantContext.clear();
             
-            // ❌ DO NOT clear TenantContext here!
-            // TenantContext.clear();
+            logger.debug("TenantFilter cleanup: TenantContext cleared");
         }
     }
 }

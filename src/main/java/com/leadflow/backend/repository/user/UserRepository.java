@@ -23,6 +23,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
             String tenantId
     );
 
+    boolean existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
+            String email,
+            String tenantId
+    );
+
     Page<User> findAllByDeletedAtIsNull(Pageable pageable);
 
     boolean existsByEmailIgnoreCaseAndDeletedAtIsNull(String email);

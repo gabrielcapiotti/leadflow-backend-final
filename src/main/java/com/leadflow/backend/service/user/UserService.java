@@ -4,6 +4,7 @@ import com.leadflow.backend.entities.user.Role;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.exception.UserNotFoundException;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.user.RoleRepository;
 import com.leadflow.backend.repository.user.UserRepository;
 import com.leadflow.backend.security.CustomUserDetails;
@@ -76,8 +77,13 @@ public class UserService {
             throw new IllegalArgumentException("Email cannot be blank");
         }
 
+        String tenant = TenantContext.requireTenant();
+
         return userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(email.trim().toLowerCase())
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
+                        email.trim().toLowerCase(),
+                        tenant
+                )
                 .orElseThrow(() ->
                         new UserNotFoundException("User not found with email: " + email)
                 );

@@ -109,8 +109,19 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            // ✅ SET CONTEXT BEFORE loading user (TenantFilter handles hibernateFilterService)
-            TenantContext.setTenant(tenant);
+            // ✅ Validate JWT tenant matches request context tenant (set by TenantFilter)
+            String tenantFromContext = TenantContext.getTenant();
+
+            if (!tenant.equals(tenantFromContext)) {
+                logger.warn(
+                        "JWT tenant mismatch: JWT={} | Context={} | path={}",
+                        LogSanitizer.sanitize(tenant),
+                        LogSanitizer.sanitize(tenantFromContext),
+                        request.getRequestURI()
+                );
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant");
+                return;
+            }
 
             logger.debug(
                     "AUTH CONTEXT | email={} | tenant={}",

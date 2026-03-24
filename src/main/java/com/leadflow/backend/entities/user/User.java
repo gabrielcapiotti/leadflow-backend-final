@@ -26,7 +26,10 @@ import java.util.UUID;
                 @Index(name = "idx_users_email", columnList = "email")
         },
         uniqueConstraints = {
-                @UniqueConstraint(name = "uq_users_email", columnNames = "email")
+                @UniqueConstraint(
+                        name = "uq_users_email_tenant",
+                        columnNames = {"email", "tenant_id"}
+                )
         }
 )
 public class User {

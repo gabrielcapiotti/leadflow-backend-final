@@ -5,7 +5,6 @@ import com.leadflow.backend.multitenancy.resolver.TenantResolver;
 import com.leadflow.backend.security.jwt.JwtAuthenticationFilter;
 import com.leadflow.backend.security.jwt.JwtService;
 import com.leadflow.backend.multitenancy.service.TenantService;
-import com.leadflow.backend.security.tenant.HibernateFilterService;
 import com.leadflow.backend.service.auth.UserSessionService;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -81,10 +80,9 @@ public class SecurityWebConfig {
 
     @Bean
     public TenantFilter tenantFilter(
-            TenantResolver tenantResolver,
-            HibernateFilterService hibernateFilterService
+            TenantResolver tenantResolver
     ) {
-        return new TenantFilter(tenantResolver, hibernateFilterService);
+        return new TenantFilter(tenantResolver);
     }
 
     /* =====================================================
