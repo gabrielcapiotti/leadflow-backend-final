@@ -214,7 +214,7 @@ Write-Section "GROUP 1: PUBLIC REGISTRATION AND LOGIN"
 
 # Test 1: Health Check
 Write-Test 1 "Health Check (Sanity)"
-$r = Invoke-ApiRequest "GET" "/actuator/health"
+$r = Invoke-ApiRequest "GET" "/api/actuator/health" $null $true
 if ($r.Success) {
     Write-Success "Health check passed"
     Record-Result "/actuator/health" $true $r.Status
@@ -496,21 +496,23 @@ if ($r.Success) {
 
 Write-Section "GROUP 4: PASSWORD RECOVERY"
 
-# Test 7: Forgot Password
-Write-Test 7 "Request Password Reset (Forgot Password)"
+# Test 7: Change Password (Forgot-Password não existe no projeto)
+Write-Test 7 "Request Password Change (Change Password)"
 Write-Info "Email: $testEmail"
+Write-Info "Nova senha: NewPass@123"
 
-$r = Invoke-ApiRequest "POST" "/auth/forgot-password" @{
-    email = $testEmail
-}
+$r = Invoke-ApiRequest "POST" "/auth/change-password" @{
+    currentPassword = $testPassword
+    newPassword = "NewPass@123"
+    confirmPassword = "NewPass@123"
+} $true
 
 if ($r.Success) {
-    Write-Success "Password reset request sent"
-    Write-Info "Message: $($r.Data.message)"
-    Record-Result "POST /auth/forgot-password" $true $r.Status
+    Write-Success "Password changed successfully"
+    Record-Result "POST /auth/change-password" $true $r.Status
 } else {
-    Write-Fail "Password reset request failed" $r.Status $r.Exception
-    Record-Result "POST /auth/forgot-password" $false $r.Status "$($r.Exception)"
+    Write-Fail "Password change failed" $r.Status $r.Exception
+    Record-Result "POST /auth/change-password" $false $r.Status "$($r.Exception)"
 }
 
 # ============================================================================

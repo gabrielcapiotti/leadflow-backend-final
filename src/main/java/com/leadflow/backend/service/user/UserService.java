@@ -63,8 +63,10 @@ public class UserService {
             throw new IllegalArgumentException("User id cannot be null");
         }
 
+        String tenant = TenantContext.requireTenant();
+
         return userRepository
-                .findByIdAndDeletedAtIsNull(id)
+                .findByIdAndTenantIdAndDeletedAtIsNull(id, tenant)
                 .orElseThrow(() ->
                         new UserNotFoundException("User not found with id: " + id)
                 );
@@ -121,8 +123,10 @@ public class UserService {
 
         String normalizedEmail = email.trim().toLowerCase();
 
+        String tenant = TenantContext.requireTenant();
+
         boolean emailExists = userRepository
-                .existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail);
+                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant);
 
         if (!user.getEmail().equalsIgnoreCase(normalizedEmail) && emailExists) {
             throw new IllegalArgumentException("Email already in use");
@@ -170,7 +174,9 @@ public class UserService {
 
         String normalizedEmail = email.trim().toLowerCase();
 
-        if (userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)) {
+        String tenant = TenantContext.requireTenant();
+
+        if (userRepository.existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)) {
             throw new IllegalArgumentException("Email already exists");
         }
 

@@ -111,6 +111,19 @@ public class VendorLeadController {
         return ResponseEntity.ok(updated);
     }
 
+    @PatchMapping("/{id}")
+    public ResponseEntity<VendorLead> updateLeadPatch(
+            @PathVariable UUID id,
+            @RequestBody UpdateStageRequest request) {
+
+        subscriptionGuard.assertFullAccess();
+
+        VendorLead updated =
+                service.updateStage(id, request.getStage());
+
+        return ResponseEntity.ok(updated);
+    }
+
     @PutMapping("/{id}/owner")
     public ResponseEntity<VendorLead> assignOwner(
             @PathVariable UUID id) {

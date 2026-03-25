@@ -1,8 +1,5 @@
 package com.leadflow.backend;
 
-import com.leadflow.backend.multitenancy.identifier.CurrentTenantIdentifierResolverImpl;
-import com.leadflow.backend.multitenancy.provider.MultiTenantConnectionProviderImpl;
-// import com.leadflow.backend.multitenancy.service.TenantProvisioningService;  // Not in codebase
 import com.leadflow.backend.security.RateLimitService;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.admin.AdminService;
@@ -122,15 +119,6 @@ public abstract class IntegrationTestBase {
                 () -> "SCHEMA"
         );
 
-        registry.add(
-                "spring.jpa.properties.hibernate.multi_tenant_connection_provider",
-                () -> MultiTenantConnectionProviderImpl.class.getName()
-        );
-
-        registry.add(
-                "spring.jpa.properties.hibernate.multi_tenant_identifier_resolver",
-                () -> CurrentTenantIdentifierResolverImpl.class.getName()
-        );
 
         /* ==============================
            FLYWAY

@@ -38,59 +38,72 @@ public class SubscriptionGuard {
     }
 
     /* ======================================================
-       ACCESS RESOLUTION
+       ACCESS RESOLUTION (CORRIGIDO)
        ====================================================== */
 
     public SubscriptionAccessLevel resolveAccess() {
 
+        // 🔥 HARD BYPASS: evita QUALQUER dependência de DB
         if (!billingEnabled) {
             log.debug("Billing disabled → FULL access granted");
             return SubscriptionAccessLevel.FULL;
         }
 
-        Vendor vendor = resolveVendorStrict();
+        try {
+            Vendor vendor = resolveVendorStrict();
 
-        SubscriptionAccessLevel level =
-                subscriptionService.getAccessLevel(vendor);
+            SubscriptionAccessLevel level =
+                    subscriptionService.getAccessLevel(vendor);
 
-        if (isExpired(vendor) &&
-            level != SubscriptionAccessLevel.BLOCKED) {
+            if (isExpired(vendor) &&
+                level != SubscriptionAccessLevel.BLOCKED) {
 
-            log.warn("Subscription expired → forcing BLOCKED (vendorId={})",
-                    vendor.getId());
+                log.warn("Subscription expired → forcing BLOCKED (vendorId={})",
+                        vendor.getId());
 
+                return SubscriptionAccessLevel.BLOCKED;
+            }
+
+            return level;
+
+        } catch (AccessDeniedException ex) {
+
+            // 🔥 NÃO quebrar fluxo — tratar como bloqueado
+            log.warn("Access resolution failed: {}", ex.getMessage());
             return SubscriptionAccessLevel.BLOCKED;
         }
-
-        return level;
     }
 
     /* ======================================================
-       ASSERTIONS
+       SAFE ACCESS METHODS (USAR NO CONTROLLER)
        ====================================================== */
 
     public boolean isActive() {
-        try {
-            return resolveAccess() != SubscriptionAccessLevel.BLOCKED;
-        } catch (AccessDeniedException ex) {
-            return false;
-        }
+        return resolveAccess() != SubscriptionAccessLevel.BLOCKED;
     }
 
+    public boolean hasFullAccess() {
+        return resolveAccess() == SubscriptionAccessLevel.FULL;
+    }
+
+    /* ======================================================
+       STRICT ASSERTIONS (USAR COM CUIDADO)
+       ====================================================== */
+
     public void assertActive() {
-        if (resolveAccess() == SubscriptionAccessLevel.BLOCKED) {
+        if (!isActive()) {
             throw new AccessDeniedException("Subscription inactive");
         }
     }
 
     public void assertFullAccess() {
-        if (resolveAccess() != SubscriptionAccessLevel.FULL) {
+        if (!hasFullAccess()) {
             throw new AccessDeniedException("Write operation not allowed for current subscription");
         }
     }
 
     /* ======================================================
-       INTERNAL RESOLUTION (STRICT)
+       INTERNAL RESOLUTION (ISOLADO)
        ====================================================== */
 
     private Vendor resolveVendorStrict() {
@@ -114,21 +127,18 @@ public class SubscriptionGuard {
         String tenant = TenantContext.getTenant();
 
         if (tenant == null || tenant.isBlank()) {
-            log.error("TenantContext is NULL or empty for user={}", maskEmail(email));
+            log.error("TenantContext is NULL for user={}", maskEmail(email));
             throw new AccessDeniedException("Tenant context not resolved");
         }
-
-        log.debug("Resolving vendor → user={}, tenant={}",
-                maskEmail(email), tenant);
 
         return vendorRepository
                 .findByUserEmailAndTenantId(email, tenant)
                 .stream()
                 .findFirst()
                 .orElseThrow(() -> {
-                    log.error("Vendor not found → user={}, tenant={}",
+                    log.warn("Vendor not found → user={}, tenant={}",
                             maskEmail(email), tenant);
-                    return new AccessDeniedException("Vendor not found for current tenant");
+                    return new AccessDeniedException("Vendor not found");
                 });
     }
 

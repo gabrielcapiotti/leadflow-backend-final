@@ -151,16 +151,24 @@ public class SecurityWebConfig {
 
                 /* WEBHOOKS / BILLING */
                 .requestMatchers("/stripe/webhook").permitAll()
-                .requestMatchers("/webhooks/**").permitAll()
-                .requestMatchers("/billing/**").permitAll()
+                .requestMatchers("/api/webhooks/**").permitAll()
+                .requestMatchers("/api/billing/webhooks/**").permitAll()
 
                 /* MONITORING */
+                .requestMatchers("/api/dashboard").authenticated()
+                .requestMatchers("/api/health").permitAll()
                 .requestMatchers("/health").permitAll()
+                .requestMatchers("/api/actuator/**").permitAll()
                 .requestMatchers("/actuator/**").permitAll()
 
                 /* BUSINESS */
+                .requestMatchers("/leads/**").authenticated()
+                .requestMatchers("/history/**").authenticated()
                 .requestMatchers("/vendors/**").authenticated()
                 .requestMatchers("/api/vendor-leads/**").authenticated()
+
+                /* USER MANAGEMENT */
+                .requestMatchers("/users/**").authenticated()
 
                 .anyRequest().authenticated()
             )

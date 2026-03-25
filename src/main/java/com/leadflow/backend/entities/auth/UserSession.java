@@ -29,8 +29,8 @@ public class UserSession {
     @Column(nullable = false, updatable = false)
     private UUID userId;
 
-    @Column(nullable = false, updatable = false)
-    private UUID tenantId;
+    @Column(nullable = false, updatable = false, length = 63)
+    private String tenantId;
 
     @Column(nullable = false, unique = true, length = 36, updatable = true)
     private String tokenId;
@@ -77,7 +77,7 @@ public class UserSession {
        ====================================================== */
 
     public UserSession(UUID userId,
-                       UUID tenantId,
+                       String tenantId,
                        String tokenId,
                        String ipAddress,
                        String userAgent,
@@ -124,7 +124,7 @@ public class UserSession {
 
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
-    public UUID getTenantId() { return tenantId; }
+    public String getTenantId() { return tenantId; }
     public String getTokenId() { return tokenId; }
     public String getIpAddress() { return ipAddress; }
     public String getUserAgent() { return userAgent; }

@@ -52,7 +52,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     }
 
     @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
+    protected boolean shouldNotFilter(@NonNull HttpServletRequest request) {
 
         String path = request.getRequestURI();
 
@@ -60,7 +60,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             path = path.substring(4);
         }
 
-        return path.startsWith("/auth/")
+        // ✅ Only skip PUBLIC auth endpoints (no token needed)
+        return path.equals("/auth/register")
+                || path.equals("/auth/login")
+                || path.equals("/auth/refresh")
+                || path.equals("/auth/forgot-password")
+                || path.equals("/auth/reset-password")
                 || path.startsWith("/actuator")
                 || path.startsWith("/swagger")
                 || path.startsWith("/v3/api-docs")
@@ -162,11 +167,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                ===================================================== */
 
             String tokenId = jwtService.extractTokenId(token);
-            UUID tenantId = tenantService.getTenantIdBySchema(tenant);
 
             userSessionService.processSessionActivity(
                     tokenId,
-                    tenantId,
+                    tenant,
                     request.getRemoteAddr(),
                     request.getHeader("User-Agent")
             );

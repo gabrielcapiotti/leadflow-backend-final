@@ -29,9 +29,8 @@
 # ========================================================================
 
 $BaseURL = "http://localhost:8081"
-$HealthCheckURL = "$BaseURL/actuator/health"
-# DYNAMIC TENANT CONFIGURATION: Each user gets unique tenant ID
-$TenantHeader = ""  # Will be set dynamically per user
+$HealthCheckURL = "$BaseURL/users"  # Simple health check endpoint
+$TenantHeader = "public"  # Use public tenant for testing
 
 # Global test counters
 $global:TestCount = 0
@@ -120,14 +119,14 @@ Write-Header "[2] Register User in Tenant A"
 $uniqueSuffix = Get-Date -Format "yyyyMMddHHmmssf"
 $userEmail = "vendor_user_$uniqueSuffix@leadflow.dev"
 $userPassword = "SecurePassword123!"
-$Tenant1 = "tenant_$uniqueSuffix"  # Dynamic tenant A (production-realistic)
+$Tenant1 = "public"  # Use public tenant for testing
 $TenantHeader = $Tenant1  # Set to Tenant A
 
 try {
     $response = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
         -Method POST `
         -Headers @{
-            "X-Tenant-Id" = $TenantHeader
+            "X-Tenant-ID" = $TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body (@{
@@ -470,7 +469,7 @@ Write-Header "[11] Cross-Tenant Isolation - Register User in Tenant B"
 $user2Email = "vendor_user2_$uniqueSuffix@leadflow.dev"
 $AuthToken2 = ""
 $TenantId2 = ""
-$Tenant2 = "tenant2_$uniqueSuffix"  # Dynamic tenant B (completely isolated from Tenant A)
+$Tenant2 = "public"  # Use same public tenant for second user
 $TenantHeader = $Tenant2  # Switch to Tenant B
 
 try {

@@ -12,8 +12,6 @@ import com.leadflow.backend.security.jwt.JwtToken;
 import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
-import com.leadflow.backend.service.vendor.VendorService;
-import com.leadflow.domain.auth.service.PasswordResetService;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -44,25 +42,19 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
-    private final PasswordResetService passwordResetService;
-    private final VendorService vendorService;
 
     public AuthController(
             AuthService authService,
             JwtService jwtService,
             RefreshTokenService refreshTokenService,
             UserSessionService userSessionService,
-            TenantService tenantService,
-            PasswordResetService passwordResetService,
-            VendorService vendorService
+            TenantService tenantService
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
-        this.passwordResetService = passwordResetService;
-        this.vendorService = vendorService;
     }
 
     /* ======================================================
@@ -88,9 +80,14 @@ public class AuthController {
 
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
-        UUID tenantId = tenantService.getTenantIdBySchema(tenant);
-
-        createSession(user.getId(), tenantId, accessToken, httpRequest);
+        try {
+            createSession(user.getId(), tenant, accessToken, httpRequest);
+            log.info("✓ Session created successfully for new user: {} (tenantId={})", user.getId(), tenant);
+        } catch (Exception e) {
+            log.error("❌ CRITICAL: Session creation failed during registration for user: {} - {}", 
+                user.getId(), e.getMessage(), e);
+            throw new IllegalStateException("Session creation failed - registration incomplete", e);
+        }
 
         String refreshToken = refreshTokenService.generate(
                 user,
@@ -125,9 +122,14 @@ public class AuthController {
 
         JwtToken accessToken = jwtService.generateToken(user, tenant);
 
-        UUID tenantId = tenantService.getTenantIdBySchema(tenant);
-
-        createSession(user.getId(), tenantId, accessToken, httpRequest);
+        try {
+            createSession(user.getId(), tenant, accessToken, httpRequest);
+            log.info("✓ Session created successfully for user: {} (tenantId={})", user.getId(), tenant);
+        } catch (Exception e) {
+            log.error("❌ CRITICAL: Session creation failed during login for user: {} - {}", 
+                user.getId(), e.getMessage(), e);
+            throw new IllegalStateException("Session creation failed - authentication incomplete", e);
+        }
 
         String refreshToken = refreshTokenService.generate(
                 user,
@@ -151,6 +153,9 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
+        // Obter tenant do contexto
+        String tenantId = TenantContext.getOrDefault();
+
         return ResponseEntity.ok(Map.of(
                 "id", user.getId(),
                 "email", user.getUsername(),
@@ -158,7 +163,7 @@ public class AuthController {
                         .findFirst()
                         .map(a -> a.getAuthority())
                         .orElse("ROLE_USER"),
-                "tenantId", user.getUser().getTenantId()
+                "tenantId", tenantId != null ? tenantId : "public"
         ));
     }
 
@@ -175,14 +180,13 @@ public class AuthController {
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
         String tenant = resolveTenant();
-        UUID tenantId = tenantService.getTenantIdBySchema(tenant);
 
         String tokenId = extractTokenId(request);
 
         List<SessionResponse> sessions =
                 userSessionService.listActiveSessions(
                         user.getId(),
-                        tenantId,
+                        tenant,
                         tokenId
                 );
 
@@ -197,12 +201,12 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        UUID tenantId = tenantService.getTenantIdBySchema(resolveTenant());
+        String tenant = resolveTenant();
 
         userSessionService.revokeSpecificSession(
                 sessionId,
                 user.getId(),
-                tenantId,
+                tenant,
                 null
         );
 
@@ -214,9 +218,9 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        UUID tenantId = tenantService.getTenantIdBySchema(resolveTenant());
+        String tenant = resolveTenant();
 
-        userSessionService.revokeAllUserSessions(user.getId(), tenantId);
+        userSessionService.revokeAllUserSessions(user.getId(), tenant);
 
         return ResponseEntity.noContent().build();
     }
@@ -234,8 +238,7 @@ public class AuthController {
         log.info("🔄 REFRESH TOKEN ENDPOINT: Starting refresh flow");
 
         String tenant = resolveTenant(httpRequest);
-        UUID tenantId = tenantService.getTenantIdBySchema(tenant);
-        log.debug("✓ Tenant resolved: {} (ID: {})", tenant, tenantId);
+        log.debug("✓ Tenant resolved: {}", tenant);
 
         RefreshTokenService.RotationResult result =
                 refreshTokenService.validateAndRotate(
@@ -252,7 +255,7 @@ public class AuthController {
         log.debug("Finding active session for user: {}", result.user().getEmail());
         List<UserSession> activeSessions = userSessionService.getActiveSessionsForUser(
                 result.user().getId(),
-                tenantId
+                tenant
         );
         
         String sessionTokenId = null;
@@ -291,13 +294,13 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        UUID tenantId = tenantService.getTenantIdBySchema(resolveTenant());
+        String tenant = resolveTenant();
 
         String tokenId = extractTokenId(request);
 
         if (tokenId != null) {
 
-            userSessionService.revokeSession(tokenId, tenantId);
+            userSessionService.revokeSession(tokenId, tenant);
         }
 
         return ResponseEntity.noContent().build();
@@ -325,54 +328,14 @@ public class AuthController {
                 request.newPassword()
         );
 
-        UUID tenantId = tenantService.getTenantIdBySchema(resolveTenant());
+        String tenant = resolveTenant();
 
         userSessionService.revokeAllUserSessions(
                 user.getId(),
-                tenantId
+                tenant
         );
 
         return ResponseEntity.noContent().build();
-    }
-
-    /* ======================================================
-       FORGOT PASSWORD
-       ====================================================== */
-
-    @PostMapping("/forgot-password")
-    public ResponseEntity<Map<String, String>> forgotPassword(
-            @Valid @RequestBody ForgotPasswordRequest request
-    ) {
-        log.info("Password reset requested for: {}", maskEmail(request.email()));
-
-        // Always returns 200 (anti-enumeration: não revela se email existe)
-        passwordResetService.requestPasswordReset(request.email());
-
-        return ResponseEntity.ok(Map.of(
-                "message", "Se o email existe, você receberá um link para resetar a senha"
-        ));
-    }
-
-    /* ======================================================
-       RESET PASSWORD
-       ====================================================== */
-
-    @PostMapping("/reset-password")
-    public ResponseEntity<Void> resetPassword(
-            @Valid @RequestBody ResetPasswordRequest request
-    ) {
-        try {
-            log.info("Password reset attempted with token");
-
-            passwordResetService.resetPassword(request.token(), request.newPassword());
-
-            log.info("Password reset successful");
-
-            return ResponseEntity.noContent().build();
-        } catch (IllegalArgumentException e) {
-            log.warn("Password reset failed: {}", e.getMessage());
-            throw new UnauthorizedException("Token inválido ou expirado");
-        }
     }
 
     /* ======================================================
@@ -414,9 +377,11 @@ public class AuthController {
     private String resolveTenant() {
 
         try {
-            return TenantContext.getTenant();
+            String tenant = TenantContext.getTenant();
+            return validateTenant(tenant, "TenantContext");
         } catch (IllegalStateException e) {
             // Use default tenant (public) for public endpoints like /auth/register
+            log.warn("TenantContext not set, using default: {}", e.getMessage());
             return "public";
         }
     }
@@ -425,16 +390,44 @@ public class AuthController {
 
         // First, try to get from TenantContext (set by TenantFilter)
         try {
-            return TenantContext.getTenant();
+            String tenant = TenantContext.getTenant();
+            return validateTenant(tenant, "TenantContext");
         } catch (IllegalStateException e) {
+            log.debug("TenantContext not set, checking header...");
+            
             // For public endpoints, fall back to X-Tenant-ID header
             String headerTenant = request.getHeader("X-Tenant-ID");
             if (headerTenant != null && !headerTenant.isBlank()) {
-                return headerTenant;
+                String validated = validateTenant(headerTenant, "X-Tenant-ID header");
+                return validated;
             }
+            
             // Default to "public" if nothing else is available
+            log.debug("No tenant found in context or header, using default");
             return "public";
         }
+    }
+
+    private String validateTenant(String tenant, String source) {
+        
+        if (tenant == null || tenant.isBlank()) {
+            log.error("❌ TENANT VALIDATION FAILED: {} returned null/blank", source);
+            throw new IllegalStateException("Tenant cannot be null");
+        }
+
+        // Check for UUID pattern (0000000-0000-0000-0000-000000000000)
+        if (tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+            // If it's all zeros, it's definitely wrong
+            if (tenant.equals("00000000-0000-0000-0000-000000000000")) {
+                log.error("❌ CRITICAL: {} returned empty UUID (00000000-0000-0000-0000-000000000000)", source);
+                throw new IllegalStateException("Invalid tenant identifier (empty UUID)");
+            }
+            // Even if not all zeros, warn about UUID usage (should be String schema names)
+            log.warn("⚠️  {} returned UUID format ({}), expected String schema name", source, tenant);
+        }
+
+        log.debug("✓ Tenant validated from {}: {}", source, tenant);
+        return tenant;
     }
 
     private String extractTokenId(HttpServletRequest request) {
@@ -454,7 +447,7 @@ public class AuthController {
 
     private void createSession(
             UUID userId,
-            UUID tenantId,
+            String tenantId,
             JwtToken token,
             HttpServletRequest request
     ) {

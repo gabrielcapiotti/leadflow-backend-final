@@ -23,12 +23,12 @@ public interface UserSessionRepository
 
     Optional<UserSession> findByTokenIdAndTenantIdAndActiveTrue(
             String tokenId,
-            UUID tenantId
+            String tenantId
     );
 
     boolean existsByTokenIdAndTenantIdAndActiveTrue(
             String tokenId,
-            UUID tenantId
+            String tenantId
     );
 
     /* ======================================================
@@ -45,7 +45,7 @@ public interface UserSessionRepository
            AND s.active = true
     """)
     int revokeAllActiveSessions(UUID userId,
-                                UUID tenantId,
+                                String tenantId,
                                 Instant revokedAt);
 
     /* ======================================================
@@ -67,22 +67,22 @@ public interface UserSessionRepository
 
     List<UserSession> findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtAsc(
             UUID userId,
-            UUID tenantId
+            String tenantId
     );
 
     List<UserSession> findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtDesc(
             UUID userId,
-            UUID tenantId
+            String tenantId
     );
 
     Optional<UserSession> findByIdAndUserIdAndTenantIdAndActiveTrue(
             UUID sessionId,
             UUID userId,
-            UUID tenantId
+            String tenantId
     );
 
     long countByUserIdAndTenantIdAndActiveTrue(
             UUID userId,
-            UUID tenantId
+            String tenantId
     );
 }

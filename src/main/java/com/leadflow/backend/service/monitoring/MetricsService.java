@@ -15,6 +15,7 @@ public class MetricsService {
     private final Counter leadsCreatedTotal;
     private final Counter hotLeadsTotal;
     private final Counter aiExecutionsTotal;
+    private final Counter aiFailuresTotal;
 
     /*
      * Cache de counters por vendor para evitar recriação constante
@@ -34,6 +35,9 @@ public class MetricsService {
 
         this.aiExecutionsTotal =
                 registry.counter("ai.executions.total");
+
+        this.aiFailuresTotal =
+                registry.counter("ai.failures.total");
     }
 
     /*
@@ -77,6 +81,21 @@ public class MetricsService {
                 .computeIfAbsent(vendorId, id ->
                         registry.counter(
                                 "ai.executions.total",
+                                "vendor", id
+                        ))
+                .increment();
+    }
+
+    public void incrementAiFailures() {
+        aiFailuresTotal.increment();
+    }
+
+    public void incrementAiFailures(String vendorId) {
+
+        vendorAiCounters
+                .computeIfAbsent(vendorId, id ->
+                        registry.counter(
+                                "ai.failures.total",
                                 "vendor", id
                         ))
                 .increment();

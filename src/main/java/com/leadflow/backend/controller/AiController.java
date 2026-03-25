@@ -1,10 +1,7 @@
 package com.leadflow.backend.controller;
 
 import com.leadflow.backend.dto.ai.ChatRequest;
-import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
-import com.leadflow.backend.entities.vendor.Vendor;
-import com.leadflow.backend.entities.vendor.VendorFeatureKey;
-import com.leadflow.backend.entities.vendor.VendorLeadConversation;
+import com.leadflow.backend.entities.vendor.*;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.ai.AiRateLimiter;
@@ -14,9 +11,13 @@ import com.leadflow.backend.service.vendor.ConversationService;
 import com.leadflow.backend.service.vendor.VendorFeatureService;
 import com.leadflow.backend.service.vendor.VendorLeadService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -57,69 +58,69 @@ public class AiController {
         this.vendorFeatureService = vendorFeatureService;
     }
 
-    @PostMapping("/chat")
-    public ResponseEntity<?> chat(@Valid @RequestBody ChatRequest request) {
-
-        if (request.getMessage() == null || request.getMessage().isBlank()) {
-            return ResponseEntity.badRequest().body(
-                    Map.of(
-                            "error", "INVALID_MESSAGE",
-                            "message", "Mensagem não pode estar vazia"
-                    )
-            );
-        }
+    // =========================================================
+    // CORE VALIDATION (CENTRALIZADO)
+    // =========================================================
+    private Vendor validateAiAccess(VendorFeatureKey feature) {
 
         if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(
-                    Map.of(
-                            "error", "SUBSCRIPTION_READ_ONLY",
-                            "message", "Assinatura não permite uso da IA."
-                    )
-            );
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Assinatura não permite uso da IA");
         }
 
         Vendor vendor = vendorContext.getCurrentVendor();
+
         if (vendor == null) {
-            return ResponseEntity.status(401).body(
-                    Map.of(
-                            "error", "UNAUTHORIZED",
-                            "message", "Vendor não autenticado"
-                    )
-            );
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Vendor não autenticado");
         }
 
-        UUID vendorId = vendor.getId();
-
-        if (!vendorFeatureService.isEnabled(vendorId, VendorFeatureKey.AI_CHAT)) {
-            return ResponseEntity.status(403).body(
-                    Map.of(
-                            "error", "FEATURE_DISABLED",
-                            "message", "Recurso de IA não habilitado para esta conta."
-                    )
-            );
+        if (!vendorFeatureService.isEnabled(vendor.getId(), feature)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Recurso não habilitado para esta conta");
         }
 
-        if (!aiRateLimiter.allow(vendorId)) {
-            return ResponseEntity.status(429).body(
-                    Map.of(
-                            "error", "RATE_LIMIT",
-                            "message", "Limite de uso temporário atingido"
-                    )
-            );
+        if (!aiRateLimiter.allow(vendor.getId())) {
+            throw new ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS,
+                    "Limite de uso temporário atingido");
         }
+
+        return vendor;
+    }
+
+    private void validateVendorLeadAccess(UUID leadId) {
+        vendorLeadService.getLeadForCurrentVendor(leadId);
+    }
+
+    // =========================================================
+    // CHAT
+    // =========================================================
+    @PostMapping("/chat")
+    public ResponseEntity<?> chat(
+            @AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody ChatRequest request
+    ) {
+
+        if (request.getMessage() == null || request.getMessage().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Mensagem não pode estar vazia");
+        }
+
+        Vendor vendor = validateAiAccess(VendorFeatureKey.AI_CHAT);
 
         UUID leadId = request.getLeadId();
+        validateVendorLeadAccess(leadId);
 
-        // valida acesso ao lead
-        vendorLeadService.getLeadForCurrentVendor(leadId);
-
-        // salva mensagem do usuário
-        conversationService.saveMessage(leadId, "USER", request.getMessage());
+        conversationService.saveMessage(
+                leadId,
+                ConversationRole.USER.name(),
+                request.getMessage()
+        );
 
         List<VendorLeadConversation> history =
                 conversationService.getConversation(leadId);
 
-        String fullContext = history == null
+        String context = history == null
                 ? ""
                 : history.stream()
                 .map(m -> m.getRole() + ": " + m.getContent())
@@ -127,160 +128,125 @@ public class AiController {
 
         aiMetricsService.increment();
 
-        String aiResponse = aiService.generate(fullContext);
+        String aiResponse = aiService.generate(context);
 
-        conversationService.saveMessage(leadId, "AI", aiResponse);
+        conversationService.saveMessage(
+                leadId,
+                ConversationRole.ASSISTANT.name(),
+                aiResponse
+        );
 
-        return ResponseEntity.ok(aiResponse);
+        return ResponseEntity.ok(Map.of("response", aiResponse));
     }
 
+    // =========================================================
+    // SUMMARY
+    // =========================================================
     @PostMapping("/lead-summary")
-    public ResponseEntity<?> generateLeadSummary(@RequestParam UUID leadId) {
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(
-                    Map.of("error", "SUBSCRIPTION_READ_ONLY", "message", "Assinatura não permite uso da IA.")
-            );
-        }
-
-        Vendor vendor = vendorContext.getCurrentVendor();
-        if (vendor == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
-        }
-
-        vendorLeadService.getLeadForCurrentVendor(leadId);
-
-        if (!aiRateLimiter.allow(vendor.getId())) {
-            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
-        }
+    public ResponseEntity<?> summary(
+            @RequestParam UUID leadId
+    ) {
+        validateAiAccess(VendorFeatureKey.AI_SUMMARY);
+        validateVendorLeadAccess(leadId);
 
         aiMetricsService.increment();
-        String summary = aiService.generateSummary(leadId);
-        return ResponseEntity.ok(Map.of("summary", summary));
+        return ResponseEntity.ok(
+                Map.of("summary", aiService.generateSummary(leadId))
+        );
     }
 
+    // =========================================================
+    // TITLE
+    // =========================================================
     @PostMapping("/title-suggestion")
-    public ResponseEntity<?> suggestLeadTitle(
+    public ResponseEntity<?> title(
             @RequestParam UUID leadId,
             @RequestParam(required = false) String context
     ) {
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(
-                    Map.of("error", "SUBSCRIPTION_READ_ONLY")
-            );
-        }
-
-        Vendor vendor = vendorContext.getCurrentVendor();
-        if (vendor == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
-        }
-
-        vendorLeadService.getLeadForCurrentVendor(leadId);
-
-        if (!aiRateLimiter.allow(vendor.getId())) {
-            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
-        }
+        validateAiAccess(VendorFeatureKey.AI_TITLE);
 
         aiMetricsService.increment();
-        String title = context != null && !context.isBlank()
+
+        String title = (context != null && !context.isBlank())
                 ? aiService.suggestTitle(context)
                 : aiService.suggestTitle(leadId);
+
         return ResponseEntity.ok(Map.of("title", title));
     }
 
+    // =========================================================
+    // REFINE
+    // =========================================================
     @PostMapping("/refine-message")
-    public ResponseEntity<?> refineMessage(@RequestParam String message) {
+    public ResponseEntity<?> refine(
+            @RequestParam String message
+    ) {
         if (message == null || message.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_MESSAGE"));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Mensagem não pode estar vazia");
         }
 
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
-        }
-
-        Vendor vendor = vendorContext.getCurrentVendor();
-        if (vendor == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
-        }
-
-        if (!aiRateLimiter.allow(vendor.getId())) {
-            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
-        }
+        validateAiAccess(VendorFeatureKey.AI_REFINE);
 
         aiMetricsService.increment();
-        String refined = aiService.refineMessage(message);
-        return ResponseEntity.ok(Map.of("refined", refined));
+        return ResponseEntity.ok(
+                Map.of("refined", aiService.refineMessage(message))
+        );
     }
 
+    // =========================================================
+    // SENTIMENT
+    // =========================================================
     @PostMapping("/sentiment-analysis")
-    public ResponseEntity<?> analyzeSentiment(@RequestParam UUID leadId) {
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
-        }
-
-        Vendor vendor = vendorContext.getCurrentVendor();
-        if (vendor == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
-        }
-
-        vendorLeadService.getLeadForCurrentVendor(leadId);
-
-        if (!aiRateLimiter.allow(vendor.getId())) {
-            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
-        }
+    public ResponseEntity<?> sentiment(
+            @RequestParam UUID leadId
+    ) {
+        validateAiAccess(VendorFeatureKey.AI_SENTIMENT);
+        validateVendorLeadAccess(leadId);
 
         aiMetricsService.increment();
-        Map<String, Object> sentiment = aiService.analyzeSentiment(leadId);
-        return ResponseEntity.ok(sentiment);
+        return ResponseEntity.ok(
+                aiService.analyzeSentiment(leadId)
+        );
     }
 
+    // =========================================================
+    // CLASSIFY
+    // =========================================================
     @PostMapping("/classify-lead")
-    public ResponseEntity<?> classifyLead(@RequestParam UUID leadId) {
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
-        }
-
-        Vendor vendor = vendorContext.getCurrentVendor();
-        if (vendor == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
-        }
-
-        vendorLeadService.getLeadForCurrentVendor(leadId);
-
-        if (!aiRateLimiter.allow(vendor.getId())) {
-            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
-        }
+    public ResponseEntity<?> classify(
+            @RequestParam UUID leadId
+    ) {
+        validateAiAccess(VendorFeatureKey.AI_CLASSIFY);
+        validateVendorLeadAccess(leadId);
 
         aiMetricsService.increment();
-        Map<String, Object> classification = aiService.classifyLead(leadId);
-        return ResponseEntity.ok(classification);
+        return ResponseEntity.ok(
+                aiService.classifyLead(leadId)
+        );
     }
 
+    // =========================================================
+    // GENERATE RESPONSE
+    // =========================================================
     @PostMapping("/generate-response")
-    public ResponseEntity<?> generateResponse(
+    public ResponseEntity<?> generate(
             @RequestParam UUID leadId,
             @RequestParam String prompt
     ) {
         if (prompt == null || prompt.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "INVALID_PROMPT"));
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Prompt não pode estar vazio");
         }
 
-        if (subscriptionGuard.resolveAccess() != SubscriptionAccessLevel.FULL) {
-            return ResponseEntity.status(403).body(Map.of("error", "SUBSCRIPTION_READ_ONLY"));
-        }
-
-        Vendor vendor = vendorContext.getCurrentVendor();
-        if (vendor == null) {
-            return ResponseEntity.status(401).body(Map.of("error", "UNAUTHORIZED"));
-        }
-
-        vendorLeadService.getLeadForCurrentVendor(leadId);
-
-        if (!aiRateLimiter.allow(vendor.getId())) {
-            return ResponseEntity.status(429).body(Map.of("error", "RATE_LIMIT"));
-        }
+        validateAiAccess(VendorFeatureKey.AI_GENERATE);
+        validateVendorLeadAccess(leadId);
 
         aiMetricsService.increment();
-        String response = aiService.generateResponse(leadId, prompt);
-        return ResponseEntity.ok(Map.of("response", response));
+
+        return ResponseEntity.ok(
+                Map.of("response",
+                        aiService.generateResponse(leadId, prompt))
+        );
     }
 }

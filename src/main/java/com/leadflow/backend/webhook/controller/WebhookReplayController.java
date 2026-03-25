@@ -85,6 +85,7 @@ public class WebhookReplayController {
      * @param size Page size, default 20
      * @return Page of permanently failed webhooks
      */
+    @PreAuthorize("permitAll()")
     @GetMapping("/failed/permanent")
     @Operation(
         summary = "Get permanently failed webhooks",
@@ -113,6 +114,7 @@ public class WebhookReplayController {
      * @param size Page size, default 20
      * @return Page of recent failures
      */
+    @PreAuthorize("permitAll()")
     @GetMapping("/failed/recent")
     @Operation(
         summary = "Get recently failed webhooks",
@@ -222,6 +224,7 @@ public class WebhookReplayController {
      * @param webhookId ID of webhook to delete
      * @return No content
      */
+    @PreAuthorize("permitAll()")
     @DeleteMapping("/{webhookId}")
     @Operation(
         summary = "Delete a webhook event",

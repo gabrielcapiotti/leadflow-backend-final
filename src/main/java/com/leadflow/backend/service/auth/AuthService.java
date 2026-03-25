@@ -7,6 +7,7 @@ import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.user.RoleRepository;
 import com.leadflow.backend.repository.user.UserRepository;
 import com.leadflow.backend.service.audit.SecurityAuditService;
+import com.leadflow.backend.service.vendor.VendorService;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -35,6 +36,7 @@ public class AuthService {
     private final SecurityAuditService auditService;
     private final LoginAuditService loginAuditService;
     private final BruteForceProtectionService bruteForceService;
+    private final VendorService vendorService;
 
     private final int maxAttempts;
     private final int windowMinutes;
@@ -46,6 +48,7 @@ public class AuthService {
             SecurityAuditService auditService,
             LoginAuditService loginAuditService,
             BruteForceProtectionService bruteForceService,
+            VendorService vendorService,
             @Value("${security.brute-force.max-attempts:5}") int maxAttempts,
             @Value("${security.brute-force.window-minutes:5}") int windowMinutes
     ) {
@@ -55,6 +58,7 @@ public class AuthService {
         this.auditService = auditService;
         this.loginAuditService = loginAuditService;
         this.bruteForceService = bruteForceService;
+        this.vendorService = vendorService;
 
         this.maxAttempts = Math.max(maxAttempts, 1);
         this.windowMinutes = Math.max(windowMinutes, 1);
@@ -113,45 +117,52 @@ public class AuthService {
         if (email == null || email.isBlank()
                 || password == null || password.isBlank()) {
 
-            recordFailureAudit(email, "Invalid credentials");
+            String resolvedTenant = tenant != null ? tenant : TenantContext.getIfPresent();
+            if (resolvedTenant == null) {
+                resolvedTenant = TenantContext.requireTenant();
+            }
+            recordFailureAudit(email, "Invalid credentials", resolvedTenant);
             throw new IllegalArgumentException("Invalid credentials");
         }
 
         String normalizedEmail = normalizeEmail(email);
 
-        if (tenant == null) {
-            tenant = TenantContext.getIfPresent();
+        String resolvedTenant = tenant;
+        if (resolvedTenant == null) {
+            resolvedTenant = TenantContext.getIfPresent();
         }
+
+        if (resolvedTenant == null) {
+            resolvedTenant = TenantContext.requireTenant();
+        }
+
+        final String tenantContext = resolvedTenant;
 
         String ip = request != null ? request.getRemoteAddr() : "unknown";
 
-        String emailKey = "bf:email:" + tenant + ":" + normalizedEmail;
-        String ipKey = "bf:ip:" + tenant + ":" + ip;
+        String emailKey = "bf:email:" + tenantContext + ":" + normalizedEmail;
+        String ipKey = "bf:ip:" + tenantContext + ":" + ip;
 
         if (bruteForceService.isBlocked(emailKey, maxAttempts)
                 || bruteForceService.isBlocked(ipKey, maxAttempts)) {
 
-            recordFailureAudit(normalizedEmail, "Brute force detected");
+            recordFailureAudit(normalizedEmail, "Brute force detected", tenantContext);
 
             throw new IllegalStateException(
                     "Too many failed attempts. Try again later."
             );
         }
 
-        if (tenant == null) {
-            tenant = TenantContext.requireTenant();
-        }
-
         User user = userRepository
-                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenantContext)
                 .orElseThrow(() -> {
-                    recordFailureAudit(normalizedEmail, "User not found");
+                    recordFailureAudit(normalizedEmail, "User not found", tenantContext);
                     return new IllegalArgumentException("Invalid credentials");
                 });
 
         if (user.isAccountLocked()) {
 
-            recordFailureAudit(normalizedEmail, "Account locked");
+            recordFailureAudit(normalizedEmail, "Account locked", tenantContext);
 
             throw new IllegalStateException(
                     "Account temporarily locked. Try again later."
@@ -166,7 +177,7 @@ public class AuthService {
             bruteForceService.recordFailure(emailKey, windowMinutes);
             bruteForceService.recordFailure(ipKey, windowMinutes);
 
-            recordFailureAudit(normalizedEmail, "Wrong password");
+            recordFailureAudit(normalizedEmail, "Wrong password", tenantContext);
 
             throw new IllegalArgumentException("Invalid credentials");
         }
@@ -177,7 +188,7 @@ public class AuthService {
         bruteForceService.reset(emailKey);
         bruteForceService.reset(ipKey);
 
-        recordSuccessAudit(user);
+        recordSuccessAudit(user, tenantContext);
 
         logger.info("User authenticated successfully: {}", normalizedEmail);
 
@@ -188,33 +199,33 @@ public class AuthService {
     /* HELPERS                                                */
     /* ====================================================== */
 
-    private void recordSuccessAudit(User user) {
+    private void recordSuccessAudit(User user, String tenant) {
         HttpServletRequest request = currentRequest();
 
         loginAuditService.recordSuccess(
                 user.getId(),
-                TenantContext.getIfPresent(),
+                tenant,
                 user.getEmail(),
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,
                 false
         );
 
-        audit(SecurityAction.LOGIN_SUCCESS, user.getEmail(), true);
+        audit(SecurityAction.LOGIN_SUCCESS, user.getEmail(), tenant, true);
     }
 
-    private void recordFailureAudit(String email, String reason) {
+    private void recordFailureAudit(String email, String reason, String tenant) {
         HttpServletRequest request = currentRequest();
 
         loginAuditService.recordFailure(
-                TenantContext.getIfPresent(),
+                tenant,
                 email,
                 request != null ? request.getRemoteAddr() : null,
                 request != null ? request.getHeader("User-Agent") : null,
                 reason
         );
 
-        audit(SecurityAction.LOGIN_FAILED, email, false);
+        audit(SecurityAction.LOGIN_FAILED, email, tenant, false);
     }
 
     private void audit(SecurityAction action, String email, String tenant, boolean success) {
@@ -300,8 +311,10 @@ public class AuthService {
             );
         }
 
+        String tenant = TenantContext.requireTenant();
+
         User user = userRepository
-                .findByIdAndDeletedAtIsNull(userId)
+                .findByIdAndTenantIdAndDeletedAtIsNull(userId, tenant)
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
         user.changePassword(passwordEncoder.encode(newPassword));

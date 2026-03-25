@@ -26,7 +26,7 @@ WITH admin_role AS (
 )
 -- Insert admin user
 INSERT INTO public.users (
-    id, name, email, password, role_id, 
+    id, name, email, password, role_id, tenant_id,
     failed_attempts, lock_until, credentials_updated_at, 
     created_at, updated_at, deleted_at
 )
@@ -36,6 +36,7 @@ SELECT
     '$adminEmail',
     '$bcryptHash',
     admin_role.id,
+    'public',
     0, NULL, CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
 FROM admin_role

@@ -40,16 +40,25 @@ public class TenantFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        boolean isPublicAuth = path.startsWith("/auth/");
+        // ✅ Only skip PUBLIC auth endpoints - protected endpoints still need TenantContext
+        boolean isPublicAuth = path.equals("/auth/register")
+                || path.equals("/auth/login")
+                || path.equals("/auth/refresh")
+                || path.equals("/auth/forgot-password")
+                || path.equals("/auth/reset-password");
+        
         boolean isWebhook = path.startsWith("/stripe/webhook")
                 || path.startsWith("/webhooks/")
                 || path.startsWith("/webhook/");
+        
         boolean isPublicApi = path.startsWith("/public/");
 
         return isPublicAuth
                 || isWebhook
                 || isPublicApi
+                || path.startsWith("/api/actuator")
                 || path.startsWith("/actuator")
+                || path.startsWith("/api/health")
                 || path.startsWith("/health")
                 || path.startsWith("/swagger")
                 || path.startsWith("/v3/api-docs");
@@ -118,10 +127,15 @@ public class TenantFilter extends OncePerRequestFilter {
 
             logger.error("Error resolving tenant", ex);
 
-            response.sendError(
-                    HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
-                    "Error resolving tenant"
-            );
+            // If it's already a ResponseStatusException, let it through (e.g., tenant mismatch = 403)
+            if (ex instanceof org.springframework.web.server.ResponseStatusException rse) {
+                response.sendError(rse.getStatusCode().value(), rse.getReason());
+            } else {
+                response.sendError(
+                        HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+                        "Error resolving tenant"
+                );
+            }
 
         } finally {
 

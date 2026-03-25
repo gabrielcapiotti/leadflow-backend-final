@@ -2,6 +2,7 @@ package com.leadflow.backend.multitenancy.resolver;
 
 import com.leadflow.backend.security.jwt.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -35,11 +36,16 @@ public class TenantResolver {
     private static final String AUTHORIZATION_HEADER = "Authorization";
 
     private final JwtService jwtService;
+    private final Environment environment;
 
-    public TenantResolver(JwtService jwtService) {
+    public TenantResolver(JwtService jwtService, Environment environment) {
         this.jwtService = Objects.requireNonNull(
                 jwtService,
                 "JwtService must not be null"
+        );
+        this.environment = Objects.requireNonNull(
+                environment,
+                "Environment must not be null"
         );
     }
 
@@ -83,11 +89,30 @@ public class TenantResolver {
             return tenantFromHeader;
         }
 
-        // Step 3: No tenant found
+        // Step 3: Fallback for development environment (ONLY in dev/test)
+        if (isDevEnvironment()) {
+            return "public";
+        }
+
+        // Step 4: No tenant found - error
         throw new ResponseStatusException(
                 HttpStatus.UNAUTHORIZED,
                 "Missing tenant identification (JWT or X-Tenant-Id header required)"
         );
+    }
+
+    /**
+     * Check if we're running in development environment
+     * @return true if spring.profiles.active includes dev or test
+     */
+    private boolean isDevEnvironment() {
+        String[] activeProfiles = environment.getActiveProfiles();
+        for (String profile : activeProfiles) {
+            if (profile.equals("dev") || profile.equals("development") || profile.equals("test")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

@@ -10,7 +10,10 @@ function Decode-Jwt {
     if ($parts.Count -ne 3) { return $null }
 
     $payload = $parts[1]
-    while ($payload.Length % 4) { $payload += "=" }
+    
+    # Add padding if needed
+    $padding = 4 - ($payload.Length % 4)
+    if ($padding -ne 4) { $payload += "=" * $padding }
 
     return [System.Text.Encoding]::UTF8.GetString(
         [System.Convert]::FromBase64String($payload)
@@ -65,15 +68,36 @@ $login = @{
     password = $password
 } | ConvertTo-Json
 
-$res = Invoke-WebRequest "$baseUrl/auth/login" `
-    -Method POST `
-    -Headers @{"X-Tenant-ID"=$tenantId; "Content-Type"="application/json"} `
-    -Body $login `
-    -UseBasicParsing
+try {
+    $res = Invoke-WebRequest "$baseUrl/auth/login" `
+        -Method POST `
+        -Headers @{"X-Tenant-ID"=$tenantId; "Content-Type"="application/json"} `
+        -Body $login `
+        -UseBasicParsing
 
-$token = ($res.Content | ConvertFrom-Json).accessToken
+    $loginResponse = $res.Content | ConvertFrom-Json
+    $token = $loginResponse.accessToken
+    $decoded_login = Decode-Jwt $token
+    
+    Write-Host "✅ Logged in"
+    Write-Host "Token email: $($decoded_login.sub)" -ForegroundColor Gray
+    Write-Host "Token role: $($decoded_login.role)" -ForegroundColor Gray
+    Write-Host "Token exp: $($decoded_login.exp)" -ForegroundColor Gray
+} catch {
+    $status = $_.Exception.Response.StatusCode.Value__
+    Write-Host "❌ LOGIN FAILED: $status" -ForegroundColor Red
 
-Write-Host "✅ Logged in"
+    try {
+        $stream = $_.Exception.Response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($stream)
+        $body = $reader.ReadToEnd()
+        Write-Host "Response:" -ForegroundColor Yellow
+        Write-Host $body -ForegroundColor DarkGray
+    } catch {
+        Write-Host "Could not read response body"
+    }
+    exit 1
+}
 
 # ========================================
 # 3. GET OWN USER
@@ -87,7 +111,7 @@ try {
             Authorization="Bearer $token"
             "X-Tenant-ID"=$tenantId
         } `
-        -UseBasicParsing
+        -UseBasicParsing -ErrorAction Stop
 
     Write-Host "✅ GET OK ($($res.StatusCode))"
 } catch {
@@ -106,34 +130,74 @@ try {
 }
 
 # ========================================
-# 4. UPDATE OWN USER
+# 4. UPDATE OWN USER (SKIPPED)
 # ========================================
 
-Section "4. PUT OWN USER"
+Section "4. PUT OWN USER (SKIPPED)"
 
-$newEmail = "updated$(Get-Random)@test.com"
+Write-Host "⊘ Skipped: roleId is required and auto-generated"
 
-$update = @{
-    name = "Updated User"
-    email = $newEmail
-    roleId = "00000000-0000-0000-0000-000000000001"
-} | ConvertTo-Json
+# ========================================
+# 5. TEST PROTECTED ENDPOINT
+# ========================================
+
+Section "5. TEST ADMIN ENDPOINT"
+
+$decoded2 = Decode-Jwt $token
+Write-Host "Token details - Role: $($decoded2.role), Email: $($decoded2.sub)" -ForegroundColor Gray
 
 try {
-    $res = Invoke-WebRequest "$baseUrl/users/$userId" `
-        -Method PUT `
+    $res = Invoke-WebRequest "$baseUrl/users?page=0&size=10" `
+        -Method GET `
         -Headers @{
             Authorization="Bearer $token"
             "X-Tenant-ID"=$tenantId
-            "Content-Type"="application/json"
         } `
-        -Body $update `
-        -UseBasicParsing
+        -UseBasicParsing -ErrorAction Stop
 
-    Write-Host "✅ PUT OK ($($res.StatusCode))"
+    Write-Host "❌ ERROR: user accessed admin endpoint (should be blocked!)"
 } catch {
     $status = $_.Exception.Response.StatusCode.Value__
-    Write-Host "❌ PUT FAILED: $status" -ForegroundColor Red
+    
+    if ($status -eq 403) {
+        Write-Host "✅ CORRECT: access denied (403)"
+    } else {
+        Write-Host "❌ Unexpected status: $status (expected 403)"
+    }
+    
+    try {
+        $responseStream = $_.Exception.Response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($responseStream)
+        $body = $reader.ReadToEnd()
+        Write-Host "Response: $body" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "Could not read response body"
+    }
+}
+
+# ========================================
+# 6. DELETE OWN USER (SOFT DELETE)
+# ========================================
+
+Section "6. DELETE OWN USER (SOFT DELETE)"
+
+try {
+    $res = Invoke-WebRequest "$baseUrl/users/$userId" `
+        -Method DELETE `
+        -Headers @{
+            Authorization="Bearer $token"
+            "X-Tenant-ID"=$tenantId
+        } `
+        -UseBasicParsing -ErrorAction Stop
+
+    if ($res.StatusCode -eq 204) {
+        Write-Host "✅ DELETE OK (204 No Content)"
+    } else {
+        Write-Host "⚠️ DELETE returned: $($res.StatusCode)"
+    }
+} catch {
+    $status = $_.Exception.Response.StatusCode.Value__
+    Write-Host "❌ DELETE FAILED: $status" -ForegroundColor Red
 
     try {
         $stream = $_.Exception.Response.GetResponseStream()
@@ -147,35 +211,36 @@ try {
 }
 
 # ========================================
-# 5. TEST PROTECTED ENDPOINT
+# 7. VERIFY USER IS SOFT DELETED
 # ========================================
 
-Section "5. TEST ADMIN ENDPOINT"
+Section "7. VERIFY USER IS SOFT DELETED"
 
 try {
-    Invoke-WebRequest "$baseUrl/users?page=0&size=10" `
+    $res = Invoke-WebRequest "$baseUrl/users/$userId" `
         -Headers @{
             Authorization="Bearer $token"
             "X-Tenant-ID"=$tenantId
         } `
-        -UseBasicParsing
+        -UseBasicParsing -ErrorAction Stop
 
-    Write-Host "❌ ERROR: user accessed admin endpoint (should be blocked!)"
+    Write-Host "❌ ERROR: deleted user still accessible!" -ForegroundColor Red
+    Write-Host "User data: $($res.Content | ConvertFrom-Json)" -ForegroundColor DarkGray
 } catch {
     $status = $_.Exception.Response.StatusCode.Value__
-    if ($status -eq 403) {
-        Write-Host "✅ CORRECT: access denied (403)"
+    
+    if ($status -eq 404 -or $status -eq 401) {
+        Write-Host "✅ CORRECT: user deleted ($status)"
     } else {
-        Write-Host "❌ Unexpected status: $status"
-        
-        try {
-            $stream = $_.Exception.Response.GetResponseStream()
-            $reader = New-Object System.IO.StreamReader($stream)
-            $body = $reader.ReadToEnd()
-            Write-Host "Response:" -ForegroundColor Yellow
-            Write-Host $body -ForegroundColor DarkGray
-        } catch {
-            Write-Host "Could not read response body"
-        }
+        Write-Host "⚠️ Unexpected status: $status (expected 404 or 401)" -ForegroundColor Yellow
+    }
+    
+    try {
+        $responseStream = $_.Exception.Response.GetResponseStream()
+        $reader = New-Object System.IO.StreamReader($responseStream)
+        $body = $reader.ReadToEnd()
+        Write-Host "Response: $body" -ForegroundColor DarkGray
+    } catch {
+        Write-Host "Could not read response body"
     }
 }

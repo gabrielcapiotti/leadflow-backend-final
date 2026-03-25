@@ -16,6 +16,9 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
 import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.server.ResponseStatusException;
 
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -196,8 +199,79 @@ public class GlobalExceptionHandler {
     }
 
     /* =========================================================
+       HTTP CLIENT/SERVER ERRORS
+       ========================================================= */
+
+    @ExceptionHandler(HttpClientErrorException.class)
+    public ResponseEntity<ApiErrorResponse> handleHttpClientError(
+            HttpClientErrorException ex
+    ) {
+        log.warn("HTTP client error: {} - {}", ex.getStatusCode(), ex.getMessage());
+        
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        String reasonPhrase = status != null ? status.getReasonPhrase() : "Client Error";
+        
+        ApiErrorResponse response = new ApiErrorResponse(
+                ex.getStatusCode().value(),
+                reasonPhrase,
+                ex.getMessage()
+        );
+        
+        return ResponseEntity
+                .status(ex.getStatusCode())
+                .body(response);
+    }
+
+    @ExceptionHandler(HttpServerErrorException.class)
+    public ResponseEntity<ApiErrorResponse> handleHttpServerError(
+            HttpServerErrorException ex
+    ) {
+        log.error("HTTP server error: {} - {}", ex.getStatusCode(), ex.getMessage());
+        
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        String reasonPhrase = status != null ? status.getReasonPhrase() : "Server Error";
+        
+        ApiErrorResponse response = new ApiErrorResponse(
+                ex.getStatusCode().value(),
+                reasonPhrase,
+                ex.getMessage()
+        );
+        
+        return ResponseEntity
+                .status(ex.getStatusCode())
+                .body(response);
+    }
+
+    /* =========================================================
        FALLBACK
        ========================================================= */
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ApiErrorResponse> handleResponseStatus(
+            ResponseStatusException ex
+    ) {
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String reason = ex.getReason();
+        
+        if (status.is4xxClientError()) {
+            log.warn("Response status exception: {} - {}", status, reason);
+        } else {
+            log.error("Response status exception: {} - {}", status, reason);
+        }
+        
+        ApiErrorResponse response = new ApiErrorResponse(
+                status.value(),
+                status.getReasonPhrase(),
+                reason != null ? reason : status.getReasonPhrase()
+        );
+        
+        return ResponseEntity
+                .status(status)
+                .body(response);
+    }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpected(

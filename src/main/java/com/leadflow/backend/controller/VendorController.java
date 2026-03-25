@@ -8,7 +8,10 @@ import com.leadflow.backend.service.vendor.UsageService;
 import com.leadflow.backend.service.vendor.QuotaService;
 import com.leadflow.backend.service.PlanService;
 
+import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -66,6 +69,18 @@ public class VendorController {
     }
 
     /* ======================================================
+       GET BY ID (SEGURA)
+       ====================================================== */
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Vendor> getById(@PathVariable UUID id) {
+        String tenant = TenantContext.getTenant();
+        return repository.findByIdAndTenantId(id, tenant)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /* ======================================================
        CREATE (SEGURA)
        ====================================================== */
 
@@ -79,6 +94,15 @@ public class VendorController {
 
         // 🔥 CRÍTICO: set tenant
         safe.setTenantId(tenant);
+
+        // 🔥 CRÍTICO: associar usuário autenticado ao vendor
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null && auth.isAuthenticated()) {
+            String userEmail = auth.getName();
+            if (userEmail != null && !userEmail.isBlank()) {
+                safe.setUserEmail(userEmail);
+            }
+        }
 
         // defaults
         safe.setEmailInvalid(false);
@@ -127,6 +151,7 @@ public class VendorController {
         vendor.setCorDestaque(data.getCorDestaque());
         vendor.setMensagemBoasVindas(data.getMensagemBoasVindas());
         vendor.setSlug(data.getSlug());
+        vendor.setName(data.getName());
 
         return repository.save(vendor);
     }

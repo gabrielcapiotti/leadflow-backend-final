@@ -92,7 +92,6 @@ public class OpenAiService implements AiService {
     @CheckQuota(type = "IA_EXECUTION")
     @Retryable(
             retryFor = {
-                    HttpClientErrorException.TooManyRequests.class,
                     HttpServerErrorException.class,
                     ResourceAccessException.class
             },
@@ -168,8 +167,27 @@ public class OpenAiService implements AiService {
 
             return content;
 
-        } catch (HttpClientErrorException.TooManyRequests |
-                 HttpServerErrorException |
+        } catch (HttpClientErrorException.TooManyRequests ex) {
+
+            log.warn("OpenAI quota exceeded - usando fallback seguro");
+
+            metricsService.incrementAiFailures();
+
+            systemAlertService.sendCriticalAlert(
+                    "Quota OpenAI excedida: " + ex.getMessage()
+            );
+
+            return FALLBACK_RESPONSE;
+
+        } catch (HttpClientErrorException ex) {
+
+            log.warn("OpenAI client error (4xx): {} - {}", ex.getStatusCode(), ex.getMessage());
+            throw new org.springframework.web.server.ResponseStatusException(
+                    ex.getStatusCode(),
+                    ex.getMessage()
+            );
+
+        } catch (HttpServerErrorException |
                  ResourceAccessException e) {
 
             log.warn("Erro temporário OpenAI (retry): {}", e.getMessage());

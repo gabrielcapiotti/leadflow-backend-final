@@ -17,12 +17,19 @@ function Invoke-ApiRequest {
         [string]$Endpoint,
         [hashtable]$Body = $null,
         [bool]$RequireAuth = $false,
-        [string]$Token = $null
+        [string]$Token = $null,
+        [string]$TenantId = $null
     )
 
     $Headers = @{
         "Content-Type" = "application/json"
-        "X-Tenant-Id"  = $TenantHeader
+    }
+
+    # Add tenant header if provided or use default
+    if ($TenantId) {
+        $Headers["X-Tenant-Id"] = $TenantId
+    } elseif ($TenantHeader) {
+        $Headers["X-Tenant-Id"] = $TenantHeader
     }
 
     if ($RequireAuth -and $Token) {
@@ -41,12 +48,12 @@ function Invoke-ApiRequest {
         }
 
         $response = Invoke-RestMethod @params
-        return @{ Success = $true; Status = 200; Data = $response }
+        return @{ Success = $true; Status = 200; Data = $response; Headers = $Headers }
     }
     catch {
         $status = 0
         try { $status = $_.Exception.Response.StatusCode.value__ } catch {}
-        return @{ Success = $false; Status = $status; Exception = $_.Exception.Message }
+        return @{ Success = $false; Status = $status; Exception = $_.Exception.Message; Headers = $Headers }
     }
 }
 
@@ -67,6 +74,18 @@ $r = Invoke-ApiRequest "POST" "/auth/register" @{
 if ($r.Success) {
     Write-Host "✅ Usuário criado: $testEmail" -ForegroundColor Green
     $token = $r.Data.accessToken
+    
+    # Try to extract vendor ID from response
+    if ($r.Data.user -and $r.Data.user.vendorId) {
+        $VendorTenant = $r.Data.user.vendorId
+        Write-Host "✅ Vendor ID extraído: $VendorTenant" -ForegroundColor Green
+    } elseif ($r.Data.vendorId) {
+        $VendorTenant = $r.Data.vendorId
+        Write-Host "✅ Vendor ID extraído: $VendorTenant" -ForegroundColor Green
+    } else {
+        Write-Host "⚠️  Vendor ID não encontrado na resposta, usando 'public'" -ForegroundColor Yellow
+        $VendorTenant = "public"
+    }
 } else {
     Write-Host "❌ Erro ao criar usuário: $($r.Exception)" -ForegroundColor Red
     exit 1
@@ -76,22 +95,22 @@ Write-Host ""
 # Test endpoints
 Write-Host "STEP 2: Testar endpoints" -ForegroundColor Yellow
 Write-Host "═══════════════════════════════════════════════════════"
+Write-Host "Usando Tenant-ID: $VendorTenant" -ForegroundColor Gray
+Write-Host ""
 
-# Create vendor for the user
-Write-Host "STEP 2: Criar vendor para o usuário" -ForegroundColor Yellow
-Write-Host "═══════════════════════════════════════════════════════"
+# Create vendor for the user (auto-created, may return 409)
+Write-Host "[INFO] Tentando criar vendor (pode retornar 409 - esperado)" -ForegroundColor Gray
 
 $r = Invoke-ApiRequest "POST" "/api/vendors" @{
     name = "Test Vendor"
     userEmail = $testEmail
     active = $true
-} $true $token
+} $true $token $VendorTenant
 
 if ($r.Success) {
     Write-Host "✅ Vendor criado" -ForegroundColor Green
 } else {
-    Write-Host "⚠️  Erro ao criar vendor: Status $($r.Status)" -ForegroundColor Yellow
-    Write-Host "Continuando mesmo assim..." -ForegroundColor Yellow
+    Write-Host "⚠️  Status $($r.Status) - $($r.Exception)" -ForegroundColor Yellow
 }
 Write-Host ""
 
@@ -109,13 +128,16 @@ $passed = 0
 $failed = 0
 
 foreach ($ep in $endpoints) {
-    $r = Invoke-ApiRequest $ep.Method $ep.Endpoint $(if ($ep.Body) { $ep.Body } else { $null }) $true $token
+    $r = Invoke-ApiRequest $ep.Method $ep.Endpoint $(if ($ep.Body) { $ep.Body } else { $null }) $true $token $VendorTenant
     
     if ($r.Success) {
         Write-Host "✅ $($ep.Name) (HTTP 200)" -ForegroundColor Green
+        Write-Host "   [Header] X-Tenant-Id: $($r.Headers.'X-Tenant-Id')" -ForegroundColor Gray
         $passed++
     } else {
         Write-Host "❌ $($ep.Name) (HTTP $($r.Status))" -ForegroundColor Red
+        Write-Host "   [Header] X-Tenant-Id: $($r.Headers.'X-Tenant-Id')" -ForegroundColor Gray
+        Write-Host "   [Error] $($r.Exception)" -ForegroundColor DarkRed
         $failed++
     }
 }

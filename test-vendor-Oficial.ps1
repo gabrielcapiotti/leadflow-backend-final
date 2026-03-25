@@ -127,11 +127,13 @@ if ($r.StatusCode -eq 200) {
 
 Write-Host "`nCREATE TESTS" -ForegroundColor Yellow
 
-function CreateVendor($slug) {
+function CreateVendor($slug, $vendorName) {
     $body = @{
-        nomeVendedor="Test"
-        whatsappVendedor="999"
-        nomeEmpresa="Company"
+        name=$vendorName
+        nomeVendedor="Test Vendor"
+        whatsappVendedor="5511999999999"
+        nomeEmpresa="Test Company"
+        userEmail=$Email
         slug=$slug
     } | ConvertTo-Json
 
@@ -139,8 +141,10 @@ function CreateVendor($slug) {
 }
 
 # Create 3 vendors
-foreach ($slug in @($Slug1,$Slug2,$Slug3)) {
-    $r = CreateVendor $slug
+for ($i = 0; $i -lt 3; $i++) {
+    $slug = @($Slug1,$Slug2,$Slug3)[$i]
+    $name = "Vendor-$((Get-Random))"
+    $r = CreateVendor $slug $name
     if ($r.StatusCode -eq 200) {
         $data = $r.Content | ConvertFrom-Json
         $Global:VendorIds += $data.id
@@ -151,7 +155,7 @@ foreach ($slug in @($Slug1,$Slug2,$Slug3)) {
 }
 
 # Duplicate slug
-$r = CreateVendor $Slug1
+$r = CreateVendor $Slug1 "DuplicateTest-$(Get-Random)"
 if ($r.StatusCode -in @(400,409)) { Pass "Duplicate blocked" }
 else { Fail "Duplicate should fail" }
 
@@ -181,12 +185,19 @@ Write-Host "`nUPDATE TESTS" -ForegroundColor Yellow
 
 $id = $Global:VendorIds[0]
 
-$body = @{ nomeVendedor="Updated"; slug=$Slug1 } | ConvertTo-Json
+$body = @{ 
+    name="Updated Name"
+    nomeVendedor="Updated Vendor"
+    whatsappVendedor="5511999999999"
+    nomeEmpresa="Updated Company"
+    userEmail=$Email
+    slug=$Slug1 
+} | ConvertTo-Json
 $r = Call PUT "$BaseUrl/vendors/$id" (Headers $Global:Token) $body
 
 if ($r.StatusCode -eq 200) {
     $data = $r.Content | ConvertFrom-Json
-    if ($data.nomeVendedor -eq "Updated") { Pass "Update OK" }
+    if ($data.nomeVendedor -eq "Updated Vendor") { Pass "Update OK" }
     else { Fail "Update failed (value)" }
 } else { Fail "Update failed (status)" }
 

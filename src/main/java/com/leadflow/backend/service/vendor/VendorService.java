@@ -1,11 +1,13 @@
 package com.leadflow.backend.service.vendor;
 
 import com.leadflow.backend.entities.Plan;
+import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.entities.vendor.SubscriptionStatus;
 import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.PlanRepository;
 import com.leadflow.backend.repository.VendorRepository;
+import com.leadflow.backend.repository.user.UserRepository;
 
 import jakarta.transaction.Transactional;
 
@@ -18,30 +20,36 @@ import java.util.UUID;
 public class VendorService {
 
     private final VendorRepository vendorRepository;
+    private final UserRepository userRepository;
     private final UsageService usageService;
     private final PlanRepository planRepository;
 
     public VendorService(
             VendorRepository vendorRepository,
+            UserRepository userRepository,
             UsageService usageService,
             PlanRepository planRepository
     ) {
         this.vendorRepository = vendorRepository;
+        this.userRepository = userRepository;
         this.usageService = usageService;
         this.planRepository = planRepository;
     }
 
     @Transactional
-    public Vendor createVendor(String email) {
+    public Vendor createVendor(User user) {
         Vendor vendor = new Vendor();
-        vendor.setUserEmail(normalizeEmail(email));
-        vendor.setName(localPart(email));
-        vendor.setNomeVendedor(localPart(email));
+        
+        vendor.setUserEmail(normalizeEmail(user.getEmail()));
+        vendor.setName(user.getName());
+        vendor.setNomeVendedor(user.getName());
         vendor.setWhatsappVendedor("0000000000");
-        vendor.setSlug(generateSlug(email));
+        vendor.setSlug(generateSlug(user.getName()));
         vendor.setSubscriptionStatus(SubscriptionStatus.TRIAL);
-        // CRÍTICO: Settar tenantId com valor do context ANTES de salvar
-        vendor.setTenantId(TenantContext.getTenant());
+        
+        // ✅ CRÍTICO: Usar tenantId do User, não do TenantContext
+        vendor.setTenantId(user.getTenantId());
+        
         Vendor savedVendor = vendorRepository.save(vendor);
 
         // Inicializar usage para o novo vendor com o plano ativo padrão
@@ -60,11 +68,48 @@ public class VendorService {
         return savedVendor;
     }
 
+    // ⚠️ INTERNO APENAS: Para casos especiais onde só temos email (ex: BillingValidationInterceptor)
     @Transactional
-    public Vendor ensureVendorExists(String email) {
+    public Vendor createVendor(String email) {
         String normalizedEmail = normalizeEmail(email);
-        return vendorRepository.findFirstByUserEmailIgnoreCase(normalizedEmail)
-                .orElseGet(() -> createVendor(normalizedEmail));
+        Vendor vendor = new Vendor();
+        
+        vendor.setUserEmail(normalizedEmail);
+        vendor.setName(localPart(email));
+        vendor.setNomeVendedor(localPart(email));
+        vendor.setWhatsappVendedor("0000000000");
+        vendor.setSlug(generateSlug(normalizedEmail));
+        vendor.setSubscriptionStatus(SubscriptionStatus.TRIAL);
+        
+        // ⚠️ Fallback: usa TenantContext apenas quando User não está disponível
+        vendor.setTenantId(TenantContext.getTenant());
+        
+        Vendor savedVendor = vendorRepository.save(vendor);
+
+        try {
+            Plan defaultPlan = planRepository.findByActiveTrue()
+                    .stream()
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalStateException("No active plan found"));
+            usageService.initializeUsage(savedVendor.getId(), defaultPlan);
+        } catch (Exception e) {
+            System.err.println("⚠️ Erro ao inicializar usage para vendor: " + e.getMessage());
+        }
+
+        return savedVendor;
+    }
+
+    @Transactional
+    public Vendor ensureVendorExists(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+        
+        if (vendorRepository.findFirstByUserEmailIgnoreCase(user.getEmail()).isPresent()) {
+            return vendorRepository.findFirstByUserEmailIgnoreCase(user.getEmail()).get();
+        }
+        
+        Vendor vendor = createVendor(user);
+        return vendor;
     }
 
     private String generateSlug(String email) {

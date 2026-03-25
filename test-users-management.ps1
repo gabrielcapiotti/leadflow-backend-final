@@ -45,7 +45,7 @@ try {
 
 Write-Host "`n[SETUP] Authentication" -ForegroundColor Yellow
 
-$adminEmail = "admin-$([DateTime]::Now.Ticks)@leadflow.com"
+$adminEmail = "admin-$(Get-Random 999999999)@leadflow.com"
 $adminPassword = "Admin@123456"
 
 $registerPayload = @{
@@ -55,17 +55,25 @@ $registerPayload = @{
     name = "Admin"
 } | ConvertTo-Json
 
-Invoke-WebRequest "$server/auth/register" -Method POST -Body $registerPayload -Headers @{"Content-Type"="application/json"; "X-Tenant-ID"="public"} -UseBasicParsing | Out-Null
+try {
+    Invoke-WebRequest "$server/auth/register" -Method POST -Body $registerPayload -Headers @{"Content-Type"="application/json"; "X-Tenant-ID"="public"} -UseBasicParsing -ErrorAction Stop | Out-Null
+} catch {
+    Write-Host "Register error: $($_.Exception.Response.StatusCode)" -ForegroundColor Yellow
+}
 
 $loginPayload = @{
     email = $adminEmail
     password = $adminPassword
 } | ConvertTo-Json
 
-$login = Invoke-WebRequest "$server/auth/login" -Method POST -Body $loginPayload -Headers @{"Content-Type"="application/json"; "X-Tenant-ID"="public"} -UseBasicParsing
-$global:authToken = ($login.Content | ConvertFrom-Json).accessToken
-
-Pass "Authenticated"
+try {
+    $login = Invoke-WebRequest "$server/auth/login" -Method POST -Body $loginPayload -Headers @{"Content-Type"="application/json"; "X-Tenant-ID"="public"} -UseBasicParsing -ErrorAction Stop
+    $global:authToken = ($login.Content | ConvertFrom-Json).accessToken
+    Pass "Authenticated"
+} catch {
+    Fail "Login failed: $($_.Exception.Response.StatusCode)"
+    exit
+}
 
 # ========================================
 # CREATE USERS
@@ -74,7 +82,7 @@ Pass "Authenticated"
 Write-Host "`n[SETUP] Creating users" -ForegroundColor Yellow
 
 for ($i=1; $i -le 2; $i++) {
-    $email = "user$i-$([DateTime]::Now.Ticks)@leadflow.com"
+    $email = "user$i-$(Get-Random 999999999)@leadflow.com"
 
     $payload = @{
         email=$email
@@ -120,10 +128,10 @@ catch {
 $global:TestCount++
 $id = $global:testUsers[0].id
 try {
-    $res = Invoke-WebRequest "$server/users/$id" -Headers @{Authorization="Bearer $authToken"; "X-Tenant-ID"="public"} -UseBasicParsing
+    $res = Invoke-WebRequest "$server/users/$id" -Headers @{Authorization="Bearer $authToken"; "X-Tenant-ID"="public"} -UseBasicParsing -ErrorAction Stop
     if ($res.StatusCode -eq 200) { Pass "Get user OK" }
 }
-catch { Fail "GET user failed" }
+catch { Fail "GET user failed ($($_.Exception.Response.StatusCode.value__))" }
 
 # UPDATE
 $global:TestCount++
@@ -131,17 +139,18 @@ try {
     $payload = @{
         name="Updated User"
         email=$global:testUsers[0].email
+        roleId="00000000-0000-0000-0000-000000000001"
     } | ConvertTo-Json
 
     $res = Invoke-WebRequest "$server/users/$id" -Method PUT -Body $payload -Headers @{
         Authorization="Bearer $authToken"
         "Content-Type"="application/json"
         "X-Tenant-ID"="public"
-    } -UseBasicParsing
+    } -UseBasicParsing -ErrorAction Stop
 
     if ($res.StatusCode -eq 200) { Pass "Update OK" }
 }
-catch { Fail "Update failed" }
+catch { Fail "Update failed ($($_.Exception.Response.StatusCode.value__))" }
 
 # DELETE
 $global:TestCount++
@@ -150,11 +159,11 @@ try {
     $res = Invoke-WebRequest "$server/users/$id2" -Method DELETE -Headers @{
         Authorization="Bearer $authToken"
         "X-Tenant-ID"="public"
-    } -UseBasicParsing
+    } -UseBasicParsing -ErrorAction Stop
 
     if ($res.StatusCode -eq 204) { Pass "Delete OK" }
 }
-catch { Fail "Delete failed" }
+catch { Fail "Delete failed ($($_.Exception.Response.StatusCode.value__))" }
 
 # ========================================
 # SUMMARY

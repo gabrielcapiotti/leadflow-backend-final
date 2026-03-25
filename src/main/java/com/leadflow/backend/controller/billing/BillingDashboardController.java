@@ -161,6 +161,92 @@ public class BillingDashboardController {
         }
     }
 
+    @PostMapping("/subscription")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> createSubscription(@RequestBody Map<String, String> request) {
+
+        UUID tenantId = resolveTenantSafe();
+
+        if (tenantId == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "vendor_not_found",
+                    "message", "User has no associated vendor"
+            ));
+        }
+
+        String planId = request.get("planId");
+        if (planId == null || planId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "invalid_request",
+                    "message", "planId is required"
+            ));
+        }
+
+        log.info("Creating subscription for tenant: {} with plan: {}", tenantId, planId);
+
+        try {
+            SubscriptionDetailsDTO subscription =
+                    billingDashboardService.createSubscription(tenantId, planId);
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "subscription_created",
+                    "subscription", subscription,
+                    "timestamp", java.time.LocalDateTime.now()
+            ));
+
+        } catch (Exception e) {
+            log.error("Failed to create subscription for tenant: {}", tenantId, e);
+
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "subscription_creation_failed",
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+    @PutMapping("/subscription")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> updateSubscription(@RequestBody Map<String, String> request) {
+
+        UUID tenantId = resolveTenantSafe();
+
+        if (tenantId == null) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "vendor_not_found",
+                    "message", "User has no associated vendor"
+            ));
+        }
+
+        String planId = request.get("planId");
+        if (planId == null || planId.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "invalid_request",
+                    "message", "planId is required"
+            ));
+        }
+
+        log.info("Updating subscription for tenant: {} to plan: {}", tenantId, planId);
+
+        try {
+            SubscriptionDetailsDTO subscription =
+                    billingDashboardService.updateSubscription(tenantId, planId);
+
+            return ResponseEntity.ok(Map.of(
+                    "status", "subscription_updated",
+                    "subscription", subscription,
+                    "timestamp", java.time.LocalDateTime.now()
+            ));
+
+        } catch (Exception e) {
+            log.error("Failed to update subscription for tenant: {}", tenantId, e);
+
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", "subscription_update_failed",
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
     // =====================================================
     // ACTIONS
     // =====================================================

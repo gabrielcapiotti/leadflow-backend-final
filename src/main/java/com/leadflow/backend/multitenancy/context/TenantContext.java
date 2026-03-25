@@ -49,6 +49,24 @@ public final class TenantContext {
                 .trim()
                 .toLowerCase(Locale.ROOT);
 
+        // CRITICAL: Reject empty UUID
+        if (normalized.equals("00000000-0000-0000-0000-000000000000")) {
+            log.error("❌ CRITICAL: Attempt to set tenant to empty UUID (00000000-0000-0000-0000-000000000000)");
+            log.error("   This indicates a fallback/conversion error. Check:");
+            log.error("   1. CurrentTenantIdentifierResolver in Hibernate");
+            log.error("   2. TenantFilter tenant resolution logic");
+            log.error("   3. JWT tenant claim extraction");
+            throw new IllegalArgumentException(
+                    "Invalid tenant identifier: empty UUID detected. " +
+                    "This is a critical configuration error - tenants must be String schema names, not UUIDs"
+            );
+        }
+
+        // Warn about UUID patterns (even if not all zeros)
+        if (normalized.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+            log.warn("⚠️  Tenant is UUID format ({}). Tenants should be String schema names like 'public' or 'tenant_xyz'", normalized);
+        }
+
         if (!VALID_SCHEMA.matcher(normalized).matches()) {
 
             log.error("Invalid tenant identifier received: {}", tenant);

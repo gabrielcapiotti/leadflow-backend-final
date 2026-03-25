@@ -28,7 +28,7 @@ import java.util.List;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/leads")
+@RequestMapping("/history")
 public class LeadStatusHistoryController {
 
     private static final Logger log = LoggerFactory.getLogger(LeadStatusHistoryController.class);
@@ -51,7 +51,7 @@ public class LeadStatusHistoryController {
        HISTORY BY LEAD (ISOLATED BY USER)
        ====================================================== */
 
-    @GetMapping("/{leadId}/history")
+    @GetMapping("/leads/{leadId}")
     public ResponseEntity<List<LeadStatusHistoryResponse>> getHistory(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable UUID leadId
@@ -82,7 +82,7 @@ public class LeadStatusHistoryController {
        ====================================================== */
 
     @Transactional(readOnly = true)
-    @GetMapping("/history/{historyId}")
+    @GetMapping("/{historyId}")
     public ResponseEntity<LeadStatusHistoryResponse> getHistoryById(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable UUID historyId
