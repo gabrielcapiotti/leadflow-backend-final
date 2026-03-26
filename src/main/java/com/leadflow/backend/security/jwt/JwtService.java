@@ -108,7 +108,7 @@ public class JwtService implements InitializingBean {
                 .setExpiration(Date.from(expiresAt))
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().getName())
-                .claim("tenant", tenantSchema.trim().toLowerCase())
+                .claim("tenant", tenantSchema)
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
@@ -117,38 +117,35 @@ public class JwtService implements InitializingBean {
     }
 
     /**
-     * Generate token for refresh - reuses the session's existing tokenId
-     * This keeps the session persistent across token renewals
+     * Generate token for refresh - generates a NEW tokenId for each refresh
+     * This prevents collisions and allows proper session rotation
      */
-    public JwtToken generateTokenForRefresh(User user, String tenantSchema, String sessionTokenId) {
+    public JwtToken generateTokenForRefresh(User user, String tenantSchema) {
 
         validateUser(user);
         validateTenant(tenantSchema);
-        
-        if (sessionTokenId == null || sessionTokenId.isBlank()) {
-            throw new IllegalArgumentException("sessionTokenId cannot be null or blank");
-        }
 
         Instant now = Instant.now(clock);
         Instant expiresAt = now.plusMillis(expirationMillis);
+        String newTokenId = UUID.randomUUID().toString();  // 🔥 CRITICAL: Generate NEW tokenId, never reuse
         
-        logger.info("🔐 REFRESHING JWT TOKEN: user={}, sessionTokenId={}, tenant={}", 
-            user.getEmail(), sessionTokenId, tenantSchema);
+        logger.info("🔐 REFRESHING JWT TOKEN: user={}, newTokenId={}, tenant={}", 
+            user.getEmail(), newTokenId, tenantSchema);
 
         String token = Jwts.builder()
-                .setId(sessionTokenId)  // Reuse session's tokenId
+                .setId(newTokenId)  // ✅ Use new tokenId instead of reusing
                 .setSubject(user.getEmail())
                 .setIssuer(issuer)
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(expiresAt))
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().getName())
-                .claim("tenant", tenantSchema.trim().toLowerCase())
+                .claim("tenant", tenantSchema)
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
-        logger.debug("✓ JWT refreshed successfully with same tokenId: {}", sessionTokenId);
-        return new JwtToken(token, sessionTokenId, expiresAt);
+        logger.debug("✓ JWT refreshed successfully with new tokenId: {}", newTokenId);
+        return new JwtToken(token, newTokenId, expiresAt);
     }
 
     /* ====================================================== */

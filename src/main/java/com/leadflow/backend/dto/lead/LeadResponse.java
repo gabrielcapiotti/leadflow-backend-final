@@ -13,6 +13,7 @@ public class LeadResponse {
     private final String name;
     private final String email;
     private final String phone;
+    private final String tenantId;
     private final LeadStatus status;
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
     private final LocalDateTime createdAt;
@@ -32,6 +33,7 @@ public class LeadResponse {
         this.name = lead.getName();
         this.email = lead.getEmail();
         this.phone = lead.getPhone();
+        this.tenantId = lead.getTenantId();
         this.status = lead.getStatus();
         this.createdAt = lead.getCreatedAt();
         this.updatedAt = lead.getUpdatedAt();
@@ -46,6 +48,7 @@ public class LeadResponse {
             String name,
             String email,
             String phone,
+            String tenantId,
             LeadStatus status,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
@@ -54,6 +57,7 @@ public class LeadResponse {
         this.name = name;
         this.email = email;
         this.phone = phone;
+        this.tenantId = tenantId;
         this.status = status;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -70,6 +74,8 @@ public class LeadResponse {
     public String getEmail() { return email; }
 
     public String getPhone() { return phone; }
+
+    public String getTenantId() { return tenantId; }
 
     public LeadStatus getStatus() { return status; }
 

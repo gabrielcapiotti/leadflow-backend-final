@@ -6,6 +6,7 @@ import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.user.RoleRepository;
 import com.leadflow.backend.repository.user.UserRepository;
+import com.leadflow.backend.security.exception.UnauthorizedException;
 import com.leadflow.backend.service.audit.SecurityAuditService;
 import com.leadflow.backend.service.vendor.VendorService;
 
@@ -37,6 +38,7 @@ public class AuthService {
     private final LoginAuditService loginAuditService;
     private final BruteForceProtectionService bruteForceService;
     private final VendorService vendorService;
+    private final UserSessionService userSessionService;
 
     private final int maxAttempts;
     private final int windowMinutes;
@@ -49,6 +51,7 @@ public class AuthService {
             LoginAuditService loginAuditService,
             BruteForceProtectionService bruteForceService,
             VendorService vendorService,
+            UserSessionService userSessionService,
             @Value("${security.brute-force.max-attempts:5}") int maxAttempts,
             @Value("${security.brute-force.window-minutes:5}") int windowMinutes
     ) {
@@ -59,6 +62,7 @@ public class AuthService {
         this.loginAuditService = loginAuditService;
         this.bruteForceService = bruteForceService;
         this.vendorService = vendorService;
+        this.userSessionService = userSessionService;
 
         this.maxAttempts = Math.max(maxAttempts, 1);
         this.windowMinutes = Math.max(windowMinutes, 1);
@@ -79,7 +83,7 @@ public class AuthService {
                 .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)) {
 
             audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, false);
-            throw new IllegalArgumentException("Email already in use");
+            throw new UnauthorizedException("Email already in use");
         }
 
         Role userRole = roleRepository
@@ -106,6 +110,49 @@ public class AuthService {
     }
 
     /* ====================================================== */
+    /* REGISTER ADMIN (PROTECTED)                             */
+    /* ====================================================== */
+
+    @Transactional
+    public User registerAdmin(String name, String email, String password, String tenant) {
+
+        validateInput(name, email, password);
+
+        String normalizedEmail = normalizeEmail(email);
+
+        if (userRepository
+                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)) {
+
+            audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, false);
+            throw new UnauthorizedException("Email already in use");
+        }
+
+        // 🔐 Get ROLE_ADMIN - required for protected operations
+        Role adminRole = roleRepository
+                .findByNameIgnoreCase("ROLE_ADMIN")
+                .orElseThrow(() -> {
+                    logger.error("❌ CRITICAL: ROLE_ADMIN not found in database!");
+                    return new IllegalStateException("ROLE_ADMIN role not found - database may be misconfigured");
+                });
+
+        User user = new User(
+                name.trim(),
+                normalizedEmail,
+                passwordEncoder.encode(password),
+                adminRole
+        );
+        user.setTenantId(tenant);
+
+        User savedUser = userRepository.saveAndFlush(user);
+
+        logger.info("🔑 ADMIN user registered successfully: {} (tenant={})", normalizedEmail, tenant);
+
+        audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, true);
+
+        return savedUser;
+    }
+
+    /* ====================================================== */
     /* AUTHENTICATE                                           */
     /* ====================================================== */
 
@@ -117,54 +164,47 @@ public class AuthService {
         if (email == null || email.isBlank()
                 || password == null || password.isBlank()) {
 
-            String resolvedTenant = tenant != null ? tenant : TenantContext.getIfPresent();
-            if (resolvedTenant == null) {
-                resolvedTenant = TenantContext.requireTenant();
-            }
-            recordFailureAudit(email, "Invalid credentials", resolvedTenant);
-            throw new IllegalArgumentException("Invalid credentials");
+            recordFailureAudit(email, "Invalid credentials", null);
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         String normalizedEmail = normalizeEmail(email);
 
-        String resolvedTenant = tenant;
-        if (resolvedTenant == null) {
-            resolvedTenant = TenantContext.getIfPresent();
-        }
-
-        if (resolvedTenant == null) {
-            resolvedTenant = TenantContext.requireTenant();
-        }
-
-        final String tenantContext = resolvedTenant;
-
         String ip = request != null ? request.getRemoteAddr() : "unknown";
 
-        String emailKey = "bf:email:" + tenantContext + ":" + normalizedEmail;
-        String ipKey = "bf:ip:" + tenantContext + ":" + ip;
+        // ✅ CRITICAL FIX: Brute force keys NOT dependent on tenant
+        // Tenant will be determined from the user record itself
+        String emailKey = "bf:email:" + normalizedEmail;
+        String ipKey = "bf:ip:" + ip;
 
         if (bruteForceService.isBlocked(emailKey, maxAttempts)
                 || bruteForceService.isBlocked(ipKey, maxAttempts)) {
 
-            recordFailureAudit(normalizedEmail, "Brute force detected", tenantContext);
+            recordFailureAudit(normalizedEmail, "Brute force detected", null);
 
-            throw new IllegalStateException(
+            throw new UnauthorizedException(
                     "Too many failed attempts. Try again later."
             );
         }
 
+        // ✅ CRITICAL FIX: Find user by email ONLY (no tenant filter)
+        // Tenant is determined FROM the user, not from external context
+        // This is the source of truth for tenant assignment
         User user = userRepository
-                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenantContext)
+                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
                 .orElseThrow(() -> {
-                    recordFailureAudit(normalizedEmail, "User not found", tenantContext);
-                    return new IllegalArgumentException("Invalid credentials");
+                    recordFailureAudit(normalizedEmail, "User not found", null);
+                    return new UnauthorizedException("Invalid credentials");
                 });
+
+        // ✅ Extract tenant from user - this is THE authority
+        final String tenantContext = user.getTenantId();
 
         if (user.isAccountLocked()) {
 
             recordFailureAudit(normalizedEmail, "Account locked", tenantContext);
 
-            throw new IllegalStateException(
+            throw new UnauthorizedException(
                     "Account temporarily locked. Try again later."
             );
         }
@@ -179,7 +219,7 @@ public class AuthService {
 
             recordFailureAudit(normalizedEmail, "Wrong password", tenantContext);
 
-            throw new IllegalArgumentException("Invalid credentials");
+            throw new UnauthorizedException("Invalid credentials");
         }
 
         user.resetLoginAttempts();
@@ -190,7 +230,7 @@ public class AuthService {
 
         recordSuccessAudit(user, tenantContext);
 
-        logger.info("User authenticated successfully: {}", normalizedEmail);
+        logger.info("User authenticated successfully: {} (tenant={})", normalizedEmail, tenantContext);
 
         return user;
     }
@@ -266,13 +306,13 @@ public class AuthService {
     private void validateInput(String name, String email, String password) {
 
         if (name == null || name.isBlank())
-            throw new IllegalArgumentException("Name cannot be blank");
+            throw new UnauthorizedException("Name cannot be blank");
 
         if (email == null || email.isBlank())
-            throw new IllegalArgumentException("Email cannot be blank");
+            throw new UnauthorizedException("Email cannot be blank");
 
         if (password == null || password.length() < 8)
-            throw new IllegalArgumentException(
+            throw new UnauthorizedException(
                     "Password must contain at least 8 characters"
             );
     }
@@ -284,7 +324,7 @@ public class AuthService {
     @Transactional(readOnly = true)
     public void validatePassword(String email, String password) {
         if (email == null || email.isBlank() || password == null || password.isBlank()) {
-            throw new IllegalArgumentException("Email and password cannot be blank");
+            throw new UnauthorizedException("Email and password cannot be blank");
         }
 
         String normalizedEmail = normalizeEmail(email);
@@ -292,21 +332,21 @@ public class AuthService {
 
         User user = userRepository
                 .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
 
         if (!passwordEncoder.matches(password, user.getPassword())) {
-            throw new IllegalArgumentException("Current password is incorrect");
+            throw new UnauthorizedException("Current password is incorrect");
         }
     }
 
     @Transactional
     public void changePassword(UUID userId, String newPassword) {
         if (userId == null) {
-            throw new IllegalArgumentException("User ID cannot be null");
+            throw new UnauthorizedException("User ID cannot be null");
         }
 
         if (newPassword == null || newPassword.length() < 8) {
-            throw new IllegalArgumentException(
+            throw new UnauthorizedException(
                     "New password must contain at least 8 characters"
             );
         }
@@ -315,12 +355,19 @@ public class AuthService {
 
         User user = userRepository
                 .findByIdAndTenantIdAndDeletedAtIsNull(userId, tenant)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
 
         user.changePassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
         logger.info("Password changed for user: {}", user.getEmail());
         audit(SecurityAction.PASSWORD_CHANGED, user.getEmail(), true);
+
+        // � Revoga TODAS as sessões (incluindo a atual)
+        userSessionService.revokeAllUserSessions(userId, tenant);
+        logger.info("All sessions revoked for user after password change: {}", user.getEmail());
+
+        // ✅ NÃO lança exception aqui
+        // O cliente deve tratar isso e fazer login novamente
     }
 }

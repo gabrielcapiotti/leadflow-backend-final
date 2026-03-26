@@ -1,6 +1,8 @@
 package com.leadflow.backend.multitenancy.service;
 
 import com.leadflow.backend.exception.TenantNotFoundException;
+import com.leadflow.backend.entities.Tenant;
+import com.leadflow.backend.repository.tenant.TenantRepository;
 import org.flywaydb.core.Flyway;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -39,13 +41,15 @@ public class TenantService {
 
     private final JdbcTemplate jdbcTemplate;
     private final DataSource dataSource;
+    private final TenantRepository tenantRepository;
 
     private static final Logger logger =
             LoggerFactory.getLogger(TenantService.class);
 
-    public TenantService(JdbcTemplate jdbcTemplate, DataSource dataSource) {
+    public TenantService(JdbcTemplate jdbcTemplate, DataSource dataSource, TenantRepository tenantRepository) {
         this.jdbcTemplate = jdbcTemplate;
         this.dataSource = dataSource;
+        this.tenantRepository = tenantRepository;
     }
 
     /* ======================================================
@@ -108,6 +112,39 @@ public class TenantService {
                     "Tenant not found for schema: " + schema
             );
         }
+    }
+
+    /* ======================================================
+       CREATE TENANT RECORD (FOR LOGIN AUDIT RESOLUTION)
+       ====================================================== */
+
+    public Tenant createTenant(String schemaName) {
+        if (schemaName == null || schemaName.isBlank()) {
+            throw new IllegalArgumentException("Schema name cannot be blank");
+        }
+
+        String normalized = normalize(schemaName);
+
+        if (!VALID_SCHEMA.matcher(normalized).matches()) {
+            logger.error("❌ Schema validation failed: {} (normalized: {})", schemaName, normalized);
+            throw new IllegalArgumentException("Invalid schema format: " + schemaName);
+        }
+
+        // Check if tenant already exists
+        if (tenantRepository.existsBySchemaNameIgnoreCaseAndDeletedAtIsNull(normalized)) {
+            logger.info("Tenant already exists: {}", normalized);
+            // Return existing tenant
+            return tenantRepository.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(normalized)
+                    .orElseThrow(() -> new IllegalStateException("Tenant should exist but not found"));
+        }
+
+        // Create Tenant record - let Hibernate generate the UUID
+        Tenant tenant = new Tenant(normalized, normalized);
+        
+        Tenant savedTenant = tenantRepository.saveAndFlush(tenant);
+        logger.info("✅ Tenant record created in database: id={}, schema={}", savedTenant.getId(), normalized);
+        
+        return savedTenant;
     }
 
     /* ======================================================

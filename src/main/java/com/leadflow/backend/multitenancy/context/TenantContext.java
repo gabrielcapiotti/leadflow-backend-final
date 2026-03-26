@@ -12,11 +12,13 @@ public final class TenantContext {
             LoggerFactory.getLogger(TenantContext.class);
 
     /**
-     * Regex segura para schema PostgreSQL.
-     * Deve iniciar com letra ou underscore.
+     * Regex para validar tenant identifiers - aceita UUIDs ou schema names PostgreSQL.
+     * Padrões válidos:
+     * - UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+     * - Schema: deve iniciar com letra ou underscore, apenas alphanumeric + underscore
      */
-    private static final Pattern VALID_SCHEMA =
-            Pattern.compile("^[a-z_][a-z0-9_]{0,62}$");
+    private static final Pattern VALID_TENANT =
+            Pattern.compile("^([a-z_][a-z0-9_]{0,62}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$");
 
     /**
      * Tenant padrão utilizado quando necessário.
@@ -58,21 +60,17 @@ public final class TenantContext {
             log.error("   3. JWT tenant claim extraction");
             throw new IllegalArgumentException(
                     "Invalid tenant identifier: empty UUID detected. " +
-                    "This is a critical configuration error - tenants must be String schema names, not UUIDs"
+                    "Tenants must be valid formatted identifiers (UUIDs or PostgreSQL schema names)"
             );
         }
 
-        // Warn about UUID patterns (even if not all zeros)
-        if (normalized.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
-            log.warn("⚠️  Tenant is UUID format ({}). Tenants should be String schema names like 'public' or 'tenant_xyz'", normalized);
-        }
-
-        if (!VALID_SCHEMA.matcher(normalized).matches()) {
+        if (!VALID_TENANT.matcher(normalized).matches()) {
 
             log.error("Invalid tenant identifier received: {}", tenant);
 
             throw new IllegalArgumentException(
-                    "Invalid tenant identifier: " + tenant
+                    "Invalid tenant identifier: " + tenant + ". " +
+                    "Must be UUID (xxxx-xxxx-...) or PostgreSQL schema name (public, tenant_xyz, etc)"
             );
         }
 

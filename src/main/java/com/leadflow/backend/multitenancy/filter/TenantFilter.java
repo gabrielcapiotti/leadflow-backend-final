@@ -42,6 +42,7 @@ public class TenantFilter extends OncePerRequestFilter {
 
         // ✅ Only skip PUBLIC auth endpoints - protected endpoints still need TenantContext
         boolean isPublicAuth = path.equals("/auth/register")
+                || path.equals("/auth/register-admin")
                 || path.equals("/auth/login")
                 || path.equals("/auth/refresh")
                 || path.equals("/auth/forgot-password")

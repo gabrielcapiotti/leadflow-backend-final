@@ -13,6 +13,9 @@ $adminPassword = "Admin@Lead123"
 # bcrypt hash of Admin@Lead123 with rounds=10
 $bcryptHash = '$2a$10$SxXrCnqPXgqwhQ3J7rLr7Or0M3zLw9xJT2lppjGJI0LQMvzKnlkzW'
 
+# Generate a valid admin tenant ID
+$adminTenantId = "550e8400-e29b-41d4-a716-446655440000"
+
 # SQL to create admin user
 $sql = @"
 BEGIN;
@@ -36,7 +39,7 @@ SELECT
     '$adminEmail',
     '$bcryptHash',
     admin_role.id,
-    'public',
+    '$adminTenantId',
     0, NULL, CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL
 FROM admin_role
@@ -47,7 +50,7 @@ WHERE EXISTS (
 COMMIT;
 
 -- Verify
-SELECT email, role_id FROM public.users WHERE email = '$adminEmail';
+SELECT email, tenant_id FROM public.users WHERE email = '$adminEmail';
 "@
 
 # Try to execute via psql

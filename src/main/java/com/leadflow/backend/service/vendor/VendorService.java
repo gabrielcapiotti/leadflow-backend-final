@@ -38,10 +38,37 @@ public class VendorService {
 
     @Transactional
     public Vendor createVendor(User user) {
+        // ✅ IDEMPOTÊNCIA: Verificar se vendor já existe (por email)
+        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCase(
+                normalizeEmail(user.getEmail())
+        );
+        
+        if (existingVendor.isPresent()) {
+            return existingVendor.get();
+        }
+
+        // ✅ Criar novo vendor apenas se não existir
+        return createVendorInternal(user);
+    }
+
+    /**
+     * INTERNO APENAS: Cria novo vendor sem verificação de duplicata
+     * Deve ser chamado APENAS durante fluxo de registro
+     * 
+     * 🔴 CRÍTICO: Não chama usageService.initializeUsage()
+     *    Side-effects devem ser síncronos e orquestrados no controller/service de nível superior
+     */
+    @Transactional
+    private Vendor createVendorInternal(User user) {
+        if (user == null || user.getId() == null) {
+            throw new IllegalArgumentException("User and userId cannot be null");
+        }
+
         Vendor vendor = new Vendor();
         
         vendor.setUserEmail(normalizeEmail(user.getEmail()));
-        vendor.setName(user.getName());
+        // ✅ FIXO: Name agora é único com suffix (evita constraint violation)
+        vendor.setName(generateUniqueName(user));
         vendor.setNomeVendedor(user.getName());
         vendor.setWhatsappVendedor("0000000000");
         vendor.setSlug(generateSlug(user.getName()));
@@ -51,31 +78,41 @@ public class VendorService {
         vendor.setTenantId(user.getTenantId());
         
         Vendor savedVendor = vendorRepository.save(vendor);
-
-        // Inicializar usage para o novo vendor com o plano ativo padrão
-        try {
-            Plan defaultPlan = planRepository.findByActiveTrue()
-                    .stream()
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("No active plan found"));
-            usageService.initializeUsage(savedVendor.getId(), defaultPlan);
-        } catch (Exception e) {
-            // Log mas não quebra - vendor foi criado mas usage não foi inicializado
-            // Isto será inicializado on-demand se necessário
-            System.err.println("⚠️ Erro ao inicializar usage para vendor: " + e.getMessage());
-        }
+        
+        // 🔴 REMOVIDO: usageService.initializeUsage() 
+        // Side-effects críticos devem ser síncronos
+        // Orquestrados no nível de negócio (RegisterService, etc)
 
         return savedVendor;
     }
 
-    // ⚠️ INTERNO APENAS: Para casos especiais onde só temos email (ex: BillingValidationInterceptor)
+    /**
+     * ⚠️ OVERLOAD APENAS PARA CASOS ESPECIAIS (ex: BillingValidationInterceptor)
+     * 
+     * Deve ser usado com CUIDADO:
+     * - Usa TenantContext apenas quando User não está disponível
+     * - Idempotente (retorna vendor existente se houver)
+     */
     @Transactional
     public Vendor createVendor(String email) {
+        if (email == null || email.isBlank()) {
+            throw new IllegalArgumentException("Email cannot be null or blank");
+        }
+
         String normalizedEmail = normalizeEmail(email);
+        
+        // ✅ IDEMPOTÊNCIA: Verificar se vendor já existe (por email)
+        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCase(normalizedEmail);
+        if (existingVendor.isPresent()) {
+            return existingVendor.get();
+        }
+
+        // ✅ Criar novo vendor apenas se não existir
         Vendor vendor = new Vendor();
         
         vendor.setUserEmail(normalizedEmail);
-        vendor.setName(localPart(email));
+        // ✅ FIXO: Name agora é único com suffix
+        vendor.setName(email + "-" + UUID.randomUUID().toString().substring(0, 6));
         vendor.setNomeVendedor(localPart(email));
         vendor.setWhatsappVendedor("0000000000");
         vendor.setSlug(generateSlug(normalizedEmail));
@@ -86,30 +123,30 @@ public class VendorService {
         
         Vendor savedVendor = vendorRepository.save(vendor);
 
-        try {
-            Plan defaultPlan = planRepository.findByActiveTrue()
-                    .stream()
-                    .findFirst()
-                    .orElseThrow(() -> new IllegalStateException("No active plan found"));
-            usageService.initializeUsage(savedVendor.getId(), defaultPlan);
-        } catch (Exception e) {
-            System.err.println("⚠️ Erro ao inicializar usage para vendor: " + e.getMessage());
-        }
+        // 🔴 REMOVIDO: usageService.initializeUsage()
+        // Side-effects críticos devem ser síncronos
 
         return savedVendor;
     }
 
     @Transactional
     public Vendor ensureVendorExists(UUID userId) {
-        User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("User not found"));
-        
-        if (vendorRepository.findFirstByUserEmailIgnoreCase(user.getEmail()).isPresent()) {
-            return vendorRepository.findFirstByUserEmailIgnoreCase(user.getEmail()).get();
-        }
-        
-        Vendor vendor = createVendor(user);
-        return vendor;
+        throw new IllegalStateException(
+                "❌ CRITICAL: ensureVendorExists() is FORBIDDEN\n" +
+                "Vendor MUST be created during registration ONLY\n" +
+                "Not on login, not on interceptor, not on refresh\n" +
+                "Use createVendor() during @RegisterFlow or through RegisterService"
+        );
+    }
+
+    /**
+     * ✅ FIXO: Gera nome único para vendor adicionando UUID suffix
+     * Evita constraint violation de uq_vendors_name
+     */
+    private String generateUniqueName(User user) {
+        String baseName = user.getName() != null ? user.getName() : "vendor";
+        String suffix = UUID.randomUUID().toString().substring(0, 6);
+        return baseName + "-" + suffix;
     }
 
     private String generateSlug(String email) {

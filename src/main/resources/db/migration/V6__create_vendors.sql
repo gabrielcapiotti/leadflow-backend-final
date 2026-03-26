@@ -29,9 +29,12 @@ BEGIN
 
             /* ========== CONSTRAINTS ========== */
 
-            CONSTRAINT pk_vendors PRIMARY KEY (id),
+            CONSTRAINT pk_vendors PRIMARY KEY (id)
 
-            CONSTRAINT uq_vendors_name UNIQUE (name)
+            -- ✅ REMOVED: uq_vendors_name UNIQUE (name)
+            -- Reason: name is NOT a unique identifier
+            -- Multiple vendors can have same name with UUID suffix
+            -- Use slug or (tenant_id, user_email) for uniqueness instead
         );
 
         /* ========== ÍNDICES ========== */

@@ -3,6 +3,7 @@ package com.leadflow.backend.security.jwt;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.security.CustomUserDetails;
+import com.leadflow.backend.security.exception.UnauthorizedException;
 import com.leadflow.backend.service.auth.UserSessionService;
 import com.leadflow.backend.util.LogSanitizer;
 
@@ -163,17 +164,28 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             /* =====================================================
-               SESSION TRACKING
+               SESSION TRACKING (NON-BLOCKING)
                ===================================================== */
 
             String tokenId = jwtService.extractTokenId(token);
 
-            userSessionService.processSessionActivity(
-                    tokenId,
-                    tenant,
-                    request.getRemoteAddr(),
-                    request.getHeader("User-Agent")
-            );
+            try {
+                userSessionService.processSessionActivity(
+                        tokenId,
+                        tenant,
+                        request.getRemoteAddr(),
+                        request.getHeader("User-Agent")
+                );
+            } catch (UnauthorizedException ex) {
+                // 🔒 Session validation FAILED - must block
+                logger.warn(
+                        "Session validation failed (BLOCKING): {} | email={}",
+                        LogSanitizer.sanitize(ex.getMessage()),
+                        LogSanitizer.sanitize(email)
+                );
+                // Invalid session = invalid JWT, must reject
+                throw ex;
+            }
 
             UsernamePasswordAuthenticationToken authToken =
                     new UsernamePasswordAuthenticationToken(

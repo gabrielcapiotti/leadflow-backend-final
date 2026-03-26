@@ -2,6 +2,8 @@ package com.leadflow.backend.multitenancy.resolver;
 
 import com.leadflow.backend.security.jwt.JwtService;
 import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -32,6 +34,7 @@ import java.util.Objects;
 @Component
 public class TenantResolver {
 
+    private static final Logger logger = LoggerFactory.getLogger(TenantResolver.class);
     private static final String BEARER_PREFIX = "Bearer ";
     private static final String AUTHORIZATION_HEADER = "Authorization";
 
@@ -50,42 +53,49 @@ public class TenantResolver {
     }
 
     /**
-     * Resolve tenant from authorization header (HYBRID APPROACH)
+     * Resolve tenant from authorization header (JWT-AUTHORITATIVE APPROACH)
      * 
-     * Sources (in order):
-     * 1. JWT token (if present and valid) - MANDATORY for authenticated endpoints
-     * 2. X-Tenant-Id header (only if no JWT AND endpoint is public)
+     * 🔐 SECURITY PRINCIPLE: JWT is the ONLY authoritative source in authenticated flows
      * 
-     * SECURITY: If JWT present, it MUST match X-Tenant-Id header (if provided)
+     * RULE: If JWT exists → ALWAYS use JWT
+     * If header diverges → SECURITY THREAT → 401 UNAUTHORIZED
+     * 
+     * NO FALLBACK to header in authenticated endpoints
      * 
      * @param request HttpServletRequest with headers
-     * @return tenantSchema (string like "tenant_123" or "public")
-     * @throws ResponseStatusException if tenant cannot be resolved or is invalid
+     * @return tenantSchema from JWT (if authenticated)
+     * @throws ResponseStatusException if mismatch detected or tenant cannot be resolved
      */
     public String resolveTenant(HttpServletRequest request) {
 
-        // Step 1: Try JWT token first (PREFERRED)
+        // Step 1: Try JWT token (ONLY source of truth for authenticated requests)
         String tenantFromJwt = extractTenantFromJwt(request);
-        String tenantFromHeader = request.getHeader("X-Tenant-Id");
         
         if (tenantFromJwt != null && !tenantFromJwt.isBlank()) {
-            // JWT token present - USE IT as source of truth
+            // ✅ JWT FOUND - validate header STRICTLY
+            String tenantFromHeader = extractTenantFromHeader(request);
             
-            // If header also provided, validate they match (security check)
             if (tenantFromHeader != null && !tenantFromHeader.isBlank()) {
-                if (!tenantFromJwt.equalsIgnoreCase(tenantFromHeader)) {
+                // Both JWT and header present - must match exactly
+                if (!tenantFromJwt.equals(tenantFromHeader)) {
+                    logger.error("SECURITY BREACH ATTEMPT: Tenant mismatch: JWT={} vs HEADER={}", 
+                        tenantFromJwt, tenantFromHeader);
+                    // BLOCK immediately - this is a potential attack
                     throw new ResponseStatusException(
-                            HttpStatus.FORBIDDEN,
-                            "Tenant mismatch: JWT tenant does not match X-Tenant-Id header"
+                            HttpStatus.UNAUTHORIZED,
+                            "Tenant mismatch: JWT and header do not match"
                     );
                 }
             }
             
+            // Always return JWT (it's the sole truth)
             return tenantFromJwt;
         }
 
-        // Step 2: Fallback to X-Tenant-Id header (only if no JWT)
+        // Step 2: No JWT - check header (for public endpoints only)
+        String tenantFromHeader = extractTenantFromHeader(request);
         if (tenantFromHeader != null && !tenantFromHeader.isBlank()) {
+            // Header only acceptable if no JWT present (public endpoints)
             return tenantFromHeader;
         }
 
@@ -99,6 +109,39 @@ public class TenantResolver {
                 HttpStatus.UNAUTHORIZED,
                 "Missing tenant identification (JWT or X-Tenant-Id header required)"
         );
+    }
+
+    /**
+     * Extract tenant from headers with case-insensitive fallback
+     * 
+     * Tries multiple variations:
+     * 1. X-Tenant-ID (standard)
+     * 2. X-Tenant-Id (common variation)
+     * 3. x-tenant-id (lowercase)
+     * 
+     * @param request HttpServletRequest
+     * @return tenant value or null if not found
+     */
+    private String extractTenantFromHeader(HttpServletRequest request) {
+        // Try standard case
+        String tenant = request.getHeader("X-Tenant-ID");
+        if (tenant != null && !tenant.isBlank()) {
+            return tenant;
+        }
+        
+        // Try mixed case
+        tenant = request.getHeader("X-Tenant-Id");
+        if (tenant != null && !tenant.isBlank()) {
+            return tenant;
+        }
+        
+        // Try lowercase
+        tenant = request.getHeader("x-tenant-id");
+        if (tenant != null && !tenant.isBlank()) {
+            return tenant;
+        }
+        
+        return null;
     }
 
     /**

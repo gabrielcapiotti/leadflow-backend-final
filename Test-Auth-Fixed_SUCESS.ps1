@@ -2,45 +2,22 @@
 <#
 .SYNOPSIS
     LeadFlow Auth Endpoints - Official Test Suite
-    
-.DESCRIPTION
-    Comprehensive test suite for all 11 authentication endpoints.
-    Tests all public and protected endpoints with proper error handling.
-    
-    Endpoints Covered:
-    1. POST /auth/register - Create new user account
-    2. POST /auth/login - Authenticate user
-    3. GET /auth/me - Get authenticated user profile
-    4. GET /auth/sessions - List user's active sessions
-    5. DELETE /auth/sessions/{sessionId} - Revoke specific session
-    6. DELETE /auth/sessions - Revoke all user sessions
-    7. POST /auth/refresh - Refresh expired JWT token
-    8. POST /auth/logout - Logout current session
-    9. POST /auth/change-password - Change user password
-    10. POST /auth/forgot-password - Request password reset link
-    11. POST /auth/reset-password - Reset password with token
+    Final Version with JWT-Authoritative Tenant Resolution
     
 .NOTES
     Author: LeadFlow Backend Team
-    Version: 1.2.0 (FIXED - Syntax Corrected)
-    Updated: 2026-03-21
+    Version: 2.1.0 (FIXED - JWT-Only, No Header-Based Mismatch)
+    Updated: 2026-03-25
     
-    Requirements:
-    - PowerShell 5.1 or higher
-    - Server running on http://localhost:8081
-    - Working email service (for reset password flow validation)
-    
-.EXAMPLE
-    .\Test-Auth-Fixed.ps1
+    KEY FIX: TenantResolver now uses JWT as sole source of truth
+    Header mismatches silently accepted - JWT always wins
 #>
 
-param(
-    [switch]$Verbose = $false
-)
+param([switch]$Verbose = $false)
 
 # Configuration
 $BaseUrl = "http://localhost:8081"
-$TenantHeader = "public"
+$TenantHeader = $null
 $ProgressPreference = 'SilentlyContinue'
 
 # Test Results Tracking
@@ -106,8 +83,12 @@ function Invoke-ApiRequest {
 
     $Headers = @{
         "Content-Type" = "application/json"
-        "X-Tenant-Id"  = $TenantHeader
         "User-Agent"   = "LeadFlow-Test-Suite/1.0"
+    }
+    
+    # Add tenant header only if set (case-sensitive: X-Tenant-ID matches Java request.getHeader)
+    if ($TenantHeader) {
+        $Headers["X-Tenant-ID"] = $TenantHeader
     }
 
     if ($RequireAuth) {
@@ -225,11 +206,13 @@ if ($r.Success) {
 
 # Test 2: Register New User
 Write-Test 2 "Register New User"
-# FIX: Email truly unique - avoid 409 conflicts
-$timestamp = Get-Date -Format "yyyyMMddHHmmssfff"
-$random = Get-Random -Maximum 9999
-$testEmail = "test-$timestamp-$random@leadflow.dev"
-$testPassword = "SecurePass123!@"
+# FIX: Email truly unique - avoid 409 conflicts with UUID + timestamp + random
+$uuid = [guid]::NewGuid().ToString().Substring(0, 8)
+$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+$random1 = Get-Random -Maximum 99
+$random2 = Get-Random -Maximum 99
+$testEmail = "test-$uuid-$timestamp-$random1$random2@leadflow.dev"
+$testPassword = "Pass@$(Get-Random -Maximum 9999)!Test$(Get-Random -Maximum 99)"
 
 Write-Info "Email: $testEmail"
 Write-Info "Password: $testPassword"
@@ -245,8 +228,10 @@ if ($r.Success) {
     Write-Success "User registered successfully"
     $script:AccessToken = $r.Data.accessToken
     $script:RefreshToken = $r.Data.refreshToken
+    $script:TenantHeader = $r.Data.tenantId
     Write-Info "Access Token: $($AccessToken.Substring(0,30))..."
     Write-Info "Refresh Token: $($RefreshToken.Substring(0,30))..."
+    Write-Info "Tenant ID: $($script:TenantHeader)"
     Record-Result "POST /auth/register" $true $r.Status
 } else {
     Write-Fail "Registration failed" $r.Status $r.Exception
@@ -266,6 +251,8 @@ if ($r.Success) {
     Write-Success "Login successful"
     $script:AccessToken = $r.Data.accessToken
     $script:RefreshToken = $r.Data.refreshToken
+    $script:TenantHeader = $r.Data.tenantId
+    Write-Info "Tenant ID: $($script:TenantHeader)"
     Record-Result "POST /auth/login" $true $r.Status
 } else {
     Write-Fail "Login failed" $r.Status $r.Exception
@@ -298,6 +285,7 @@ if ($r.Success) {
     Write-Success "Token refreshed successfully"
     $script:AccessToken = $r.Data.accessToken
     $script:RefreshToken = $r.Data.refreshToken
+    $script:TenantHeader = $r.Data.tenantId
     Record-Result "POST /auth/refresh" $true $r.Status
 } else {
     Write-Fail "Token refresh failed" $r.Status $r.Exception
@@ -393,11 +381,13 @@ Write-Info "Creating a token with tenant_A and attempting to use it with tenant_
 
 # Get fresh token in a specific tenant first
 Write-Info "Step 1: Register and login with tenant: $originalTenant"
-# FIX: Email truly unique for 5d test - avoid collisions
-$timestamp2 = Get-Date -Format "yyyyMMddHHmmssfff"
-$random2 = Get-Random -Maximum 9999
-$testEmail2 = "isolation-test-$timestamp2-$random2@leadflow.dev"
-$testPassword2 = "SecurePass@123"
+# FIX: Email truly unique for 5d test - avoid collisions with UUID + timestamp + random
+$uuid2 = [guid]::NewGuid().ToString().Substring(0, 8)
+$timestamp2 = Get-Date -Format "yyyyMMddHHmmss"
+$random2a = Get-Random -Maximum 99
+$random2b = Get-Random -Maximum 99
+$testEmail2 = "isolation-$uuid2-$timestamp2-$random2a$random2b@leadflow.dev"
+$testPassword2 = "Iso@$(Get-Random -Maximum 9999)!Pass$(Get-Random -Maximum 99)"
 $testName2 = "Isolation Tester"
 
 $r = Invoke-ApiRequest "POST" "/auth/register" @{
@@ -418,8 +408,10 @@ if ($r.Success) {
     
     if ($r.Success) {
         $isolationToken = $r.Data.accessToken
+        $isolationTenant = $r.Data.tenantId
         Write-Info "User logged in to tenant: $originalTenant"
         Write-Info "Token obtained for tenant_A"
+        Write-Info "Isolation Tenant ID: $isolationTenant"
         
         # Now switch to tenant B and try to use tenant A's token
         $TenantHeader = "tenant_isolation_attack_test"
@@ -509,6 +501,8 @@ $r = Invoke-ApiRequest "POST" "/auth/change-password" @{
 
 if ($r.Success) {
     Write-Success "Password changed successfully"
+    # ✅ UPDATE: Store the new password for re-authentication
+    $testPassword = "NewPass@123"
     Record-Result "POST /auth/change-password" $true $r.Status
 } else {
     Write-Fail "Password change failed" $r.Status $r.Exception
@@ -545,6 +539,7 @@ $r = Invoke-ApiRequest "POST" "/auth/login" @{
 if ($r.Success) {
     $script:AccessToken = $r.Data.accessToken
     $script:RefreshToken = $r.Data.refreshToken
+    $script:TenantHeader = $r.Data.tenantId
     Write-Info "Re-authenticated successfully"
 } else {
     Write-Fail "Re-authentication failed" $r.Status $r.Exception

@@ -40,32 +40,29 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         String normalizedEmail = normalizeEmail(email);
 
-        String tenant = TenantContext.getTenant();
+        log.info("Loading user for authentication: email={}", normalizedEmail);
 
-        if (tenant == null) {
-            log.error("Tenant is null during authentication for email: {}", normalizedEmail);
-            throw new IllegalStateException("Tenant not resolved in context");
-        }
-
-        log.info(
-                "Loading user: email={}, tenant={}",
-                normalizedEmail,
-                tenant
-        );
-
+        // ✅ CRITICAL FIX: Find by email ONLY (NO tenant filter during login)
+        // Users are stored in GLOBAL schema (public) with tenant_id field
+        // Login must be tenant-agnostic - tenant comes from the user record, not request
+        // This prevents dependency on external request context during authentication
         User user = userRepository
-                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
-                        normalizedEmail,
-                        tenant
-                )
+                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
                 .orElseThrow(() -> {
-                    log.error(
-                            "User NOT FOUND - email={}, tenant={}",
-                            normalizedEmail,
-                            tenant
-                    );
+                    log.error("User NOT FOUND - email={}", normalizedEmail);
                     return new UsernameNotFoundException("User not found");
                 });
+
+        // ✅ Set tenant from user (source of truth)
+        // Now we know the user's actual tenant, set it in context for password validation
+        String userTenantId = user.getTenantId();
+        TenantContext.setTenant(userTenantId);
+
+        log.info(
+                "User loaded successfully: email={}, tenant={}",
+                normalizedEmail,
+                userTenantId
+        );
 
         validateUser(user);
 
@@ -83,11 +80,11 @@ public class UserDetailsServiceImpl implements UserDetailsService {
         }
 
         if (user.getPassword() == null || user.getPassword().isBlank()) {
-            throw new IllegalStateException("User password not configured");
+            throw new UsernameNotFoundException("Invalid credentials");
         }
 
         if (user.getRole() == null || user.getRole().getName() == null) {
-            throw new IllegalStateException("User role not configured properly");
+            throw new UsernameNotFoundException("Invalid credentials");
         }
 
         if (user.isAccountLocked()) {

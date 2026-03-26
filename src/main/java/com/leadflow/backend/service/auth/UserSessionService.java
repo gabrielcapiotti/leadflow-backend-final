@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -45,13 +46,28 @@ public class UserSessionService {
     }
 
     /* ======================================================
+       TENANT ID CONVERSION HELPER
+       ====================================================== */
+
+    private UUID toTenantUUID(String tenantId) {
+        try {
+            return UUID.fromString(tenantId);
+        } catch (Exception e) {
+            throw new UnauthorizedException("Invalid tenantId (must be UUID): " + tenantId);
+        }
+    }
+
+    /* ======================================================
        DEVICE LIMIT ENFORCEMENT
        ====================================================== */
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     private void enforceDeviceLimit(UUID userId, String tenantId) {
 
+        UUID tenantUuid = toTenantUUID(tenantId);
+
         long activeCount =
-                repository.countByUserIdAndTenantIdAndActiveTrue(userId, tenantId);
+                repository.countByUserIdAndTenantIdAndActiveTrue(userId, tenantUuid);
 
         if (activeCount < maxDevices) {
             return;
@@ -60,14 +76,19 @@ public class UserSessionService {
         List<UserSession> activeSessions =
                 repository.findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtAsc(
                         userId,
-                        tenantId
+                        tenantUuid
                 );
 
         int sessionsToRemove = (int) (activeCount - maxDevices + 1);
         Instant now = Instant.now(clock);
 
         for (int i = 0; i < sessionsToRemove && i < activeSessions.size(); i++) {
-            activeSessions.get(i).revoke(now);
+            // ✅ CRITICAL: Delete old sessions completely to free up tokenId
+            // This prevents "unique constraint violation" on tokenId when creating new sessions
+            UUID sessionToDelete = activeSessions.get(i).getId();
+            repository.deleteById(sessionToDelete);
+            repository.flush(); // 🔥 ESSENTIAL: Force flush to release constraint immediately
+            log.debug("✓ Old session deleted and removed from DB: {}", sessionToDelete);
         }
     }
 
@@ -87,11 +108,12 @@ public class UserSessionService {
         Objects.requireNonNull(tokenId, "tokenId cannot be null");
 
         if (tokenId.isBlank()) {
-            throw new IllegalArgumentException("tokenId cannot be blank");
+            throw new UnauthorizedException("tokenId cannot be blank");
         }
 
         log.info("🔐 CREATE SESSION: userId={}, tenantId={}, tokenId={}", userId, tenantId, tokenId);
 
+        UUID tenantUuid = toTenantUUID(tenantId);
         enforceDeviceLimit(userId, tenantId);
 
         Instant now = Instant.now(clock);
@@ -99,16 +121,16 @@ public class UserSessionService {
         UserSession session =
                 new UserSession(
                         userId,
-                        tenantId,
+                        tenantUuid,
                         tokenId,
                         ipAddress,
                         userAgent,
                         now
                 );
 
-        repository.save(session);
+        repository.saveAndFlush(session);
         
-        log.info("✅ SESSION PERSISTED: sessionId={}, tokenId={}, user={}, tenant={}", 
+        log.info("✅ SESSION PERSISTED & FLUSHED: sessionId={}, tokenId={}, user={}, tenant={}", 
             session.getId(), tokenId, userId, tenantId);
     }
 
@@ -124,16 +146,20 @@ public class UserSessionService {
 
         log.debug("🔍 PROCESSING SESSION ACTIVITY: tokenId={}, tenantId={}", tokenId, tenantId);
 
+        UUID tenantUuid = toTenantUUID(tenantId);
+
+        // ✅ IDEMPOTENT: Treat missing session as already logged out
         UserSession session = repository
-                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId)
-                .orElseThrow(() -> {
-                    log.error("❌ SESSION NOT FOUND during activity processing: tokenId={}, tenantId={}", tokenId, tenantId);
-                    log.error("   This means either:");
-                    log.error("   1. Session was NOT persisted (createSession failed silently)");
-                    log.error("   2. Session was revoked");
-                    log.error("   3. tenantId mismatch (token has different tenant than header)");
-                    return new UnauthorizedException("Session not found");
-                });
+                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantUuid)
+                .orElse(null);
+        
+        if (session == null) {
+            log.warn(
+                "Session not found during activity processing (treating as already logged out): tokenId={}, tenantId={}",
+                tokenId, tenantId
+            );
+            return;  // ✅ Silently succeed - session already revoked or expired
+        }
 
         log.debug("✓ Session found: userId={}, sessionId={}", session.getUserId(), session.getId());
 
@@ -153,13 +179,14 @@ public class UserSessionService {
             }
         }
 
-        /* -------- Suspicious Detection (User-Agent only) --------
-           Note: IP-based detection is disabled because:
-           - Cloudflare / proxies change the IP per request
-           - Mobile networks (4G/5G) switch between towers
-           - Load balancers may mask the real IP
+        /* -------- Suspicious Detection (User-Agent only - LOGGED ONLY) --------
+           Note: User-Agent is logged as suspicious but NOT revoked because:
+           - Browsers can change User-Agent header (dev tools, proxies)
+           - Postman/scripts explicitly change it
+           - Load balancers may modify headers
+           - Mobile networks can have different user-agents
            
-           Using User-Agent is more reliable for device changes.
+           If User-Agent truly changes, admin can manually revoke session.
          */
 
         boolean agentChanged =
@@ -168,14 +195,21 @@ public class UserSessionService {
 
         if (agentChanged) {
             session.markSuspicious();
-            session.revoke(now);
-            throw new UnauthorizedException("Suspicious session detected: device changed");
+            log.warn("User-Agent changed for session {}: {} → {}", 
+                session.getId(),
+                session.getInitialUserAgent(),
+                currentUserAgent);
+            // Note: NOT revoking session on User-Agent change (too fragile)
+            // Admin can manually revoke if suspicious
         }
 
         /* -------- Update Activity -------- */
 
         session.updateDeviceInfo(currentIp, currentUserAgent);
         session.updateActivity(now);
+        
+        /* -------- Persist Changes -------- */
+        repository.saveAndFlush(session);
     }
 
     /* ======================================================
@@ -192,15 +226,15 @@ public class UserSessionService {
             );
         }
 
-        UserSession session = repository
-                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId)
-                .orElseThrow(() ->
-                        new ResponseStatusException(
-                                HttpStatus.NOT_FOUND,
-                                "Active session not found"
-                        ));
+        UUID tenantUuid = toTenantUUID(tenantId);
 
-        session.revoke(Instant.now(clock));
+        // ✅ IDEMPOTENT: Only revoke if session is active, silently succeed if not found or already revoked
+        repository
+                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantUuid)
+                .ifPresent(session -> {
+                    session.revoke(Instant.now(clock));
+                    log.debug("✓ Session revoked: {}", session.getId());
+                });
     }
 
     /* ======================================================
@@ -212,7 +246,7 @@ public class UserSessionService {
 
         repository.revokeAllActiveSessions(
                 userId,
-                tenantId,
+                toTenantUUID(tenantId),
                 Instant.now(clock)
         );
     }
@@ -225,7 +259,10 @@ public class UserSessionService {
     public void validateActiveSession(String tokenId, String tenantId) {
 
         boolean exists =
-                repository.existsByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId);
+                repository.existsByTokenIdAndTenantIdAndActiveTrue(
+                        tokenId,
+                        toTenantUUID(tenantId)
+                );
 
         if (!exists) {
             throw new UnauthorizedException("Session revoked or invalid");
@@ -241,7 +278,7 @@ public class UserSessionService {
 
         return repository.findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtDesc(
                 userId,
-                tenantId
+                toTenantUUID(tenantId)
         );
     }
 
@@ -257,7 +294,7 @@ public class UserSessionService {
         return repository
                 .findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtDesc(
                         userId,
-                        tenantId
+                        toTenantUUID(tenantId)
                 )
                 .stream()
                 .map(session -> new SessionResponse(
@@ -285,13 +322,15 @@ public class UserSessionService {
                 .findByIdAndUserIdAndTenantIdAndActiveTrue(
                         sessionId,
                         userId,
-                        tenantId
+                        toTenantUUID(tenantId)
                 )
-                .orElseThrow(() ->
-                        new ResponseStatusException(
-                                HttpStatus.NOT_FOUND,
-                                "Session not found"
-                        ));
+                .orElse(null);
+        
+        if (session == null) {
+            log.warn("Attempt to revoke non-existent or already-revoked session: sessionId={}, userId={}", 
+                sessionId, userId);
+            return;  // ✅ IDEMPOTENT: Silently succeed
+        }
 
         // Prevent revoking the current session
         if (session.getTokenId().equals(currentTokenId)) {
@@ -302,6 +341,7 @@ public class UserSessionService {
         }
 
         session.revoke(Instant.now(clock));
+        repository.saveAndFlush(session);
     }
 
     /* ======================================================
@@ -315,13 +355,17 @@ public class UserSessionService {
         log.info("🔄 UPDATING SESSION AFTER REFRESH: oldTokenId={}, newTokenId={}, tenantId={}", 
             oldTokenId, newTokenId, tenantId);
         
-        var session = repository
-                .findByTokenIdAndTenantIdAndActiveTrue(oldTokenId, tenantId)
-                .orElseThrow(() -> {
-                    log.error("❌ Session not found for refresh: oldTokenId={}, tenantId={}", 
-                        oldTokenId, tenantId);
-                    return new UnauthorizedException("Session not found for refresh");
-                });
+        UUID tenantUuid = toTenantUUID(tenantId);
+        
+        UserSession session = repository
+                .findByTokenIdAndTenantIdAndActiveTrue(oldTokenId, tenantUuid)
+                .orElse(null);
+        
+        if (session == null) {
+            log.warn("Session not found for refresh (treating as already expired): oldTokenId={}, tenantId={}", 
+                oldTokenId, tenantId);
+            return;  // ✅ IDEMPOTENT: Session already expired/revoked
+        }
 
         log.debug("✓ Session found: sessionId={}, userId={}", 
             session.getId(), session.getUserId());

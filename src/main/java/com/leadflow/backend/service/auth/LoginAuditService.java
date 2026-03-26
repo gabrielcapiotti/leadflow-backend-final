@@ -4,6 +4,7 @@ import com.leadflow.backend.entities.Tenant;
 import com.leadflow.backend.entities.auth.LoginAudit;
 import com.leadflow.backend.repository.auth.LoginAuditRepository;
 import com.leadflow.backend.repository.tenant.TenantRepository;
+import com.leadflow.backend.security.exception.UnauthorizedException;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -124,15 +125,15 @@ public class LoginAuditService {
     private UUID resolveTenantId(String tenantSchema) {
 
         if (tenantSchema == null || tenantSchema.isBlank()) {
-            throw new IllegalStateException("Tenant schema cannot be null or blank");
+            throw new UnauthorizedException("Tenant not resolved");
         }
 
         return tenantRepository
                 .findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenantSchema.trim())
                 .map(Tenant::getId)
                 .orElseThrow(() ->
-                        new IllegalStateException(
-                                "Tenant not found: " + tenantSchema
+                        new UnauthorizedException(
+                                "Invalid tenant"
                         )
                 );
     }

@@ -8,7 +8,10 @@ public record AuthResponse(
         String accessToken,
 
         @JsonProperty("refreshToken")
-        String refreshToken
+        String refreshToken,
+
+        @JsonProperty("tenantId")
+        String tenantId
 
 ) {
 
@@ -22,8 +25,13 @@ public record AuthResponse(
             throw new IllegalArgumentException("Refresh token cannot be null");
         }
 
+        if (tenantId == null) {
+            throw new IllegalArgumentException("Tenant ID cannot be null");
+        }
+
         accessToken = accessToken.trim();
         refreshToken = refreshToken.trim();
+        tenantId = tenantId.trim();
 
         if (accessToken.isBlank()) {
             throw new IllegalArgumentException("Access token cannot be blank");
@@ -31,6 +39,10 @@ public record AuthResponse(
 
         if (refreshToken.isBlank()) {
             throw new IllegalArgumentException("Refresh token cannot be blank");
+        }
+
+        if (tenantId.isBlank()) {
+            throw new IllegalArgumentException("Tenant ID cannot be blank");
         }
     }
 }
