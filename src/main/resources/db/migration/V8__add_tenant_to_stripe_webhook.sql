@@ -3,7 +3,26 @@
    Add tenant isolation + customer tracking to webhooks
    ====================================================== */
 
--- Add tenant_id and customer_id columns to stripe_event_logs
+-- Create table if not exists (guard for early migrations)
+CREATE TABLE IF NOT EXISTS public.stripe_event_logs (
+    id BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY,
+    event_id VARCHAR(100) NOT NULL UNIQUE,
+    event_type VARCHAR(100) NOT NULL,
+    payload TEXT NOT NULL,
+    status VARCHAR(50) NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'SUCCESS', 'FAILED', 'RETRY_PENDING')),
+    retry_count INTEGER NOT NULL DEFAULT 0,
+    max_retries INTEGER NOT NULL DEFAULT 3,
+    next_retry_at TIMESTAMP(6),
+    last_error TEXT,
+    processed_at TIMESTAMP(6),
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP(6),
+    tenant_id UUID DEFAULT NULL,
+    customer_id VARCHAR(100) DEFAULT 'unknown',
+    PRIMARY KEY (id)
+);
+
+-- Add tenant_id and customer_id columns to stripe_event_logs (if table already exists)
 ALTER TABLE public.stripe_event_logs
     ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT NULL,
     ADD COLUMN IF NOT EXISTS customer_id VARCHAR(100) DEFAULT 'unknown';

@@ -18,7 +18,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/v1/billing")
+@RequestMapping("/v1/billing")
 @RequiredArgsConstructor
 @Slf4j
 public class BillingDashboardController {
@@ -165,15 +165,6 @@ public class BillingDashboardController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> createSubscription(@RequestBody Map<String, String> request) {
 
-        UUID tenantId = resolveTenantSafe();
-
-        if (tenantId == null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "vendor_not_found",
-                    "message", "User has no associated vendor"
-            ));
-        }
-
         String planId = request.get("planId");
         if (planId == null || planId.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -182,11 +173,10 @@ public class BillingDashboardController {
             ));
         }
 
-        log.info("Creating subscription for tenant: {} with plan: {}", tenantId, planId);
+        log.info("🔵 Creating subscription with plan: {}", planId);
 
         try {
-            SubscriptionDetailsDTO subscription =
-                    billingDashboardService.createSubscription(tenantId, planId);
+            SubscriptionDetailsDTO subscription = billingDashboardService.createSubscription(planId);
 
             return ResponseEntity.ok(Map.of(
                     "status", "subscription_created",
@@ -195,7 +185,7 @@ public class BillingDashboardController {
             ));
 
         } catch (Exception e) {
-            log.error("Failed to create subscription for tenant: {}", tenantId, e);
+            log.error("❌ Failed to create subscription: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
 
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "subscription_creation_failed",
@@ -208,15 +198,6 @@ public class BillingDashboardController {
     @PreAuthorize("isAuthenticated()")
     public ResponseEntity<?> updateSubscription(@RequestBody Map<String, String> request) {
 
-        UUID tenantId = resolveTenantSafe();
-
-        if (tenantId == null) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "vendor_not_found",
-                    "message", "User has no associated vendor"
-            ));
-        }
-
         String planId = request.get("planId");
         if (planId == null || planId.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of(
@@ -225,11 +206,10 @@ public class BillingDashboardController {
             ));
         }
 
-        log.info("Updating subscription for tenant: {} to plan: {}", tenantId, planId);
+        log.info("🔵 Updating subscription to plan: {}", planId);
 
         try {
-            SubscriptionDetailsDTO subscription =
-                    billingDashboardService.updateSubscription(tenantId, planId);
+            SubscriptionDetailsDTO subscription = billingDashboardService.updateSubscription(planId);
 
             return ResponseEntity.ok(Map.of(
                     "status", "subscription_updated",
@@ -238,7 +218,7 @@ public class BillingDashboardController {
             ));
 
         } catch (Exception e) {
-            log.error("Failed to update subscription for tenant: {}", tenantId, e);
+            log.error("❌ Failed to update subscription: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
 
             return ResponseEntity.badRequest().body(Map.of(
                     "error", "subscription_update_failed",
@@ -291,9 +271,16 @@ public class BillingDashboardController {
 
     private UUID resolveTenantSafe() {
         try {
-            return vendorContext.getCurrentVendorId();
+            String tenantString = com.leadflow.backend.multitenancy.context.TenantContext.getTenant();
+            
+            if (tenantString == null || tenantString.isBlank()) {
+                log.warn("TenantContext returned null/blank tenant");
+                return null;
+            }
+            
+            return UUID.fromString(tenantString);
         } catch (Exception e) {
-            log.error("Failed to resolve vendor from context", e);
+            log.error("Failed to resolve tenant from TenantContext", e);
             return null;
         }
     }

@@ -1,7 +1,6 @@
 package com.leadflow.backend.scheduler;
 
 import com.leadflow.backend.service.audit.AuditCleanupService;
-import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.leadflow.backend.service.vendor.VendorRiskService;
 import com.leadflow.backend.service.vendor.VendorUsageService;
 import org.slf4j.Logger;
@@ -15,17 +14,14 @@ public class SaaSAutomationScheduler {
     private static final Logger log = LoggerFactory.getLogger(SaaSAutomationScheduler.class);
 
     private final VendorUsageService usageService;
-    private final SubscriptionService subscriptionService;
     private final VendorRiskService riskService;
     private final AuditCleanupService auditService;
 
     public SaaSAutomationScheduler(VendorUsageService usageService,
-                                   SubscriptionService subscriptionService,
                                    VendorRiskService riskService,
                                    AuditCleanupService auditService) {
 
         this.usageService = usageService;
-        this.subscriptionService = subscriptionService;
         this.riskService = riskService;
         this.auditService = auditService;
     }
@@ -34,12 +30,6 @@ public class SaaSAutomationScheduler {
     public void resetMonthlyUsage() {
         log.info("event=scheduler_reset_monthly_usage_start");
         usageService.resetMonthlyLimits();
-    }
-
-    @Scheduled(cron = "0 0 * * * *")
-    public void checkExpiredSubscriptions() {
-        log.info("event=scheduler_check_expired_subscriptions_start");
-        subscriptionService.expireSubscriptions();
     }
 
     @Scheduled(cron = "0 */10 * * * *")

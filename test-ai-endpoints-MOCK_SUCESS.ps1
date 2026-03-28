@@ -3,7 +3,7 @@
 # Script com MOCK apenas para endpoints de IA
 # Login, Create Lead e Security/Validation fazem chamadas REAIS
 
-$baseUrl = "http://localhost:8081"
+$baseUrl = "http://localhost:8081/api"
 
 $global:totalTests = 0
 $global:passedTests = 0
@@ -275,7 +275,7 @@ Write-Host "  Content-Type: $($headers['Content-Type'])" -ForegroundColor Cyan
 Header "CREATE LEAD (REAL)"
 
 # Cria lead com validação de campos obrigatórios
-$leadResp = TestAPI "Create Lead" "POST" "$baseUrl/api/leads" `
+$leadResp = TestAPI "Create Lead" "POST" "$baseUrl/leads" `
     @{name="Teste AI Mock"; email="test-lead-$(Get-Random)@leadflow.dev"; phone="+5511999999999"} `
     201 $headers -requiredFields @("id", "tenantId", "name")
 

@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/billing/webhooks")
+@RequestMapping("/billing/webhooks")
 @Tag(name = "Webhook Management", description = "Manage and replay failed webhook events")
 public class WebhookReplayController {
 

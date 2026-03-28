@@ -14,7 +14,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/roles")
+@RequestMapping("/roles")
 @PreAuthorize("hasRole('ADMIN')") // 🔒 Protege todos os endpoints da classe
 public class RoleController {
 

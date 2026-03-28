@@ -15,7 +15,7 @@ import java.time.ZoneOffset;
 import java.util.*;
 
 @RestController
-@RequestMapping("/api/v1/billing/webhooks/metrics")
+@RequestMapping("/v1/billing/webhooks/metrics")
 @PreAuthorize("hasRole('ADMIN')")
 @Slf4j
 public class WebhookMetricsController {

@@ -50,6 +50,10 @@ public class WebhookAlertListener {
 
             for (UUID tenantId : activeTenants) {
                 try {
+                    if (tenantId == null) {
+                        log.warn("Skipping health check for null tenant");
+                        continue;
+                    }
                     TenantContext.setTenant(tenantId.toString());
                     checkTenantHealth(tenantId);
                 } catch (Exception e) {

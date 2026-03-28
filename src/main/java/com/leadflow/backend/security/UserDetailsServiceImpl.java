@@ -40,28 +40,40 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         String normalizedEmail = normalizeEmail(email);
 
-        log.info("Loading user for authentication: email={}", normalizedEmail);
+        String tenantId = TenantContext.getTenant();
 
-        // ✅ CRITICAL FIX: Find by email ONLY (NO tenant filter during login)
-        // Users are stored in GLOBAL schema (public) with tenant_id field
-        // Login must be tenant-agnostic - tenant comes from the user record, not request
-        // This prevents dependency on external request context during authentication
+        if (tenantId == null || tenantId.isBlank()) {
+            log.error("Tenant ID is missing during authentication");
+            throw new UsernameNotFoundException("Tenant not provided");
+        }
+
+        log.info(
+            "Loading user for authentication: email={}, tenant={}",
+            normalizedEmail,
+            tenantId
+        );
+
+        // 🔥 CRITICAL FIX: Login is tenant-aware in multi-tenant architecture
+        // Identity = (email + tenant_id). Email alone is NOT globally unique.
+        // TenantFilter ensures tenant context is set before this method is called.
         User user = userRepository
-                .findByEmailIgnoreCaseAndDeletedAtIsNull(normalizedEmail)
+                .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
+                        normalizedEmail,
+                        tenantId
+                )
                 .orElseThrow(() -> {
-                    log.error("User NOT FOUND - email={}", normalizedEmail);
+                    log.error(
+                        "User NOT FOUND - email={}, tenant={}",
+                        normalizedEmail,
+                        tenantId
+                    );
                     return new UsernameNotFoundException("User not found");
                 });
-
-        // ✅ Set tenant from user (source of truth)
-        // Now we know the user's actual tenant, set it in context for password validation
-        String userTenantId = user.getTenantId();
-        TenantContext.setTenant(userTenantId);
 
         log.info(
                 "User loaded successfully: email={}, tenant={}",
                 normalizedEmail,
-                userTenantId
+                tenantId
         );
 
         validateUser(user);

@@ -25,7 +25,7 @@ import java.util.Map;
  * IMPORTANTE: Requer role ADMIN para acessar todos os endpoints.
  */
 @RestController
-@RequestMapping("/api/v1/admin/billing")
+@RequestMapping("/v1/admin/billing")
 @RequiredArgsConstructor
 @Slf4j
 @PreAuthorize("hasRole('ADMIN')")

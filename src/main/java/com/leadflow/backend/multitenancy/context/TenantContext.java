@@ -51,19 +51,6 @@ public final class TenantContext {
                 .trim()
                 .toLowerCase(Locale.ROOT);
 
-        // CRITICAL: Reject empty UUID
-        if (normalized.equals("00000000-0000-0000-0000-000000000000")) {
-            log.error("❌ CRITICAL: Attempt to set tenant to empty UUID (00000000-0000-0000-0000-000000000000)");
-            log.error("   This indicates a fallback/conversion error. Check:");
-            log.error("   1. CurrentTenantIdentifierResolver in Hibernate");
-            log.error("   2. TenantFilter tenant resolution logic");
-            log.error("   3. JWT tenant claim extraction");
-            throw new IllegalArgumentException(
-                    "Invalid tenant identifier: empty UUID detected. " +
-                    "Tenants must be valid formatted identifiers (UUIDs or PostgreSQL schema names)"
-            );
-        }
-
         if (!VALID_TENANT.matcher(normalized).matches()) {
 
             log.error("Invalid tenant identifier received: {}", tenant);

@@ -73,6 +73,9 @@ public class Subscription {
         sub.tenantId = tenantId;
         sub.plan = plan;
         sub.status = SubscriptionStatus.INCOMPLETE;
+        
+        // stripe_customer_id remains NULL until Stripe integration completes
+        // Will be populated during checkout/payment process
 
         sub.startedAt = LocalDateTime.now();
         sub.expiresAt = LocalDateTime.now().plusDays(7);
@@ -105,6 +108,11 @@ public class Subscription {
 
     @PreUpdate
     protected void onUpdate() {
+        // ⚠️ CRÍTICO: validar status em UPDATE também (não só em INSERT)
+        // Se status for null, usar INCOMPLETE como fallback
+        if (this.status == null) {
+            this.status = SubscriptionStatus.INCOMPLETE;
+        }
         this.updatedAt = LocalDateTime.now();
     }
 

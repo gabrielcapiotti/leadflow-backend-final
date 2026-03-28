@@ -44,6 +44,9 @@ public class VendorContext {
             throw new UnauthorizedException("Authenticated user email not found");
         }
 
+        // ✅ Normalizar email: lowercase + trim (deve ser igual ao que foi salvo em Vendor)
+        String normalizedEmail = email.trim().toLowerCase();
+
         String tenant = TenantContext.getTenant();
         
         if (tenant == null || tenant.isBlank()) {
@@ -51,7 +54,7 @@ public class VendorContext {
         }
 
         return vendorRepository
-                .findFirstByUserEmailIgnoreCaseAndTenantId(email, tenant)
+                .findFirstByUserEmailIgnoreCaseAndTenantId(normalizedEmail, tenant)
                 .orElseThrow(() ->
                         new UnauthorizedException(
                                 "Authenticated user does not belong to any vendor in tenant '" + tenant + "'"

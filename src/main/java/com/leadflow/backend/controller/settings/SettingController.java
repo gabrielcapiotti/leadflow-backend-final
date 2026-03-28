@@ -23,7 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/api/me/settings")
+@RequestMapping("/me/settings")
 public class SettingController {
 
     private static final Logger log = LoggerFactory.getLogger(SettingController.class);

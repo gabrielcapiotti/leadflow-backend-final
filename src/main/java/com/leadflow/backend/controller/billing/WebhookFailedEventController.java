@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.*;
  */
 @Slf4j
 @RestController
-@RequestMapping("/api/v1/billing/webhooks/failed")
+@RequestMapping("/v1/billing/webhooks/failed")
 @Tag(name = "Webhook Failed Events", description = "Manage failed webhook events")
 public class WebhookFailedEventController {
 

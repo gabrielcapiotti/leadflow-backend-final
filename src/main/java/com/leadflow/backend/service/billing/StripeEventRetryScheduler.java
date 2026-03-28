@@ -103,6 +103,12 @@ public class StripeEventRetryScheduler {
      */
     private void processRetryEventsForTenant(UUID tenantId) {
         try {
+            // 🔥 Null-safety check
+            if (tenantId == null) {
+                log.warn("Skipping retry processing for null tenant");
+                return;
+            }
+
             // Check circuit breaker ANTES de processar
             if (!circuitBreaker.canAttemptRetry()) {
                 log.warn("⏭️  Circuit breaker is OPEN. Skipping retry processing for tenant: {}", tenantId);

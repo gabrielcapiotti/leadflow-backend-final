@@ -2,6 +2,7 @@ package com.leadflow.backend.service.settings;
 
 import com.leadflow.backend.entities.Setting;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.exception.ResourceNotFoundException;
 import com.leadflow.backend.repository.settings.SettingRepository;
 
 import org.springframework.stereotype.Service;
@@ -102,7 +103,7 @@ public class SettingService {
         return settingRepository.findById(id)
                 .filter(setting -> !setting.isDeleted())
                 .orElseThrow(() ->
-                        new IllegalArgumentException("Setting not found"));
+                        new ResourceNotFoundException("Setting not found"));
     }
 
     /* ======================================================
@@ -233,30 +234,42 @@ public class SettingService {
             throw new IllegalArgumentException("User cannot be null");
         }
 
-        // Find existing setting (including deleted ones that can be restored)
+        // Try to find active (non-deleted) setting first
         Setting setting = settingRepository
-                .findByUserIncludingDeleted(user)
-                .orElseThrow(() ->
-                        new IllegalArgumentException(
-                                "Settings not found for user id=" + user.getId()
-                        )
-                );
+                .findByUser(user)
+                .orElse(null);
 
-        // If deleted, restore it first
-        if (setting.isDeleted()) {
+        // If no active setting found, check for deleted one to restore
+        if (setting == null) {
+            setting = settingRepository
+                    .findByUserIncludingDeleted(user)
+                    .orElse(null);
+            
+            // If still nothing, create new
+            if (setting == null) {
+                setting = new Setting(
+                        user,
+                        "My Vendor",
+                        "+55 11 9999-9999", 
+                        "My Company",
+                        null,
+                        "Welcome to my profile!"
+                );
+                return settingRepository.save(setting);
+            }
+            
+            // Restore the deleted setting
             setting.restore();
         }
 
-        // Reset all fields to defaults by directly updating values
+        // Reset all fields to defaults (idempotent)
         setting.setVendorName("My Vendor");
         setting.setWhatsapp("+55 11 9999-9999");
         setting.setCompanyName("My Company");
         setting.setLogo(null);
         setting.setWelcomeMessage("Welcome to my profile!");
         
-        // Explicitly flush to detect any constraint violations
-        settingRepository.saveAndFlush(setting);
-
-        return setting;
+        // Save and return (always 200 OK - idempotent)
+        return settingRepository.save(setting);
     }
 }

@@ -62,53 +62,58 @@ public class SubscriptionService {
     }
     
 
+    /**
+     * ⚠️ DEPRECATED: Vendor subscription status is no longer the source of truth
+     * 
+     * Use BillingService and the Subscription entity instead.
+     * All subscription state must be in the subscriptions table.
+     * 
+     * @deprecated Vendor.subscriptionStatus is legacy - use Subscription entity only
+     * @throws IllegalStateException Always
+     */
+    @Deprecated(forRemoval = true)
     public void transition(Vendor vendor,
                            SubscriptionStatus newStatus,
                            String reason,
                            String externalEventId) {
-
-        SubscriptionStatus previous = vendor.getSubscriptionStatus();
-
-        if (!previous.canTransitionTo(newStatus)) {
-            throw new IllegalStateException(
-                    "Transição inválida: " + previous + " → " + newStatus
-            );
-        }
-
-        vendor.setSubscriptionStatus(newStatus);
-        vendorRepository.save(vendor);
-
-        auditService.record(
-                vendor.getId(),
-                previous,
-                newStatus,
-                reason,
-                externalEventId
+        log.error("❌ DEPRECATED: Vendor.transition() called. Use BillingService only.");
+        throw new IllegalStateException(
+            "Vendor subscription transitions are disabled. " +
+            "Use BillingService and the Subscription entity for all state changes."
         );
     }
 
+    /**
+     * ⚠️ DEPRECATED: Access levels are now determined from Subscription entity only
+     * 
+     * @deprecated Use Subscription.getStatus() for access control
+     * @throws IllegalStateException Always
+     */
+    @Deprecated(forRemoval = true)
     public SubscriptionAccessLevel getAccessLevel(Vendor vendor) {
-
-        SubscriptionStatus status = vendor.getSubscriptionStatus();
-
-        return switch (status) {
-            case ATIVA, TRIAL -> SubscriptionAccessLevel.FULL;
-            case INADIMPLENTE -> SubscriptionAccessLevel.READ_ONLY;
-            case CANCELADA, EXPIRADA, SUSPENSA -> SubscriptionAccessLevel.BLOCKED;
-        };
+        log.error("❌ DEPRECATED: Vendor.getAccessLevel() called. Use Subscription entity only.");
+        throw new IllegalStateException(
+            "Vendor-based access levels are disabled. Determine access from Subscription entity via BillingService."
+        );
     }
 
+    /**
+     * ⚠️ DEPRECATED: Subscription expiration is now managed by Stripe webhooks only
+     * 
+     * All subscription state mutations (including expiration) must flow through
+     * Stripe events processed by BillingService.
+     * 
+     * @deprecated Stripe webhook flow is the only source of truth
+     * @throws IllegalStateException Always
+     */
+    @Deprecated(forRemoval = true)
     @Transactional
     public void expireSubscriptions() {
-
-        List<Vendor> vendors = vendorRepository.findBySubscriptionStatus(SubscriptionStatus.ATIVA);
-        Instant now = Instant.now();
-
-        for (Vendor vendor : vendors) {
-            if (vendor.getSubscriptionExpiresAt() != null && vendor.getSubscriptionExpiresAt().isBefore(now)) {
-                transition(vendor, SubscriptionStatus.EXPIRADA, "AUTO_EXPIRED_BY_SCHEDULER", null);
-            }
-        }
+        log.error("❌ DEPRECATED: Manual expireSubscriptions() called. Use Stripe webhook flow only.");
+        throw new IllegalStateException(
+            "Manual subscription expiration is disabled. " +
+            "All subscription state must be synchronized via Stripe webhooks through BillingService."
+        );
     }
 
     
@@ -118,76 +123,79 @@ public class SubscriptionService {
         String stripeCustomerId = session.getCustomer();
         String stripeSubscriptionId = session.getSubscription();
 
-        log.info("Stripe checkout completed");
-
-        /*
-         ----------------------------------------
-         IDEMPOTENCY CHECK
-         ----------------------------------------
-         */
-
-        Optional<Subscription> existing =
-                subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
-
-        if (existing.isPresent()) {
-
-            log.warn("Subscription already processed: {}", stripeSubscriptionId);
+        if (stripeCustomerId == null || stripeSubscriptionId == null) {
+            log.warn("Invalid session: missing customer or subscription");
             return;
-
         }
 
         /*
          ----------------------------------------
-         EXTRACT METADATA
+         IDEMPOTENCY CHECK (prevent duplicate update)
+         ----------------------------------------
+         */
+
+        Optional<Subscription> opt = subscriptionRepository.findByStripeSubscriptionId(stripeSubscriptionId);
+
+        if (opt.isPresent()) {
+            Subscription existing = opt.get();
+            
+            // Already linked - idempotent
+            if (existing.getStripeCustomerId() != null && 
+                existing.getStripeCustomerId().equals(stripeCustomerId)) {
+                log.info("Subscription already linked for stripeSubscriptionId={}", stripeSubscriptionId);
+                return;
+            }
+        }
+
+        /*
+         ----------------------------------------
+         EXTRACT TENANT ID
          ----------------------------------------
          */
 
         String tenantIdString = session.getMetadata().get("tenantId");
-        String email = session.getMetadata().get("email");
 
         if (tenantIdString == null) {
             log.error("Missing tenantId in Stripe checkout session metadata");
-            throw new IllegalStateException("TenantId not found in session metadata");
+            return;
         }
 
         UUID tenantId = UUID.fromString(tenantIdString);
 
-        log.info("Activating tenant {} for {}", tenantId, email);
+        log.info("Checkout completed for tenant: {}", tenantId);
 
         /*
          ----------------------------------------
-         GET PLAN
+         WAIT FOR SUBSCRIPTION (created by webhook)
          ----------------------------------------
          */
 
-        Plan plan = planService.getActivePlan();
+        Optional<Subscription> subscription = subscriptionRepository.findByTenantId(tenantId);
+
+        if (subscription.isEmpty()) {
+            log.warn("Subscription not found yet for tenant {}. Waiting for webhook to create it.", tenantId);
+            return;
+        }
 
         /*
          ----------------------------------------
-         CREATE SUBSCRIPTION
+         ONLY LINK STRIPE IDs
          ----------------------------------------
          */
 
-        Subscription subscription = new Subscription();
+        Subscription sub = subscription.get();
+        
+        // 🔥 DO NOT set status here - Stripe (webhook) is the source of truth
+        
+        sub.setStripeCustomerId(stripeCustomerId);
+        sub.setStripeSubscriptionId(stripeSubscriptionId);
 
-        subscription.setTenantId(tenantId);
-        subscription.setStripeCustomerId(stripeCustomerId);
-        subscription.setStripeSubscriptionId(stripeSubscriptionId);
-        subscription.setStatus(Subscription.SubscriptionStatus.ACTIVE);
-        subscription.setPlan(plan);
-        subscription.setStartedAt(LocalDateTime.now());
+        log.info("Linking Stripe IDs only for tenant={}, stripeCustomerId={}, stripeSubscriptionId={}", 
+                tenantId, stripeCustomerId, stripeSubscriptionId);
 
-        subscriptionRepository.save(subscription);
+        subscriptionRepository.save(sub);
 
-        /*
-         ----------------------------------------
-         INITIALIZE USAGE LIMITS
-         ----------------------------------------
-         */
-
-        usageService.initializeUsage(tenantId, plan);
-
-        log.info("Tenant {} activated with plan {}", tenantId, plan.getName());
+        log.info("Checkout linkage complete. Status will be set by Stripe webhook.");
 
     }
 
@@ -407,25 +415,6 @@ public class SubscriptionService {
         }
 
         return Optional.empty();
-    }
-
-    private void safeTransition(Vendor vendor,
-                                SubscriptionStatus target,
-                                String reason,
-                                String externalEventId) {
-        SubscriptionStatus current = vendor.getSubscriptionStatus();
-
-        if (current == target) {
-            return;
-        }
-
-        if (current.canTransitionTo(target)) {
-            transition(vendor, target, reason, externalEventId);
-            return;
-        }
-
-        log.warn("Invalid subscription transition ignored. vendorId={}, from={}, to={}",
-                vendor.getId(), current, target);
     }
 
     /**
@@ -684,69 +673,26 @@ public class SubscriptionService {
      * @return Optional containing subscription if found
      */
     public Optional<Subscription> getSubscriptionByVendorId(UUID vendorId) {
-        // Try to find an explicit Subscription entity
-        Optional<Subscription> explicit = subscriptionRepository.findByTenantId(vendorId);
-        if (explicit.isPresent()) {
-            return explicit;
-        }
-        
-        // Fall back to building from Vendor trial/subscription data
-        var vendor = vendorRepository.findById(vendorId);
-        if (vendor.isEmpty()) {
-            return Optional.empty();
-        }
-        
-        Vendor v = vendor.get();
-        
-        // Only return if vendor has active/trial subscription
-        if (v.getSubscriptionStatus() == null || 
-            (v.getSubscriptionStatus() != com.leadflow.backend.entities.vendor.SubscriptionStatus.TRIAL && 
-             v.getSubscriptionStatus() != com.leadflow.backend.entities.vendor.SubscriptionStatus.ATIVA)) {
-            return Optional.empty();
-        }
-        
-        // Build a Subscription-like object from Vendor fields
-        Subscription sub = new Subscription();
-        sub.setTenantId(vendorId);
-        sub.setEmail(v.getUserEmail());
-        
-        // Map Vendor subscription status to Subscription status enum
-        com.leadflow.backend.entities.vendor.SubscriptionStatus vendorStatus = v.getSubscriptionStatus();
-        Subscription.SubscriptionStatus subStatus = Subscription.SubscriptionStatus.ACTIVE;
-        
-        if (vendorStatus == com.leadflow.backend.entities.vendor.SubscriptionStatus.TRIAL) {
-            subStatus = Subscription.SubscriptionStatus.ACTIVE; // Trial is treated as active for access
-        } else if (vendorStatus == com.leadflow.backend.entities.vendor.SubscriptionStatus.ATIVA) {
-            subStatus = Subscription.SubscriptionStatus.ACTIVE;
-        }
-        
-        sub.setStatus(subStatus);
-        
-        // Convert Instant to LocalDateTime for subscription fields
-        if (v.getSubscriptionStartedAt() != null) {
-            sub.setStartedAt(LocalDateTime.ofInstant(v.getSubscriptionStartedAt(), java.time.ZoneId.systemDefault()));
-        } else {
-            sub.setStartedAt(LocalDateTime.now());
-        }
-        
-        if (v.getSubscriptionExpiresAt() != null) {
-            sub.setExpiresAt(LocalDateTime.ofInstant(v.getSubscriptionExpiresAt(), java.time.ZoneId.systemDefault()));
-        } else {
-            sub.setExpiresAt(LocalDateTime.now().plusDays(14)); // Default trial duration
-        }
-        
-        sub.setStripeCustomerId(v.getExternalCustomerId() != null ? v.getExternalCustomerId() : "not_set");
-        
-        // Get and set the active plan (required for DTO conversion)
-        try {
-            Plan activePlan = planService.getActivePlan();
-            if (activePlan != null) {
-                sub.setPlan(activePlan);
-            }
-        } catch (Exception e) {
-            log.warn("Could not set plan for subscription from vendor data", e);
-        }
-        
-        return Optional.of(sub);
+        // Single source of truth: database repository only
+        return subscriptionRepository.findByTenantId(vendorId);
+    }
+
+    /**
+     * ⚠️ DEPRECATED: Manual subscription creation is disabled
+     * 
+     * Use ONLY Stripe-driven flow via BillingService.
+     * All subscriptions must be created through Stripe checkout.
+     * 
+     * @deprecated Use BillingService for all subscription writes
+     * @throws IllegalStateException Always
+     */
+    @Deprecated(forRemoval = true)
+    @Transactional
+    public Optional<Subscription> createOrUpdateSubscription(UUID vendorId, String planId) {
+        log.error("❌ DEPRECATED: Manual subscription creation called for vendorId={}. Use Stripe flow only.", vendorId);
+        throw new IllegalStateException(
+            "Manual subscription creation is disabled. " +
+            "All subscriptions must be created through Stripe checkout flow via BillingService."
+        );
     }
 }

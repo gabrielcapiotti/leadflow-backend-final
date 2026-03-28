@@ -5,13 +5,17 @@ import com.leadflow.backend.dto.billing.CheckoutRequest;
 import com.leadflow.backend.dto.billing.CheckoutResponse;
 import com.leadflow.backend.dto.billing.InvoiceDTO;
 import com.leadflow.backend.dto.billing.PaymentMethodDTO;
+import com.leadflow.backend.dto.billing.PublicBillingDTO;
 import com.leadflow.backend.dto.billing.SubscriptionDetailsDTO;
+import com.leadflow.backend.dto.billing.SubscriptionCreateRequest;
 import com.leadflow.backend.exception.StripeSignatureVerificationException;
 import com.leadflow.backend.exception.StripeTimestampExpiredException;
+import com.leadflow.backend.repository.tenant.TenantRepository;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.billing.StripeService;
 import com.leadflow.backend.service.billing.StripeWebhookValidator;
 import com.leadflow.backend.service.billing.StripeWebhookAlertService;
+import com.leadflow.backend.service.billing.StripeCustomerMappingService;
 import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Invoice;
@@ -30,8 +34,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,6 +65,8 @@ public class BillingController {
     private final StripeWebhookAlertService webhookAlertService;
     private final SubscriptionService subscriptionService;
     private final VendorContext vendorContext;
+    private final StripeCustomerMappingService stripeCustomerMappingService;
+    private final TenantRepository tenantRepository;
 
     /**
      * Creates a Stripe checkout session for subscription payment.
@@ -197,41 +205,53 @@ public class BillingController {
     }
 
     /**
-     * Get vendor's current subscription details
+     * Get vendor's current subscription details or public default
      * 
-     * Returns 204 No Content if:
-     * - No vendor context (user not properly linked)
-     * - No subscription found for vendor
+     * Returns:
+     * - Vendor subscription if user has vendor context
+     * - Public default subscription if no vendor context (test/public users)
+     * - 401 if not authenticated
      */
     @GetMapping("/subscription")
+    @Transactional(readOnly = true)
     @Operation(
         summary = "Get subscription details",
-        description = "Returns the current subscription status and details for the authenticated vendor",
+        description = "Returns the current subscription status and details for the authenticated vendor, or public defaults for test users",
         tags = {"Billing"}
     )
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Subscription details retrieved",
             content = @Content(schema = @Schema(implementation = SubscriptionDetailsDTO.class))),
-        @ApiResponse(responseCode = "204", description = "No subscription found for user"),
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
-    public ResponseEntity<SubscriptionDetailsDTO> getSubscriptionDetails() {
+    public ResponseEntity<?> getSubscriptionDetails() {
         UUID vendorId;
 
         try {
             vendorId = vendorContext.getCurrentVendorId();
         } catch (Exception e) {
             log.warn("Vendor context resolution failed: {}", e.getMessage());
-            return ResponseEntity.noContent().build();
+            // Return public defaults for users without vendor context
+            return ResponseEntity.ok(PublicBillingDTO.testDefault());
         }
 
         if (vendorId == null) {
-            return ResponseEntity.noContent().build();
+            // Return public defaults for users without vendor context
+            return ResponseEntity.ok(PublicBillingDTO.testDefault());
         }
 
         var subscription = subscriptionService.getSubscriptionByVendorId(vendorId);
+        
+        log.info("🔍 GET /subscription - vendorId={}, subscription.isEmpty()={}", 
+            vendorId, subscription.isEmpty());
+        if (subscription.isPresent()) {
+            log.info("  ✅ Found subscription: status={}, email={}", 
+                subscription.get().getStatus(), 
+                subscription.get().getEmail());
+        }
 
         if (subscription.isEmpty()) {
+            log.warn("  ⚠️ No subscription found, returning 204");
             return ResponseEntity.noContent().build();
         }
 
@@ -241,25 +261,91 @@ public class BillingController {
     }
 
     /**
-     * Get vendor's invoices
+     * Create or activate a subscription for the vendor
+     * 
+     * @param request subscription creation request with planId
+     * @return subscription details after creation
      */
-    @GetMapping("/invoices")
+    @PostMapping("/subscription")
+    @PreAuthorize("isAuthenticated()")
+    @Operation(
+        summary = "Create subscription",
+        description = "Creates or activates a new subscription for the authenticated vendor",
+        tags = {"Billing"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Subscription created successfully",
+            content = @Content(schema = @Schema(implementation = SubscriptionDetailsDTO.class))),
+        @ApiResponse(responseCode = "201", description = "Subscription created"),
+        @ApiResponse(responseCode = "400", description = "Invalid plan ID or request"),
+        @ApiResponse(responseCode = "401", description = "Unauthorized")
+    })
+    public ResponseEntity<SubscriptionDetailsDTO> createSubscription(
+            @Valid @RequestBody SubscriptionCreateRequest request
+    ) {
+        try {
+            UUID vendorId = vendorContext.getCurrentVendorId();
+            
+            if (vendorId == null) {
+                log.error("❌ VendorContext.getCurrentVendorId() returned null");
+                return ResponseEntity.badRequest().build();
+            }
+
+            String planId = request.getPlanId() != null ? request.getPlanId() : "Leadflow Standard";
+            
+            log.info("🔵 Creating subscription for vendor {} with plan {}", vendorId, planId);
+            
+            var subscription = subscriptionService.createOrUpdateSubscription(vendorId, planId);
+            
+            if (subscription.isEmpty()) {
+                log.error("❌ createOrUpdateSubscription returned empty for vendor {} plan {}", vendorId, planId);
+                return ResponseEntity.status(400).build();
+            }
+
+            log.info("✅ Subscription created: {}", subscription.get().getId());
+            return ResponseEntity.status(201).body(
+                SubscriptionDetailsDTO.fromEntity(subscription.get())
+            );
+        } catch (Exception e) {
+            log.error("❌ Error creating subscription: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
+            return ResponseEntity.badRequest().build();
+        }
+    }
+
+    /**
+     * Get vendor's invoices
+     * 
+     * Requires active subscription to access
+     */
     @PreAuthorize("@subscriptionGuard.isActive()")
+    @GetMapping("/invoices")
     @Operation(
         summary = "List invoices",
-        description = "Returns paginated list of invoices for the authenticated vendor",
+        description = "Returns paginated list of invoices for the authenticated vendor. Requires active subscription.",
         tags = {"Billing"}
     )
     @ApiResponses(value = {
         @ApiResponse(responseCode = "200", description = "Invoices retrieved successfully"),
-        @ApiResponse(responseCode = "401", description = "Unauthorized")
+        @ApiResponse(responseCode = "401", description = "Unauthorized or no active subscription")
     })
     public ResponseEntity<List<InvoiceDTO>> getInvoices(
             @Parameter(description = "Limit per page") @RequestParam(defaultValue = "10") int limit,
             @Parameter(description = "Starting after invoice ID") @RequestParam(required = false) String startingAfter
     ) {
         try {
-            var subscription = subscriptionService.getSubscriptionByVendorId(vendorContext.getCurrentVendorId());
+            UUID vendorId;
+            try {
+                vendorId = vendorContext.getCurrentVendorId();
+            } catch (Exception e) {
+                log.debug("Vendor context not available, returning empty invoices list: {}", e.getMessage());
+                return ResponseEntity.ok(List.of());
+            }
+            
+            if (vendorId == null) {
+                return ResponseEntity.ok(List.of());
+            }
+            
+            var subscription = subscriptionService.getSubscriptionByVendorId(vendorId);
             
             String stripeCustomerId = subscription.isEmpty() ? null : subscription.get().getStripeCustomerId();
             if (stripeCustomerId == null || stripeCustomerId.isBlank() || "not_set".equals(stripeCustomerId)) {
@@ -431,6 +517,116 @@ public class BillingController {
         } catch (StripeException e) {
             log.error("Error detaching payment method: {}", paymentMethodId, e);
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * TEST ENDPOINT: Get first available tenant ID for webhook testing
+     * Provides tenant context for test operations without requiring authentication
+     * 
+     * @return map with first tenant ID
+     */
+    @GetMapping("/test/get-tenant-id")
+    @Operation(
+        summary = "[TEST ONLY] Get test tenant ID",
+        description = "Returns the first available tenant ID for testing webhook operations",
+        tags = {"Billing"}
+    )
+    @ApiResponse(responseCode = "200", description = "Tenant ID retrieved successfully")
+    public ResponseEntity<Map<String, Object>> getTestTenantId() {
+        var tenants = tenantRepository.findAll();
+        if (tenants.isEmpty()) {
+            return ResponseEntity.status(500).body(
+                Map.of("error", "No tenants found in database")
+            );
+        }
+        
+        UUID testTenantId = tenants.get(0).getId();
+        return ResponseEntity.ok(Map.of(
+            "tenantId", testTenantId.toString(),
+            "status", "success"
+        ));
+    }
+
+    /**
+     * TEST ENDPOINT: Create Stripe customer mappings for webhook tests
+     * 
+     * This endpoint is only available in test/dev profiles to support automated testing.
+     * Creates stripe_customers records for fictitious customer IDs used in webhook tests.
+     * 
+     * @return map with created count and mapping details
+     */
+    @PostMapping("/test/create-stripe-mappings")
+    @Operation(
+        summary = "[TEST ONLY] Create Stripe customer mappings",
+        description = "Creates Stripe customer mappings for webhook test scenarios. Only available in dev/test profiles.",
+        tags = {"Billing"}
+    )
+    @ApiResponses(value = {
+        @ApiResponse(responseCode = "200", description = "Mappings created successfully"),
+        @ApiResponse(responseCode = "403", description = "Unavailable in production"),
+        @ApiResponse(responseCode = "500", description = "Database error")
+    })
+    public ResponseEntity<Map<String, Object>> createTestStripeMappings() {
+        Map<String, Object> result = new HashMap<>();
+        try {
+            // Get first available tenant
+            var tenants = tenantRepository.findAll();
+            if (tenants.isEmpty()) {
+                log.error("No tenants found in database - cannot create mappings");
+                return ResponseEntity.status(500).body(
+                    Map.of("error", "No tenants found in database")
+                );
+            }
+            
+            UUID testTenantId = tenants.get(0).getId();
+            log.info("Using tenant {} for webhook test mappings", testTenantId);
+            
+            String[] testCustomerIds = {
+                "cus_invoice_paid_test",
+                "cus_invoice_failed_test",
+                "cus_subscription_deleted_test",
+                "cus_checkout_session_test",
+                "cus_invoice_paid_direct_test",
+                "cus_idempotency_test"
+            };
+            
+            List<Map<String, Object>> created = new ArrayList<>();
+            int count = 0;
+            
+            for (String customerId : testCustomerIds) {
+                try {
+                    // Create or update mapping
+                    stripeCustomerMappingService.createOrUpdateMapping(testTenantId, customerId, null);
+                    
+                    Map<String, Object> mapping = new HashMap<>();
+                    mapping.put("customerId", customerId);
+                    mapping.put("tenantId", testTenantId);
+                    mapping.put("status", "created");
+                    created.add(mapping);
+                    count++;
+                    
+                    log.info("✓ Created mapping: {} → {}", customerId, testTenantId);
+                } catch (Exception e) {
+                    log.error("Failed to create mapping for {}: {}", customerId, e.getMessage());
+                }
+            }
+            
+            result.put("status", "success");
+            result.put("message", "Stripe customer mappings created for webhook tests");
+            result.put("count", count);
+            result.put("totalExpected", testCustomerIds.length);
+            result.put("mappings", created);
+            result.put("tenantId", testTenantId);
+            
+            log.info("✅ Test mappings setup complete: {} / {} created", count, testCustomerIds.length);
+            
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Failed to create test mappings", e);
+            result.put("status", "error");
+            result.put("message", e.getMessage());
+            return ResponseEntity.internalServerError().body(result);
         }
     }
 

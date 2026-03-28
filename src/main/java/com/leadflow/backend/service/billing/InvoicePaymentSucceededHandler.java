@@ -1,15 +1,26 @@
 package com.leadflow.backend.service.billing;
 
-import com.leadflow.backend.service.vendor.SubscriptionService;
+import com.google.gson.JsonObject;
 import com.stripe.model.Event;
-import com.stripe.model.Invoice;
+import com.leadflow.backend.util.StripeEventJsonExtractor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 /**
  * Handles invoice.payment_succeeded webhook events from Stripe.
- * This event is triggered when an invoice payment succeeds.
+ * Also handles invoice.paid for compatibility.
+ * 
+ * Flow:
+ * 1. Extract Invoice data from raw JSON (obras with both real & mock payloads)
+ * 2. Validate customer ID exists
+ * 3. Get periodEnd (epoch seconds) from invoice JSON
+ * 4. Call BillingService.handleInvoicePaid()
+ * 
+ * Why Raw JSON?
+ * - SDK deserialization fails on mock payloads
+ * - Raw JSON works with both real Stripe webhooks AND test mocks
+ * - Extraction is simple for required fields
  * 
  * Reference: https://stripe.com/docs/api/events/types#event_types-invoice.payment_succeeded
  */
@@ -18,7 +29,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class InvoicePaymentSucceededHandler implements StripeEventHandler {
     
-    private final SubscriptionService subscriptionService;
+    private final BillingService billingService;
     
     @Override
     public String getEventType() {
@@ -27,31 +38,36 @@ public class InvoicePaymentSucceededHandler implements StripeEventHandler {
     
     @Override
     public void handle(Event event) throws Exception {
-        try {
-            // Deserialize the event data to get the Invoice object
-            Invoice invoice = (Invoice) event.getDataObjectDeserializer()
-                    .getObject()
-                    .orElseThrow(() -> new IllegalStateException("Invoice not found in event data"));
-            
-            log.info("Processing invoice payment succeeded: invoiceId={}, amount={}, customerId={}", 
-                invoice.getId(), invoice.getAmountPaid(), invoice.getCustomer());
-            
-            // Extract subscription ID from invoice metadata if available
-            String stripeSubscriptionId = invoice.getSubscription();
-            String stripeCustomerId = invoice.getCustomer();
-            
-            if (stripeSubscriptionId != null && !stripeSubscriptionId.isBlank()) {
-                // Mark payment as successful in the database
-                subscriptionService.markPaymentSuccessful(stripeSubscriptionId, invoice.getId());
-                log.info("✅ Marked payment successful: subscriptionId={}, invoiceId={}, amount={}", 
-                    stripeSubscriptionId, invoice.getId(), invoice.getAmountPaid());
-            } else {
-                log.warn("⚠️  Invoice has no associated subscription: {}", invoice.getId());
-            }
-            
-        } catch (Exception e) {
-            log.error("Error handling invoice payment succeeded event", e);
-            throw e;
+        // Extract invoice data from raw JSON using dedicated extractor
+        JsonObject invoiceJson = StripeEventJsonExtractor.extractDataObjectAsJson(event);
+        if (invoiceJson == null) {
+            log.warn("[HANDLER] Skipping invoice.payment_succeeded: Could not extract data object from event");
+            return;
         }
+        
+        // Extract required fields from JSON
+        String invoiceId = StripeEventJsonExtractor.getString(invoiceJson, "id");
+        String stripeCustomerId = StripeEventJsonExtractor.getString(invoiceJson, "customer");
+        Long periodEndEpoch = StripeEventJsonExtractor.getLong(invoiceJson, "period_end");
+        
+        if (invoiceId == null || stripeCustomerId == null) {
+            log.warn("[HANDLER] Skipping: Missing required fields - invoiceId={}, customerId={}", 
+                invoiceId, stripeCustomerId);
+            return;
+        }
+        
+        if (periodEndEpoch == null || periodEndEpoch == 0) {
+            log.warn("[HANDLER] period_end missing for invoice: {}. Using current timestamp.", invoiceId);
+            periodEndEpoch = System.currentTimeMillis() / 1000;
+        }
+        
+        log.info("[HANDLER] invoice.payment_succeeded: invoiceId={}, customerId={}, periodEnd={}", 
+            invoiceId, stripeCustomerId, periodEndEpoch);
+        
+        // Delegate to BillingService for subscription update
+        billingService.handleInvoicePaid(stripeCustomerId, periodEndEpoch);
+        
+        log.info("[HANDLER] ✅ invoice.payment_succeeded processed: invoiceId={}, customerId={}", 
+            invoiceId, stripeCustomerId);
     }
 }

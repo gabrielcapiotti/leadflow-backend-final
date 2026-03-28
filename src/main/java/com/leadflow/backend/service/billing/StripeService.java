@@ -190,65 +190,21 @@ public class StripeService {
      * 3. Get tenant_id from metadata["tenant_id"]
      * 4. Fallback: "unknown" if not found
      */
+    @Deprecated
     public String extractTenantIdFromEvent(Event event) {
-        try {
-            if (event == null || event.getData() == null) {
-                log.warn("[STRIPESERVICE] Event or event data is null");
-                return "unknown";
-            }
-
-            // Extract customer ID from various Stripe object types
-            String customerId = extractCustomerIdFromEvent(event);
-            
-            if ("unknown".equals(customerId)) {
-                log.warn("[STRIPESERVICE] Could not extract customer ID from event {}", event.getId());
-                return "unknown";
-            }
-
-            // Fetch customer from Stripe API to get metadata
-            Customer customer = Customer.retrieve(customerId);
-            Map<String, String> metadata = customer.getMetadata();
-
-            if (metadata != null && metadata.containsKey("tenant_id")) {
-                String tenantId = metadata.get("tenant_id");
-                log.info("[STRIPESERVICE] Extracted tenant_id {} from customer {}", tenantId, customerId);
-                return tenantId;
-            }
-
-            log.warn("[STRIPESERVICE] No tenant_id in metadata for customer {}", customerId);
-            return "unknown";
-
-        } catch (StripeException e) {
-            log.error("[STRIPESERVICE] Failed to extract tenant from event {}: {}", event.getId(), e.getMessage());
-            return "unknown";
-        } catch (Exception e) {
-            log.error("[STRIPESERVICE] Unexpected error extracting tenant: {}", e.getMessage());
-            return "unknown";
-        }
+        log.warn("[DEPRECATED] extractTenantIdFromEvent should not be called. Use database mapping instead.");
+        return "unknown";
     }
 
     /**
      * Extract customer ID from various Stripe object types in webhook events
+     * 
+     * @deprecated Use StripeEventJsonExtractor.getString(dataObject, "customer") for raw JSON parsing
      */
+    @Deprecated
     private String extractCustomerIdFromEvent(Event event) {
-        try {
-            if (event.getData() != null && event.getData().getObject() != null) {
-                Object obj = event.getData().getObject();
-                if (obj instanceof Customer) {
-                    return ((Customer) obj).getId();
-                } else if (obj instanceof com.stripe.model.Charge) {
-                    return ((com.stripe.model.Charge) obj).getCustomer();
-                } else if (obj instanceof com.stripe.model.Invoice) {
-                    return ((com.stripe.model.Invoice) obj).getCustomer();
-                } else if (obj instanceof com.stripe.model.Subscription) {
-                    return ((com.stripe.model.Subscription) obj).getCustomer();
-                }
-            }
-            return "unknown";
-        } catch (Exception e) {
-            log.debug("[STRIPESERVICE] Could not extract customer from event {}: {}", event.getId(), e.getMessage());
-            return "unknown";
-        }
+        log.warn("[DEPRECATED] extractCustomerIdFromEvent should not be called. Use StripeEventJsonExtractor instead.");
+        return "unknown";
     }
 
     public Optional<Session> extractCheckoutSession(Event event) {

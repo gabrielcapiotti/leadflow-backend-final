@@ -427,22 +427,54 @@ public class AuthController {
     public ResponseEntity<AuthResponse> registerAdmin(
             @Valid @RequestBody RegisterRequest request,
             @RequestHeader(value = "X-Internal-Secret", required = false) String secret,
+            Authentication authentication,
             HttpServletRequest httpRequest
     ) {
 
-        // 🔐 SECURITY CHECK: Validate internal secret
+        boolean isInternalSecret = false;
+        boolean isAuthenticatedAdmin = false;
+
+        // 🔐 CHECK 1: Validate internal secret (for system setup)
         String expectedSecret = System.getenv("ADMIN_REGISTER_SECRET");
         if (expectedSecret == null || expectedSecret.isBlank()) {
             expectedSecret = "SUPER_SECRET_KEY_CHANGE_ME";  // Default for dev - MUST override in prod
         }
 
-        if (secret == null || !secret.equals(expectedSecret)) {
-            log.warn("❌ Unauthorized admin registration attempt - invalid secret");
-            throw new UnauthorizedException("Invalid or missing X-Internal-Secret header");
+        if (secret != null && secret.equals(expectedSecret)) {
+            isInternalSecret = true;
+            log.info("✅ Admin registration authorized via X-Internal-Secret");
         }
 
-        // 🔒 Extract tenant from header
-        String tenant = extractTenantFromRequest(httpRequest);
+        // 🔐 CHECK 2: Validate authenticated ADMIN user
+        if (authentication != null && authentication.isAuthenticated()) {
+            boolean hasAdminRole = authentication.getAuthorities().stream()
+                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
+            if (hasAdminRole) {
+                isAuthenticatedAdmin = true;
+                log.info("✅ Admin registration authorized via authenticated ADMIN user");
+            }
+        }
+
+        // 🔐 SECURITY: Require one of the two authorizations
+        if (!isInternalSecret && !isAuthenticatedAdmin) {
+            log.warn("❌ Unauthorized admin registration attempt");
+            throw new UnauthorizedException(
+                    "Unauthorized - requires either ADMIN authentication or X-Internal-Secret header"
+            );
+        }
+
+        // 🔒 Extract tenant from header (for internal secret) or authentication (for admin user)
+        String tenant;
+        if (isAuthenticatedAdmin && authentication != null) {
+            // Use tenant from authenticated admin's context
+            tenant = TenantContext.getTenant();
+            if (tenant == null || tenant.isBlank()) {
+                tenant = extractTenantFromRequest(httpRequest);
+            }
+        } else {
+            // Use tenant from header (internal secret flow)
+            tenant = extractTenantFromRequest(httpRequest);
+        }
 
         if (tenant == null || tenant.isBlank()) {
             log.error("❌ Admin registration failed: No tenant provided in request");

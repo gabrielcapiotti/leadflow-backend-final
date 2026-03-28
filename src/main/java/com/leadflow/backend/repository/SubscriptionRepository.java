@@ -23,6 +23,8 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     
     Optional<Subscription> findByTenantId(UUID tenantId);
 
+    Optional<Subscription> findByTenantIdAndStripeSubscriptionId(UUID tenantId, String stripeSubscriptionId);
+
     @Query("SELECT s FROM Subscription s WHERE s.status = :status " +
            "AND s.expiresAt BETWEEN :startDate AND :endDate " +
            "ORDER BY s.expiresAt ASC")

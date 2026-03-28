@@ -102,6 +102,9 @@ public class AuthService {
 
         User savedUser = userRepository.saveAndFlush(user); // 🔥 saveAndFlush garante visibilidade imediata
 
+        // 🔥 CRÍTICO: Criar Vendor associado ao usuário
+        vendorService.createVendor(savedUser);
+
         logger.info("User registered successfully: {} (tenant={})", normalizedEmail, tenant);
 
         audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, true);
@@ -144,6 +147,9 @@ public class AuthService {
         user.setTenantId(tenant);
 
         User savedUser = userRepository.saveAndFlush(user);
+
+        // 🔥 CRÍTICO: Criar Vendor associado ao usuário admin
+        vendorService.createVendor(savedUser);
 
         logger.info("🔑 ADMIN user registered successfully: {} (tenant={})", normalizedEmail, tenant);
 

@@ -40,26 +40,32 @@ public class TenantFilter extends OncePerRequestFilter {
 
         String path = request.getRequestURI();
 
-        // ✅ Only skip PUBLIC auth endpoints - protected endpoints still need TenantContext
+        // 🔥 NORMALIZA PREFIXO /api
+        if (path.startsWith("/api/")) {
+            path = path.substring(4);
+        }
+
+        // ✅ Only skip PUBLIC auth endpoints - protected endpoints MUST run TenantFilter
+        // 🔥 CRITICAL: /auth/login MUST NOT be ignored - it requires tenant context
+        //    Login is tenant-aware in multi-tenant architecture
         boolean isPublicAuth = path.equals("/auth/register")
-                || path.equals("/auth/register-admin")
-                || path.equals("/auth/login")
-                || path.equals("/auth/refresh")
                 || path.equals("/auth/forgot-password")
                 || path.equals("/auth/reset-password");
         
         boolean isWebhook = path.startsWith("/stripe/webhook")
                 || path.startsWith("/webhooks/")
-                || path.startsWith("/webhook/");
+                || path.startsWith("/webhook/")
+                || path.equals("/billing/webhook")
+                || path.equals("/billing/checkout")
+                || path.equals("/billing/test/get-tenant-id")
+                || path.equals("/billing/test/create-stripe-mappings");
         
         boolean isPublicApi = path.startsWith("/public/");
 
         return isPublicAuth
                 || isWebhook
                 || isPublicApi
-                || path.startsWith("/api/actuator")
                 || path.startsWith("/actuator")
-                || path.startsWith("/api/health")
                 || path.startsWith("/health")
                 || path.startsWith("/swagger")
                 || path.startsWith("/v3/api-docs");

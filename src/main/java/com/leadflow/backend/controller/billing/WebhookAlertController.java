@@ -19,7 +19,7 @@ import java.util.UUID;
 
 @Slf4j
 @RestController
-@RequestMapping("/api/v1/billing/webhooks/alerts")
+@RequestMapping("/v1/billing/webhooks/alerts")
 @RequiredArgsConstructor
 @Tag(name = "Webhook Alerts", description = "Webhook monitoring and alert management endpoints")
 public class WebhookAlertController {

@@ -23,7 +23,7 @@ import java.util.UUID;
  * Path: /api/settings/{id}
  */
 @RestController
-@RequestMapping("/api/settings")
+@RequestMapping("/settings")
 public class AdminSettingController {
 
     private static final Logger log = LoggerFactory.getLogger(AdminSettingController.class);

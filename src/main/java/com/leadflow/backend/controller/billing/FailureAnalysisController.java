@@ -23,7 +23,7 @@ import java.util.Map;
  * All endpoints require ADMIN role
  */
 @RestController
-@RequestMapping("/api/v1/billing/webhooks/analysis")
+@RequestMapping("/v1/billing/webhooks/analysis")
 @RequiredArgsConstructor
 @Slf4j
 @PreAuthorize("hasRole('ADMIN')")

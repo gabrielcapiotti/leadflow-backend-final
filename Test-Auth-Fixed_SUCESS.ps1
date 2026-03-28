@@ -16,7 +16,7 @@
 param([switch]$Verbose = $false)
 
 # Configuration
-$BaseUrl = "http://localhost:8081"
+$BaseUrl = "http://localhost:8081/api"
 $TenantHeader = $null
 $ProgressPreference = 'SilentlyContinue'
 
@@ -195,7 +195,7 @@ Write-Section "GROUP 1: PUBLIC REGISTRATION AND LOGIN"
 
 # Test 1: Health Check
 Write-Test 1 "Health Check (Sanity)"
-$r = Invoke-ApiRequest "GET" "/api/actuator/health" $null $true
+$r = Invoke-ApiRequest "GET" "/actuator/health" $null $true
 if ($r.Success) {
     Write-Success "Health check passed"
     Record-Result "/actuator/health" $true $r.Status
@@ -390,6 +390,9 @@ $testEmail2 = "isolation-$uuid2-$timestamp2-$random2a$random2b@leadflow.dev"
 $testPassword2 = "Iso@$(Get-Random -Maximum 9999)!Pass$(Get-Random -Maximum 99)"
 $testName2 = "Isolation Tester"
 
+# Register WITHOUT specifying tenant - will auto-assign
+$savedTenant = $TenantHeader
+$TenantHeader = $null  # Clear tenant header for registration
 $r = Invoke-ApiRequest "POST" "/auth/register" @{
     name              = $testName2
     email             = $testEmail2
@@ -399,8 +402,12 @@ $r = Invoke-ApiRequest "POST" "/auth/register" @{
 
 if ($r.Success) {
     Write-Info "User registered: $testEmail2"
+    $newUserTenant = $r.Data.tenantId  # Capture the NEW tenant
     
-    # Login to get token in tenant A
+    # Login with the NEW tenant's tenant ID in header
+    $TenantHeader = $newUserTenant
+    Write-Info "Using new tenant from registration: $newUserTenant"
+    
     $r = Invoke-ApiRequest "POST" "/auth/login" @{
         email    = $testEmail2
         password = $testPassword2
@@ -409,7 +416,7 @@ if ($r.Success) {
     if ($r.Success) {
         $isolationToken = $r.Data.accessToken
         $isolationTenant = $r.Data.tenantId
-        Write-Info "User logged in to tenant: $originalTenant"
+        Write-Info "User logged in to tenant: $newUserTenant"
         Write-Info "Token obtained for tenant_A"
         Write-Info "Isolation Tenant ID: $isolationTenant"
         
@@ -443,7 +450,7 @@ if ($r.Success) {
         
         # Restore state
         $script:AccessToken = $savedToken
-        $TenantHeader = $originalTenant
+        $TenantHeader = $savedTenant
         Write-Info "Restored to original state: tenant=$TenantHeader"
     } else {
         Write-Fail "Could not login for isolation test" $r.Status

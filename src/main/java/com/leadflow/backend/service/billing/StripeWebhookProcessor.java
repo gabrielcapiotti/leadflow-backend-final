@@ -21,8 +21,11 @@ import java.util.Map;
 public class StripeWebhookProcessor {
     
     private final InvoicePaymentSucceededHandler invoicePaymentSucceededHandler;
+    private final InvoicePaidHandler invoicePaidHandler;
+    private final InvoicePaymentFailedHandler invoicePaymentFailedHandler;
     private final SubscriptionDeletedHandler subscriptionDeletedHandler;
     private final SubscriptionUpdatedHandler subscriptionUpdatedHandler;
+    private final CheckoutSessionCompletedHandler checkoutSessionCompletedHandler;
     
     private Map<String, StripeEventHandler> handlers;
     
@@ -34,8 +37,11 @@ public class StripeWebhookProcessor {
     private void initializeHandlers() {
         handlers = new HashMap<>();
         registerHandler(invoicePaymentSucceededHandler);
+        registerHandler(invoicePaidHandler);
+        registerHandler(invoicePaymentFailedHandler);
         registerHandler(subscriptionDeletedHandler);
         registerHandler(subscriptionUpdatedHandler);
+        registerHandler(checkoutSessionCompletedHandler);
         log.info("Stripe event handlers initialized: {}", handlers.keySet());
     }
     

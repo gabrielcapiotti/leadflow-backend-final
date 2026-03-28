@@ -38,9 +38,11 @@ public class VendorService {
 
     @Transactional
     public Vendor createVendor(User user) {
-        // ✅ IDEMPOTÊNCIA: Verificar se vendor já existe (por email)
-        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCase(
-                normalizeEmail(user.getEmail())
+        // 🔥 CRÍTICO: Chave de lookup = (email + tenantId) para isolamento multi-tenant
+        // Antes fazia lookup por email APENAS, causando vendor leakage entre tenants
+        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCaseAndTenantId(
+                normalizeEmail(user.getEmail()),
+                user.getTenantId()
         );
         
         if (existingVendor.isPresent()) {
@@ -100,9 +102,14 @@ public class VendorService {
         }
 
         String normalizedEmail = normalizeEmail(email);
+        String tenantId = TenantContext.getTenant();
         
-        // ✅ IDEMPOTÊNCIA: Verificar se vendor já existe (por email)
-        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCase(normalizedEmail);
+        if (tenantId == null || tenantId.isBlank()) {
+            throw new IllegalStateException("Tenant context is not available");
+        }
+        
+        // 🔥 CRÍTICO: Chave de lookup = (email + tenantId) para isolamento multi-tenant
+        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCaseAndTenantId(normalizedEmail, tenantId);
         if (existingVendor.isPresent()) {
             return existingVendor.get();
         }

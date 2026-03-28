@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -35,23 +36,35 @@ public class BillingDashboardService {
 
         UUID tenantId = resolveTenant();
 
-        Subscription subscription = ensureSubscription(tenantId);
+        Optional<Subscription> subscription = findSubscription(tenantId);
 
+        if (subscription.isEmpty()) {
+            log.warn("No subscription found for tenant {}", tenantId);
+            return BillingDashboardDTO.builder()
+                    .subscription(SubscriptionDetailsDTO.createEmptySubscription())
+                    .usageStatistics(new BillingDashboardDTO.UsageStatisticsDTO())
+                    .hasActiveSubscription(false)
+                    .currentStatus("NO_SUBSCRIPTION")
+                    .nextAction("CREATE_SUBSCRIPTION")
+                    .build();
+        }
+
+        Subscription sub = subscription.get();
         SubscriptionDetailsDTO subscriptionDetails =
-                SubscriptionDetailsDTO.fromEntity(subscription);
+                SubscriptionDetailsDTO.fromEntity(sub);
 
         BillingDashboardDTO.UsageStatisticsDTO usageStats =
                 getUsageStatistics(tenantId);
 
         boolean isActive =
-                subscription.getStatus() == Subscription.SubscriptionStatus.ACTIVE;
+                sub.getStatus() == Subscription.SubscriptionStatus.ACTIVE;
 
         return BillingDashboardDTO.builder()
                 .subscription(subscriptionDetails)
                 .usageStatistics(usageStats)
                 .hasActiveSubscription(isActive)
-                .currentStatus(subscription.getStatus().name())
-                .nextAction(getNextAction(subscription))
+                .currentStatus(sub.getStatus().name())
+                .nextAction(getNextAction(sub))
                 .build();
     }
 
@@ -78,25 +91,12 @@ public class BillingDashboardService {
     // SUBSCRIPTION
     // =====================================================
 
-    private Subscription ensureSubscription(UUID tenantId) {
-
-        return subscriptionRepository.findByTenantId(tenantId)
-                .orElseGet(() -> {
-
-                    log.warn("No subscription for tenant {} → creating default", tenantId);
-
-                    Plan defaultPlan = getDefaultPlan();
-
-                    Subscription sub = Subscription.createTrial(tenantId, defaultPlan);
-
-                    return subscriptionRepository.save(sub);
-                });
-    }
-
-    private Plan getDefaultPlan() {
-        return planRepository.findByNameIgnoreCase("FREE")
-                .orElseThrow(() ->
-                        new IllegalStateException("Default plan 'FREE' not found"));
+    /**
+     * Find subscription without creating it.
+     * Single source of truth: database only.
+     */
+    private Optional<Subscription> findSubscription(UUID tenantId) {
+        return subscriptionRepository.findByTenantId(tenantId);
     }
 
     // =====================================================
@@ -104,23 +104,42 @@ public class BillingDashboardService {
     // =====================================================
 
     public BillingDashboardDTO getBillingDashboard(UUID tenantId) {
-        Subscription subscription = ensureSubscription(tenantId);
-        SubscriptionDetailsDTO subscriptionDetails = SubscriptionDetailsDTO.fromEntity(subscription);
+        Optional<Subscription> subscription = findSubscription(tenantId);
+        
+        if (subscription.isEmpty()) {
+            log.warn("No subscription found for admin query - tenant {}", tenantId);
+            return BillingDashboardDTO.builder()
+                    .subscription(SubscriptionDetailsDTO.createEmptySubscription())
+                    .usageStatistics(new BillingDashboardDTO.UsageStatisticsDTO())
+                    .hasActiveSubscription(false)
+                    .currentStatus("NO_SUBSCRIPTION")
+                    .nextAction("CREATE_SUBSCRIPTION")
+                    .build();
+        }
+        
+        Subscription sub = subscription.get();
+        SubscriptionDetailsDTO subscriptionDetails = SubscriptionDetailsDTO.fromEntity(sub);
         BillingDashboardDTO.UsageStatisticsDTO usageStats = getUsageStatistics(tenantId);
-        boolean isActive = subscription.getStatus() == Subscription.SubscriptionStatus.ACTIVE;
+        boolean isActive = sub.getStatus() == Subscription.SubscriptionStatus.ACTIVE;
         
         return BillingDashboardDTO.builder()
                 .subscription(subscriptionDetails)
                 .usageStatistics(usageStats)
                 .hasActiveSubscription(isActive)
-                .currentStatus(subscription.getStatus().name())
-                .nextAction(getNextAction(subscription))
+                .currentStatus(sub.getStatus().name())
+                .nextAction(getNextAction(sub))
                 .build();
     }
 
     public SubscriptionDetailsDTO getSubscriptionDetails(UUID tenantId) {
-        Subscription subscription = ensureSubscription(tenantId);
-        return SubscriptionDetailsDTO.fromEntity(subscription);
+        Optional<Subscription> subscription = findSubscription(tenantId);
+        
+        if (subscription.isEmpty()) {
+            log.warn("No subscription details found for tenant {}", tenantId);
+            return SubscriptionDetailsDTO.createEmptySubscription();
+        }
+        
+        return SubscriptionDetailsDTO.fromEntity(subscription.get());
     }
 
     public BillingDashboardDTO.UsageStatisticsDTO getUsageStatistics(UUID tenantId) {
@@ -196,7 +215,8 @@ public class BillingDashboardService {
     // SUBSCRIPTION MANAGEMENT (CREATE/UPDATE)
     // =====================================================
 
-    public SubscriptionDetailsDTO createSubscription(UUID tenantId, String planId) {
+    public SubscriptionDetailsDTO createSubscription(String planId) {
+        UUID tenantId = resolveTenant();
         log.info("Creating subscription for tenant: {} with plan: {}", tenantId, planId);
         
         // Fetch the plan by ID or name
@@ -226,7 +246,8 @@ public class BillingDashboardService {
         return SubscriptionDetailsDTO.fromEntity(subscription);
     }
 
-    public SubscriptionDetailsDTO updateSubscription(UUID tenantId, String planId) {
+    public SubscriptionDetailsDTO updateSubscription(String planId) {
+        UUID tenantId = resolveTenant();
         log.info("Updating subscription for tenant: {} with plan: {}", tenantId, planId);
         
         // Fetch the plan by ID or name

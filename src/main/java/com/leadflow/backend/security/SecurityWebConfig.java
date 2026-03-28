@@ -1,7 +1,6 @@
 package com.leadflow.backend.security;
 
 import com.leadflow.backend.multitenancy.filter.TenantFilter;
-import com.leadflow.backend.multitenancy.resolver.TenantResolver;
 import com.leadflow.backend.security.jwt.JwtAuthenticationFilter;
 import com.leadflow.backend.security.jwt.JwtService;
 import com.leadflow.backend.multitenancy.service.TenantService;
@@ -75,17 +74,6 @@ public class SecurityWebConfig {
     }
 
     /* =====================================================
-       TENANT FILTER
-       ===================================================== */
-
-    @Bean
-    public TenantFilter tenantFilter(
-            TenantResolver tenantResolver
-    ) {
-        return new TenantFilter(tenantResolver);
-    }
-
-    /* =====================================================
        SECURITY FILTER CHAIN
        ===================================================== */
 
@@ -114,9 +102,11 @@ public class SecurityWebConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource))
 
             .exceptionHandling(ex -> ex
-                .authenticationEntryPoint((request, response, authException) ->
-                        response.sendError(HttpServletResponse.SC_UNAUTHORIZED)
-                )
+                .authenticationEntryPoint((request, response, authException) -> {
+                    System.out.println("🔴 AuthenticationEntryPoint triggered for: " + request.getRequestURI());
+                    System.out.println("🔴 Exception: " + authException.getMessage());
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                })
                 .accessDeniedHandler((request, response, accessDeniedException) ->
                         response.sendError(HttpServletResponse.SC_FORBIDDEN)
                 )
@@ -124,51 +114,81 @@ public class SecurityWebConfig {
 
             .authorizeHttpRequests(auth -> auth
 
-                /* PUBLIC AUTH */
+                /* =========================================
+                   PUBLIC AUTH ENDPOINTS
+                   ========================================= */
+
                 .requestMatchers(
-                        "/auth/register",
-                        "/auth/login",
-                        "/auth/refresh",
-                        "/auth/forgot-password",
-                        "/auth/reset-password",
-                        "/auth/debug",
-                        "/error"
+                        "/auth/**",
+                        "/api/auth/**"
                 ).permitAll()
 
-                /* PUBLIC API */
-                .requestMatchers("/public/**").permitAll()
+                /* =========================================
+                   AUTHENTICATED AUTH ENDPOINTS
+                   ========================================= */
 
-                /* AUTH REQUIRED */
                 .requestMatchers(
                         "/auth/me",
                         "/auth/sessions/**",
                         "/auth/change-password",
-                        "/auth/logout"
+                        "/auth/logout",
+                        "/auth/sessions",
+                        "/api/auth/me",
+                        "/api/auth/sessions/**",
+                        "/api/auth/change-password",
+                        "/api/auth/logout",
+                        "/api/auth/sessions"
                 ).authenticated()
 
-                /* ADMIN */
-                .requestMatchers("/admin/**").hasRole("ADMIN")
+                /* =========================================
+                   ADMIN
+                   ========================================= */
 
-                /* WEBHOOKS / BILLING */
-                .requestMatchers("/stripe/webhook").permitAll()
-                .requestMatchers("/api/webhooks/**").permitAll()
-                .requestMatchers("/api/billing/webhooks/**").permitAll()
+                .requestMatchers("/admin/**", "/api/admin/**").hasRole("ADMIN")
 
-                /* MONITORING */
-                .requestMatchers("/api/dashboard").authenticated()
-                .requestMatchers("/api/health").permitAll()
-                .requestMatchers("/health").permitAll()
-                .requestMatchers("/api/actuator/**").permitAll()
-                .requestMatchers("/actuator/**").permitAll()
+                /* =========================================
+                   BILLING
+                   ========================================= */
 
-                /* BUSINESS */
-                .requestMatchers("/leads/**").authenticated()
-                .requestMatchers("/history/**").authenticated()
-                .requestMatchers("/vendors/**").authenticated()
-                .requestMatchers("/api/vendor-leads/**").authenticated()
+                .requestMatchers("/billing/checkout", "/api/billing/checkout").permitAll()
+                .requestMatchers("/billing/checkout-session", "/api/billing/checkout-session").permitAll()
+                .requestMatchers("/billing/webhook", "/api/billing/webhook").permitAll()
+                .requestMatchers("/billing/subscription", "/api/billing/subscription").authenticated()
+                .requestMatchers("/billing/usage", "/api/billing/usage").authenticated()
+                .requestMatchers("/billing/test/get-tenant-id", "/api/billing/test/get-tenant-id").permitAll()
+                .requestMatchers("/billing/test/create-stripe-mappings", "/api/billing/test/create-stripe-mappings").permitAll()
 
-                /* USER MANAGEMENT */
-                .requestMatchers("/users/**").authenticated()
+                /* =========================================
+                   WEBHOOKS
+                   ========================================= */
+
+                .requestMatchers("/stripe/webhook", "/api/stripe/webhook").permitAll()
+                .requestMatchers("/payments/webhook", "/api/payments/webhook").permitAll()
+                .requestMatchers("/webhooks/**", "/api/webhooks/**").permitAll()
+
+                /* =========================================
+                   MONITORING
+                   ========================================= */
+
+                .requestMatchers("/actuator/health", "/api/actuator/health").permitAll()
+                .requestMatchers("/actuator/prometheus", "/api/actuator/prometheus").permitAll()
+
+                /* =========================================
+                   PUBLIC API ENDPOINTS
+                   ========================================= */
+
+                .requestMatchers("/public/**", "/api/public/**").permitAll()
+
+                /* =========================================
+                   VENDORS
+                   ========================================= */
+
+                .requestMatchers("/vendors", "/api/vendors").authenticated()
+                .requestMatchers("/vendor-leads/**", "/api/vendor-leads/**").authenticated()
+
+                /* =========================================
+                   EVERYTHING ELSE
+                   ========================================= */
 
                 .anyRequest().authenticated()
             )
@@ -198,16 +218,29 @@ public class SecurityWebConfig {
         JwtAuthenticationFilter jwtFilter = jwtFilterProvider.getIfAvailable();
 
         /* =========================================
-           FILTER ORDER (CORRETO)
+           FILTER ORDER - CRITICAL!
            ========================================= */
 
-        // ✅ 1. Tenant FIRST (define contexto)
-        http.addFilterBefore(
-                tenantFilter,
-                UsernamePasswordAuthenticationFilter.class
-        );
+        // IMPORTANT: Filter execution order is crucial!
+        // TenantFilter MUST run before JwtAuthenticationFilter
+        // 
+        // Execution order will be:
+        // 1. TenantFilter (extracts X-Tenant-ID header and sets TenantContext) 
+        // 2. JwtAuthenticationFilter (uses TenantContext that was already set by TenantFilter)
+        // 3. UsernamePasswordAuthenticationFilter
+        // 4. Rate limit filter (runs after authentication)
 
-        // ✅ 2. JWT AFTER (usa tenant já definido)
+        // Add TenantFilter FIRST before UsernamePasswordAuthenticationFilter
+        // This ensures TenantContext is available for JwtAuthenticationFilter
+        if (tenantFilter != null) {
+            http.addFilterBefore(
+                    tenantFilter,
+                    UsernamePasswordAuthenticationFilter.class
+            );
+        }
+
+        // Add JwtAuthenticationFilter AFTER TenantFilter (not before)
+        // This ensures deterministic order: TenantFilter → JwtAuthenticationFilter
         if (jwtFilter != null) {
             http.addFilterAfter(
                     jwtFilter,
@@ -215,7 +248,7 @@ public class SecurityWebConfig {
             );
         }
 
-        // Rate limiting
+        // Rate limit filter runs after authentication
         http.addFilterAfter(
                 rateLimitFilter,
                 UsernamePasswordAuthenticationFilter.class
@@ -224,3 +257,4 @@ public class SecurityWebConfig {
         return http.build();
     }
 }
+
