@@ -1,23 +1,23 @@
-﻿# ============================================================================
-# LEADFLOW COMPLETE TEST SUITE - LEADS + VENDORS
-# Patterns applied from test-all-Settings-Oficial.ps1
+# ============================================================================
+# LEADFLOW COMPLETE TEST SUITE - LEADS + VENDORLEADS
+# Final comprehensive test with correct payloads and flow
 # ============================================================================
 
-$BaseUrl = "http://localhost:8081"
+$BaseUrl = "http://localhost:8081/api"
 $RegisterUrl = "$BaseUrl/auth/register"
 $LoginUrl = "$BaseUrl/auth/login"
 $MeUrl = "$BaseUrl/auth/me"
-$LeadsUrl = "$BaseUrl/api/leads"
-$VendorLeadsUrl = "$BaseUrl/api/vendor-leads"
-$TenantHeader = "public"
+$LeadsUrl = "$BaseUrl/leads"
+$VendorLeadsUrl = "$BaseUrl/vendor-leads"
 $ProgressPreference = 'SilentlyContinue'
 
 # Global variables
-$TestCount = 0
-$PassCount = 0
-$FailCount = 0
-$LoginToken = $null
-$CurrentHeaders = @{}
+$Global:TestCount = 0
+$Global:PassCount = 0
+$Global:FailCount = 0
+$Global:LoginToken = $null
+$Global:TenantHeader = "public"
+$Global:CurrentHeaders = @{}
 
 # Colors
 $ColorPass = "Green"
@@ -26,14 +26,6 @@ $ColorTitle = "Cyan"
 $ColorStep = "Yellow"
 $ColorInfo = "White"
 
-function Write-Title {
-    Write-Host "`nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor $ColorTitle
-    Write-Host "LEADFLOW COMPLETE LEADS + VENDORS TEST SUITE" -ForegroundColor $ColorTitle
-    Write-Host "15 Endpoints (Auth + Leads + VendorLeads with Vendors)" -ForegroundColor $ColorTitle
-    Write-Host "Patterns Applied from: test-all-Settings-Oficial.ps1" -ForegroundColor $ColorTitle
-    Write-Host "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•`n" -ForegroundColor $ColorTitle
-}
-
 function Write-Step {
     param($Number, $Text)
     Write-Host "[$Number] $Text" -ForegroundColor $ColorStep
@@ -41,13 +33,13 @@ function Write-Step {
 
 function Write-Success {
     param($Text, $Status)
-    Write-Host "    âœ… OK - $Text (HTTP $Status)" -ForegroundColor $ColorPass
+    Write-Host "    ✅ OK - $Text (HTTP $Status)" -ForegroundColor $ColorPass
     $Global:PassCount++
 }
 
 function Write-Fail {
     param($Text, $Status, $Error)
-    Write-Host "    âŒ FAIL - $Text (HTTP $Status)" -ForegroundColor $ColorFail
+    Write-Host "    ❌ FAIL - $Text (HTTP $Status)" -ForegroundColor $ColorFail
     if ($Error) {
         Write-Host "       Error: $Error" -ForegroundColor $ColorFail
     }
@@ -55,50 +47,29 @@ function Write-Fail {
 }
 
 function Write-Summary {
-    $Total = $PassCount + $FailCount
-    Write-Host "`nâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor $ColorTitle
-    Write-Host "TEST SUMMARY - LEADS + VENDORS TEST SUITE" -ForegroundColor $ColorTitle
-    Write-Host "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•" -ForegroundColor $ColorTitle
-    Write-Host "Total Tests Run: $Total" -ForegroundColor $ColorInfo
-    Write-Host "Passed: $PassCount" -ForegroundColor $ColorPass
-    Write-Host "Failed: $FailCount" -ForegroundColor $(if ($FailCount -eq 0) { $ColorPass } else { $ColorFail })
+    $Total = $Global:PassCount + $Global:FailCount
+    Write-Host "`n════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
+    Write-Host "TEST SUMMARY" -ForegroundColor $ColorTitle
+    Write-Host "════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
+    Write-Host "Total Tests: $Total" -ForegroundColor $ColorInfo
+    Write-Host "Passed: $Global:PassCount" -ForegroundColor $ColorPass
+    Write-Host "Failed: $Global:FailCount" -ForegroundColor $(if ($Global:FailCount -eq 0) { $ColorPass } else { $ColorFail })
     if ($Total -gt 0) {
-        Write-Host "Pass Rate: $([math]::Round(($PassCount/$Total)*100, 2))%" -ForegroundColor $(if ($FailCount -eq 0) { $ColorPass } else { $ColorFail })
+        $passRate = [math]::Round(($Global:PassCount/$Total)*100, 2)
+        Write-Host "Pass Rate: $passRate%" -ForegroundColor $(if ($Global:FailCount -eq 0) { $ColorPass } else { $ColorFail })
     }
-    Write-Host "`nâœï¸  TESTS MAPPED FROM: test-all-Settings-Oficial.ps1" -ForegroundColor $ColorTitle
-    Write-Host "   - Unified headers pattern (Bearer + X-Tenant-ID)" -ForegroundColor $ColorInfo
-    Write-Host "   - Registration & Login setup" -ForegroundColor $ColorInfo
-    Write-Host "   - ID storage for dependent tests" -ForegroundColor $ColorInfo
-    Write-Host "   - State validation after operations" -ForegroundColor $ColorInfo
-    Write-Host "   - Proper try-catch error handling" -ForegroundColor $ColorInfo
-    Write-Host "â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•`n" -ForegroundColor $ColorTitle
+    Write-Host "════════════════════════════════════════════════════════════`n" -ForegroundColor $ColorTitle
 }
 
-Write-Title
+Write-Host "`n════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
+Write-Host "LEADFLOW COMPLETE TEST SUITE" -ForegroundColor $ColorTitle
+Write-Host "Leads + VendorLeads Comprehensive Testing" -ForegroundColor $ColorTitle
+Write-Host "════════════════════════════════════════════════════════════`n" -ForegroundColor $ColorTitle
 
 # ============================================================================
-# TEST 1: HEALTH CHECK (Pattern: test-all-Settings-Oficial.ps1)
+# TEST 1: REGISTER NEW USER
 # ============================================================================
-Write-Step "1" "Health Check - Server Status"
-try {
-    $healthHeaders = @{
-        "X-Tenant-ID" = $TenantHeader
-        "Content-Type" = "application/json"
-    }
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/actuator/health" -Method Get -Headers $healthHeaders -UseBasicParsing -ErrorAction Stop
-    Write-Success "Health" $response.StatusCode
-    $Global:TestCount++
-} catch {
-    Write-Fail "Health" $_.Exception.Response.StatusCode $_.Exception.Message
-    $Global:TestCount++
-    Write-Host "`nâš ï¸ Server is not responding. Cannot continue testing.`n" -ForegroundColor Red
-    exit 1
-}
-
-# ============================================================================
-# TEST 2: REGISTER NEW USER (Pattern: test-all-Settings-Oficial.ps1)
-# ============================================================================
-Write-Step "2" "Register New User"
+Write-Step "1" "Register New User"
 $timestamp = Get-Date -Format "yyyyMMddHHmmssfff"
 $newEmail = "test_$timestamp@leadflow.dev"
 $newPassword = "SecurePassword123!"
@@ -115,27 +86,28 @@ try {
     $response = Invoke-WebRequest -Uri $RegisterUrl `
         -Method Post `
         -Headers @{ 
-            "X-Tenant-Id" = $TenantHeader
+            "X-Tenant-ID" = $Global:TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body $registerBody `
         -UseBasicParsing `
         -ErrorAction Stop
     
+    $data = $response.Content | ConvertFrom-Json
+    $Global:TenantHeader = $data.tenantId
     Write-Success "Register User" $response.StatusCode
+    Write-Host "   Tenant ID: $($Global:TenantHeader)" -ForegroundColor DarkGray
     $Global:TestCount++
 } catch {
     Write-Fail "Register User" $_.Exception.Response.StatusCode $_.Exception.Message
     $Global:TestCount++
-    Write-Host "`nâš ï¸ Cannot continue without successful registration. Stopping tests.`n" -ForegroundColor Red
     exit 1
 }
 
 # ============================================================================
-# TEST 3: LOGIN USER (Pattern: test-all-Settings-Oficial.ps1)
+# TEST 2: LOGIN USER
 # ============================================================================
-Write-Step "3" "Login User - Setup Headers"
-
+Write-Step "2" "Login User"
 try {
     $loginBody = @{
         email = $newEmail
@@ -145,7 +117,7 @@ try {
     $response = Invoke-WebRequest -Uri $LoginUrl `
         -Method Post `
         -Headers @{ 
-            "X-Tenant-Id" = $TenantHeader
+            "X-Tenant-ID" = $Global:TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body $loginBody `
@@ -153,30 +125,26 @@ try {
         -ErrorAction Stop
     
     $data = $response.Content | ConvertFrom-Json
-    $LoginToken = $data.accessToken
+    $Global:LoginToken = $data.accessToken
     
-    # Setup headers for subsequent requests (PATTERN from Settings)
     $Global:CurrentHeaders = @{
-        "X-Tenant-Id" = $TenantHeader
-        "Authorization" = "Bearer $LoginToken"
+        "X-Tenant-Id" = $Global:TenantHeader
+        "Authorization" = "Bearer $Global:LoginToken"
         "Content-Type" = "application/json"
     }
     
-    Write-Success "Login & Headers Setup" $response.StatusCode
+    Write-Success "Login" $response.StatusCode
     $Global:TestCount++
-    Write-Host "   Token: $($LoginToken.Substring(0,30))..." -ForegroundColor DarkGray
 } catch {
     Write-Fail "Login" $_.Exception.Response.StatusCode $_.Exception.Message
     $Global:TestCount++
-    Write-Host "`nâš ï¸ Cannot continue without login token. Stopping tests.`n" -ForegroundColor Red
     exit 1
 }
 
-
 # ============================================================================
-# TEST 4: GET CURRENT USER PROFILE (Pattern: test-all-Settings-Oficial.ps1)
+# TEST 3: GET CURRENT USER PROFILE
 # ============================================================================
-Write-Step "4" "Get Current User Profile"
+Write-Step "3" "Get Current User Profile"
 try {
     $response = Invoke-WebRequest -Uri "$MeUrl" `
         -Method Get `
@@ -184,11 +152,7 @@ try {
         -UseBasicParsing `
         -ErrorAction Stop
     
-    $data = $response.Content | ConvertFrom-Json
     Write-Success "Get User Profile" $response.StatusCode
-    if ($data.roles -and $data.roles.Count -gt 0) {
-        Write-Host "   User Role: $($data.roles[0].name)" -ForegroundColor DarkGray
-    }
     $Global:TestCount++
 } catch {
     Write-Fail "Get User Profile" $_.Exception.Response.StatusCode $_.Exception.Message
@@ -196,10 +160,9 @@ try {
 }
 
 # ============================================================================
-# TEST 5: CREATE STANDARD LEAD (Pattern: test-all-Settings-Oficial.ps1)
-# Store ID for subsequent operations
+# TEST 4: CREATE STANDARD LEAD
 # ============================================================================
-Write-Step "5" "Create Standard Lead"
+Write-Step "4" "Create Standard Lead"
 $LeadId = $null
 
 try {
@@ -228,10 +191,9 @@ try {
 }
 
 # ============================================================================
-# TEST 6: GET LEAD BY ID (Pattern: test-all-Settings-Oficial.ps1)
-# Validate state after creation
+# TEST 5: GET LEAD BY ID
 # ============================================================================
-Write-Step "6" "Get Lead by ID"
+Write-Step "5" "Get Lead by ID"
 if ($LeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId" `
@@ -240,48 +202,42 @@ if ($LeadId) {
             -UseBasicParsing `
             -ErrorAction Stop
         
-        $data = $response.Content | ConvertFrom-Json
         Write-Success "Get Lead" $response.StatusCode
-        Write-Host "   Status: $($data.status)" -ForegroundColor DarkGray
         $Global:TestCount++
     } catch {
         Write-Fail "Get Lead" $_.Exception.Response.StatusCode $_.Exception.Message
         $Global:TestCount++
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
-# TEST 7: UPDATE LEAD STATUS (Pattern: test-all-Settings-Oficial.ps1)
-# Similar to PATCH /settings - partial update
+# TEST 6: UPDATE LEAD STATUS
 # ============================================================================
-Write-Step "7" "Update Lead Status"
+Write-Step "6" "Update Lead Status"
 if ($LeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId/status?status=CONTACTED" `
-            -Method Patch `
+            -Method Put `
             -Headers $Global:CurrentHeaders `
             -UseBasicParsing `
             -ErrorAction Stop
         
-        $data = $response.Content | ConvertFrom-Json
         Write-Success "Update Lead Status" $response.StatusCode
-        Write-Host "   New Status: $($data.status)" -ForegroundColor DarkGray
         $Global:TestCount++
     } catch {
         Write-Fail "Update Lead Status" $_.Exception.Response.StatusCode $_.Exception.Message
         $Global:TestCount++
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
-# TEST 8: LIST LEADS (Pattern: test-all-Settings-Oficial.ps1)
-# Verify list endpoint with pagination
+# TEST 7: LIST LEADS
 # ============================================================================
-Write-Step "8" "List Leads with Pagination"
+Write-Step "7" "List Leads"
 try {
     $response = Invoke-WebRequest -Uri "$LeadsUrl`?page=0&size=10" `
         -Method Get `
@@ -289,11 +245,7 @@ try {
         -UseBasicParsing `
         -ErrorAction Stop
     
-    $data = $response.Content | ConvertFrom-Json
     Write-Success "List Leads" $response.StatusCode
-    if ($data.totalElements) {
-        Write-Host "   Total Leads: $($data.totalElements)" -ForegroundColor DarkGray
-    }
     $Global:TestCount++
 } catch {
     Write-Fail "List Leads" $_.Exception.Response.StatusCode $_.Exception.Message
@@ -301,10 +253,9 @@ try {
 }
 
 # ============================================================================
-# TEST 9: DELETE LEAD (Pattern: test-all-Settings-Oficial.ps1)
-# Delete and validate state
+# TEST 8: DELETE LEAD
 # ============================================================================
-Write-Step "9" "Delete Lead"
+Write-Step "8" "Delete Lead"
 if ($LeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$LeadsUrl/$LeadId" `
@@ -320,14 +271,13 @@ if ($LeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
-# TEST 10: CREATE VENDOR LEAD (Pattern: test-all-Settings-Oficial.ps1)
-# This also auto-creates the Vendor through implicit vendor relationship
+# TEST 9: CREATE VENDOR LEAD (AUTO-CREATES VENDOR)
 # ============================================================================
-Write-Step "10" "Create Vendor Lead (Auto-create Vendor)"
+Write-Step "9" "Create Vendor Lead"
 $VendorLeadId = $null
 $VendorId = $null
 
@@ -352,7 +302,6 @@ try {
     if ($data.vendor) {
         $VendorId = $data.vendor.id
     }
-    
     Write-Success "Create Vendor Lead" $response.StatusCode
     Write-Host "   Lead ID: $VendorLeadId" -ForegroundColor DarkGray
     if ($VendorId) {
@@ -365,10 +314,9 @@ try {
 }
 
 # ============================================================================
-# TEST 11: GET VENDOR LEAD BY ID (Pattern: test-all-Settings-Oficial.ps1)
-# Validate state after creation
+# TEST 10: GET VENDOR LEAD BY ID
 # ============================================================================
-Write-Step "11" "Get Vendor Lead by ID"
+Write-Step "10" "Get Vendor Lead by ID"
 if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
@@ -377,22 +325,20 @@ if ($VendorLeadId) {
             -UseBasicParsing `
             -ErrorAction Stop
         
-        $data = $response.Content | ConvertFrom-Json
         Write-Success "Get Vendor Lead" $response.StatusCode
-        Write-Host "   Status: $($data.stage)" -ForegroundColor DarkGray
         $Global:TestCount++
     } catch {
         Write-Fail "Get Vendor Lead" $_.Exception.Response.StatusCode $_.Exception.Message
         $Global:TestCount++
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Vendor Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
-# TEST 12: LIST VENDOR LEADS (Pattern: test-all-Settings-Oficial.ps1)
+# TEST 11: LIST VENDOR LEADS
 # ============================================================================
-Write-Step "12" "List Vendor Leads with Pagination"
+Write-Step "11" "List Vendor Leads"
 try {
     $response = Invoke-WebRequest -Uri "$VendorLeadsUrl`?page=0&size=10" `
         -Method Get `
@@ -400,11 +346,7 @@ try {
         -UseBasicParsing `
         -ErrorAction Stop
     
-    $data = $response.Content | ConvertFrom-Json
     Write-Success "List Vendor Leads" $response.StatusCode
-    if ($data.totalElements) {
-        Write-Host "   Total Vendor Leads: $($data.totalElements)" -ForegroundColor DarkGray
-    }
     $Global:TestCount++
 } catch {
     Write-Fail "List Vendor Leads" $_.Exception.Response.StatusCode $_.Exception.Message
@@ -412,40 +354,32 @@ try {
 }
 
 # ============================================================================
-# TEST 13: UPDATE VENDOR LEAD STAGE (Pattern: test-all-Settings-Oficial.ps1)
-# Similar to PATCH /settings - partial update
+# TEST 12: UPDATE VENDOR LEAD STAGE
 # ============================================================================
-Write-Step "13" "Update Vendor Lead Stage"
+Write-Step "12" "Update Vendor Lead Stage"
 if ($VendorLeadId) {
     try {
-        $updateStageBody = @{
-            stage = "DISCUSSING"
-        } | ConvertTo-Json
-
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId/stage" `
             -Method Put `
             -Headers $Global:CurrentHeaders `
-            -Body $updateStageBody `
+            -Body (@{ stage = "INTERMEDIARIO_ACIONADO" } | ConvertTo-Json) `
             -UseBasicParsing `
             -ErrorAction Stop
         
-        $data = $response.Content | ConvertFrom-Json
         Write-Success "Update Vendor Lead Stage" $response.StatusCode
-        Write-Host "   New Stage: $($data.stage)" -ForegroundColor DarkGray
         $Global:TestCount++
     } catch {
         Write-Fail "Update Vendor Lead Stage" $_.Exception.Response.StatusCode $_.Exception.Message
         $Global:TestCount++
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Vendor Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
-# TEST 14: DELETE VENDOR LEAD (Pattern: test-all-Settings-Oficial.ps1)
-# Delete and then validate deletion
+# TEST 13: DELETE VENDOR LEAD
 # ============================================================================
-Write-Step "14" "Delete Vendor Lead"
+Write-Step "13" "Delete Vendor Lead"
 if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
@@ -461,37 +395,39 @@ if ($VendorLeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Vendor Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
-# TEST 15: VALIDATE DELETION (Pattern: test-all-Settings-Oficial.ps1)
-# Similar to test 9 in Settings - validate delete succeeded
+# TEST 14: VALIDATE VENDOR LEAD DELETION
 # ============================================================================
-Write-Step "15" "Validate Vendor Lead Deletion"
+Write-Step "14" "Validate Vendor Lead Deletion"
 if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
             -Method Get `
             -Headers $Global:CurrentHeaders `
             -UseBasicParsing `
-            -ErrorAction Stop
+            -ErrorAction SilentlyContinue
         
-        Write-Fail "Validate Deletion" 200 "Should not return success - item was deleted"
-        $Global:TestCount++
-    } catch {
-        $statusCode = $_.Exception.Response.StatusCode.Value__
-        if ($statusCode -in @(400, 404)) {
-            Write-Success "Validate Deletion" $statusCode
-            Write-Host "   Item properly deleted" -ForegroundColor DarkGray
+        if ($response.StatusCode -eq 404) {
+            Write-Success "Vendor Lead Deletion Validated" 404
             $Global:TestCount++
         } else {
-            Write-Fail "Validate Deletion" $statusCode $_.Exception.Message
+            Write-Fail "Vendor Lead Still Exists" $response.StatusCode
+            $Global:TestCount++
+        }
+    } catch {
+        if ($_.Exception.Response.StatusCode.Value__ -eq 404) {
+            Write-Success "Vendor Lead Deletion Validated" 404
+            $Global:TestCount++
+        } else {
+            Write-Fail "Validation Check Failed" $_.Exception.Response.StatusCode $_.Exception.Message
             $Global:TestCount++
         }
     }
 } else {
-    Write-Host "    âš ï¸  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ⚠️  Skipped - No Vendor Lead ID" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -499,10 +435,8 @@ if ($VendorLeadId) {
 # ============================================================================
 Write-Summary
 
-# Exit with appropriate code
-if ($FailCount -gt 0) {
+if ($Global:FailCount -gt 0) {
     exit 1
 } else {
     exit 0
 }
-

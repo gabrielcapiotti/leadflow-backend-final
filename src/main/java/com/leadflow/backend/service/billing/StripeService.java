@@ -9,9 +9,11 @@ import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
 import com.stripe.model.Event;
+import com.stripe.model.Subscription;
 import com.stripe.model.checkout.Session;
 import com.stripe.net.Webhook;
 import com.stripe.param.checkout.SessionCreateParams;
+import com.stripe.param.SubscriptionCreateParams;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -143,6 +145,51 @@ public class StripeService {
         } catch (StripeException e) {
             log.error("Stripe customer creation failed for email={}", normalizedEmail, e);
             throw new RuntimeException("Customer creation failed", e);
+        }
+    }
+
+    /**
+     * Create a Stripe subscription for an existing customer.
+     * Used when users upgrade plans through the dashboard or API.
+     * 
+     * @param customerId The Stripe customer ID
+     * @param priceId The Stripe price/plan ID to subscribe to
+     * @param tenantId The tenant/organization ID for metadata
+     * @return The created Stripe subscription ID
+     */
+    public String createSubscription(String customerId, String priceId, UUID tenantId) {
+        if (customerId == null || customerId.isBlank()) {
+            throw new IllegalArgumentException("Customer ID cannot be blank");
+        }
+
+        if (priceId == null || priceId.isBlank()) {
+            priceId = this.priceId; // Use default price if not specified
+        }
+
+        try {
+            Map<String, String> metadata = new HashMap<>();
+            if (tenantId != null) {
+                metadata.put("tenantId", tenantId.toString());
+                log.debug("Creating subscription with metadata - customer: {}, tenantId: {}", customerId, tenantId);
+            }
+
+            SubscriptionCreateParams params = SubscriptionCreateParams.builder()
+                    .setCustomer(customerId)
+                    .addItem(
+                            SubscriptionCreateParams.Item.builder()
+                                    .setPrice(priceId)
+                                    .build()
+                    )
+                    .putAllMetadata(metadata)
+                    .build();
+
+            Subscription subscription = Subscription.create(params);
+            log.info("Created Stripe subscription: id={}, customer={}, status={}", 
+                    subscription.getId(), customerId, subscription.getStatus());
+            return subscription.getId();
+        } catch (StripeException e) {
+            log.error("Stripe subscription creation failed for customer={}, price={}", customerId, priceId, e);
+            throw new RuntimeException("Subscription creation failed: " + e.getMessage(), e);
         }
     }
 

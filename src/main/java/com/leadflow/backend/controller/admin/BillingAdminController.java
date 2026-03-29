@@ -1,7 +1,9 @@
 package com.leadflow.backend.controller.admin;
 
+import com.leadflow.backend.dto.billing.*;
 import com.leadflow.backend.entities.StripeEventLog;
 import com.leadflow.backend.repository.StripeEventLogRepository;
+import com.leadflow.backend.service.admin.AdminBillingService;
 import com.leadflow.backend.service.billing.StripeWebhookProcessor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,8 +21,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Admin endpoints para gerenciar webhooks Stripe.
- * Permite visualizar eventos, consultar detalhes e reprocessar eventos com falha.
+ * Admin endpoints para gerenciar webhooks Stripe e relatórios de billing.
+ * Permite visualizar eventos, consultar detalhes, reprocessar eventos com falha,
+ * e acessar analytics, receita e informações de usuários com billing.
  * 
  * IMPORTANTE: Requer role ADMIN para acessar todos os endpoints.
  */
@@ -32,7 +35,8 @@ import java.util.Map;
 public class BillingAdminController {
 
     private final StripeEventLogRepository eventLogRepository;
-    private final StripeWebhookProcessor webhookProcessor;
+    private final AdminBillingService adminBillingService;
+
 
     /**
      * Lista todos os eventos webhook de forma paginada.
@@ -225,4 +229,93 @@ public class BillingAdminController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
     }
+
+    // ===== BILLING ADMIN ENDPOINTS (TRANCHE 3) =====
+
+    /**
+     * Get list of all users with billing information.
+     * 
+     * @return AdminBillingUsersResponse with all users and their billing info
+     */
+    @GetMapping("/users")
+    public ResponseEntity<AdminBillingUsersResponse> getBillingUsers() {
+        try {
+            log.info("Fetching all users with billing information");
+            AdminBillingUsersResponse response = adminBillingService.getAllUsersWithBillingInfo();
+            log.info("✅ Retrieved {} users with billing info", response.getTotalCount());
+            return ResponseEntity.ok(response);
+        } catch (Exception e) {
+            log.error("Error retrieving billing users", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Get billing analytics dashboard data.
+     * 
+     * @return AdminBillingAnalyticsDTO with analytics metrics
+     */
+    @GetMapping("/analytics")
+    public ResponseEntity<AdminBillingAnalyticsDTO> getBillingAnalytics() {
+        try {
+            log.info("Fetching billing analytics");
+            AdminBillingAnalyticsDTO analytics = adminBillingService.getBillingAnalytics();
+            log.info("✅ Generated billing analytics: total_subscriptions={}", analytics.getTotalSubscriptions());
+            return ResponseEntity.ok(analytics);
+        } catch (Exception e) {
+            log.error("Error retrieving billing analytics", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Get billing revenue reports.
+     * 
+     * @return AdminBillingRevenueDTO with revenue metrics
+     */
+    @GetMapping("/revenue")
+    public ResponseEntity<AdminBillingRevenueDTO> getBillingRevenue() {
+        try {
+            log.info("Fetching billing revenue report");
+            AdminBillingRevenueDTO revenue = adminBillingService.getBillingRevenue();
+            log.info("✅ Generated revenue report: MRR={}, ARR={}", 
+                revenue.getMonthlyRecurringRevenue(), revenue.getAnnualRecurringRevenue());
+            return ResponseEntity.ok(revenue);
+        } catch (Exception e) {
+            log.error("Error retrieving billing revenue", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    /**
+     * Process a refund.
+     * 
+     * @param request RefundRequest with refund details
+     * @return RefundResponse with refund processing result
+     */
+    @PostMapping("/refund")
+    public ResponseEntity<RefundResponse> processRefund(@RequestBody RefundRequest request) {
+        try {
+            if (request == null || request.getAmount() == null) {
+                log.warn("Invalid refund request");
+                return ResponseEntity.badRequest().build();
+            }
+
+            log.info("Processing refund: userId={}, amount={}, reason={}", 
+                request.getUserId(), request.getAmount(), request.getReason());
+            
+            RefundResponse response = adminBillingService.processRefund(request);
+            log.info("✅ Refund processed successfully: refundId={}, amount={}", 
+                response.getRefundId(), response.getAmount());
+            
+            return ResponseEntity.ok(response);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid refund request: {}", e.getMessage());
+            return ResponseEntity.badRequest().build();
+        } catch (Exception e) {
+            log.error("Error processing refund", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
 }
+

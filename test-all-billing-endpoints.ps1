@@ -44,7 +44,12 @@ function TestAPI {
         }
         
         if ($body) {
-            $params["Body"] = ($body | ConvertTo-Json -Depth 10)
+            # Se body é string (já é JSON), use como está; senão converta
+            if ($body -is [string]) {
+                $params["Body"] = $body
+            } else {
+                $params["Body"] = ($body | ConvertTo-Json -Depth 10)
+            }
         }
         
         $response = Invoke-WebRequest @params
@@ -106,41 +111,65 @@ Write-Host "  Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundC
 Header "PHASE 1: USER REGISTRATION AND LOGIN"
 
 # Register user
+$timestamp = Get-Date -Format "yyyyMMddHHmmssfff"
+$testEmail = "billing-test-$timestamp@leadflow.dev"
+
 $registerBody = @{
-    email = "tests20@e2e.com"
-    password = "SenhaForte123!@#"
-    firstName = "Test"
-    lastName = "Twenty"
-    companyName = "TestCompany20"
-    role = "VENDOR"
-}
+    email = $testEmail
+    password = "SecurePassword123!"
+    confirmPassword = "SecurePassword123!"
+    name = "Billing Test User"
+} | ConvertTo-Json
 
 $registerHeaders = @{
     "Content-Type" = "application/json"
+    "X-Tenant-ID" = "public"
 }
 
 TestAPI -name "Register User (Vendor)" -method POST `
-    -url "$baseUrl/api/v1/auth/register" `
+    -url "$baseUrl/api/auth/register" `
     -body $registerBody `
     -expectedStatus 201 `
     -headers $registerHeaders | Out-Null
 
+# Extract tenant ID from registration response
+try {
+    $registerResponse = Invoke-WebRequest -Uri "$baseUrl/api/auth/register" `
+        -Method POST `
+        -Body $registerBody `
+        -Headers $registerHeaders `
+        -UseBasicParsing -ErrorAction Stop
+    
+    $registerData = $registerResponse.Content | ConvertFrom-Json
+    $tenantId = $registerData.tenantId
+    Write-Host "   Extracted Tenant ID: $tenantId" -ForegroundColor DarkGray
+} catch {
+    $tenantId = "public"
+    Write-Host "   Using default tenant: $tenantId" -ForegroundColor DarkGray
+}
+
 # Login user
 $loginBody = @{
-    email = "tests20@e2e.com"
-    password = "SenhaForte123!@#"
+    email = $testEmail
+    password = "SecurePassword123!"
+} | ConvertTo-Json
+
+$loginHeaders = @{
+    "Content-Type" = "application/json"
+    "X-Tenant-ID" = $tenantId
 }
 
 $loginResponse = TestAPI -name "Login User" -method POST `
-    -url "$baseUrl/api/v1/auth/login" `
+    -url "$baseUrl/api/auth/login" `
     -body $loginBody `
     -expectedStatus 200 `
-    -headers $registerHeaders
+    -headers $loginHeaders
 
-$authToken = $loginResponse.token
+$authToken = $loginResponse.accessToken
 $authHeaders = @{
     "Authorization" = "Bearer $authToken"
     "Content-Type" = "application/json"
+    "X-Tenant-ID" = $tenantId
 }
 
 Write-Host "`n[AUTH] Token acquired: $(if($authToken.Length -gt 20) { "$($authToken.Substring(0,20))..." } else { "FAILED" })" -ForegroundColor $yellow
@@ -150,7 +179,7 @@ Header "PHASE 2: BILLING ENDPOINTS - WITHOUT /api/v1 PREFIX (4 endpoints)"
 
 TestAPI -name "GET /billing/subscription" -method GET `
     -url "$baseUrl/billing/subscription" `
-    -expected Status 200 `
+    -expectedStatus 200 `
     -headers $authHeaders `
     -mockSuccess $true
 
@@ -170,7 +199,7 @@ $checkoutBody = @{
     planId = "test-plan"
     successUrl = "$baseUrl/success"
     cancelUrl = "$baseUrl/cancel"
-}
+} | ConvertTo-Json
 
 TestAPI -name "POST /billing/checkout" -method POST `
     -url "$baseUrl/billing/checkout" `
@@ -202,7 +231,7 @@ TestAPI -name "GET /api/v1/billing/subscription" -method GET `
 
 $subscriptionBody = @{
     planId = "test-plan-new"
-}
+} | ConvertTo-Json
 
 TestAPI -name "POST /api/v1/billing/subscription" -method POST `
     -url "$baseUrl/api/v1/billing/subscription" `
@@ -225,7 +254,7 @@ TestAPI -name "GET /api/v1/billing/plans" -method GET `
 
 $updateSubBody = @{
     planId = "premium-plan"
-}
+} | ConvertTo-Json
 
 TestAPI -name "PUT /api/v1/billing/subscription" -method PUT `
     -url "$baseUrl/api/v1/billing/subscription" `
@@ -259,7 +288,7 @@ $refundBody = @{
     userId = "test-user-id"
     amount = 100.00
     reason = "Test refund"
-}
+} | ConvertTo-Json
 
 TestAPI -name "POST /api/v1/admin/billing/refund" -method POST `
     -url "$baseUrl/api/v1/admin/billing/refund" `
@@ -280,7 +309,7 @@ $webhookBody = @{
             currency = "usd"
         }
     }
-}
+} | ConvertTo-Json
 
 TestAPI -name "POST /stripe/webhook" -method POST `
     -url "$baseUrl/stripe/webhook" `

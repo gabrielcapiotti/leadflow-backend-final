@@ -28,7 +28,7 @@ public class PlanInitializer {
                 standardPlan.setMaxAiExecutions(1000);
                 standardPlan.setActive(true);
                 planRepository.save(standardPlan);
-                log.info("✅ Plan created: Leadflow Standard");
+                log.info("Plan created: Leadflow Standard");
 
                 // Create test plan "new"
                 Plan newPlan = new Plan();
@@ -38,7 +38,7 @@ public class PlanInitializer {
                 newPlan.setMaxAiExecutions(500);
                 newPlan.setActive(true);
                 planRepository.save(newPlan);
-                log.info("✅ Plan created: new");
+                log.info("Plan created: new");
 
                 // Create additional test plans
                 Plan freePlan = new Plan();
@@ -48,11 +48,11 @@ public class PlanInitializer {
                 freePlan.setMaxAiExecutions(100);
                 freePlan.setActive(true);
                 planRepository.save(freePlan);
-                log.info("✅ Plan created: free");
+                log.info("Plan created: free");
 
-                log.info("✅ All plans initialized successfully");
+                log.info("All plans initialized successfully");
             } else {
-                log.info("✅ Plans already exist in database");
+                log.info("Plans already exist in database");
             }
         } catch (Exception e) {
             log.error("❌ Error initializing plans: {}", e.getMessage(), e);

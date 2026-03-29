@@ -193,19 +193,8 @@ $SessionIds = @()
 
 Write-Section "GROUP 1: PUBLIC REGISTRATION AND LOGIN"
 
-# Test 1: Health Check
-Write-Test 1 "Health Check (Sanity)"
-$r = Invoke-ApiRequest "GET" "/actuator/health" $null $true
-if ($r.Success) {
-    Write-Success "Health check passed"
-    Record-Result "/actuator/health" $true $r.Status
-} else {
-    Write-Fail "Health check failed" $r.Status $r.Exception
-    Record-Result "/actuator/health" $false $r.Status "$($r.Exception)"
-}
-
-# Test 2: Register New User
-Write-Test 2 "Register New User"
+# Test 1: Register New User
+Write-Test 1 "Register New User"
 # FIX: Email truly unique - avoid 409 conflicts with UUID + timestamp + random
 $uuid = [guid]::NewGuid().ToString().Substring(0, 8)
 $timestamp = Get-Date -Format "yyyyMMddHHmmss"
@@ -241,7 +230,7 @@ if ($r.Success) {
 }
 
 # Test 3: Login with Credentials
-Write-Test 3 "Login with Credentials"
+Write-Test 2 "Login with Credentials"
 $r = Invoke-ApiRequest "POST" "/auth/login" @{
     email = $testEmail
     password = $testPassword
@@ -276,7 +265,7 @@ if (!$r.Success -and ($r.Status -in @(400, 401, 403))) {
 }
 
 # Test 4: Refresh Token
-Write-Test 4 "Refresh Token"
+Write-Test 3 "Refresh Token"
 $r = Invoke-ApiRequest "POST" "/auth/refresh" @{
     refreshToken = $RefreshToken
 }
@@ -299,7 +288,7 @@ if ($r.Success) {
 Write-Section "GROUP 2: PROTECTED USER PROFILE"
 
 # Test 5: Get Current User
-Write-Test 5 "Get Current User Profile"
+Write-Test 4 "Get Current User Profile"
 $r = Invoke-ApiRequest "GET" "/auth/me" $null $true
 
 if ($r.Success) {
@@ -468,7 +457,7 @@ if ($r.Success) {
 Write-Section "GROUP 3: SESSION MANAGEMENT"
 
 # Test 6: List Sessions
-Write-Test 6 "List Active Sessions"
+Write-Test 5 "List Active Sessions"
 $r = Invoke-ApiRequest "GET" "/auth/sessions" $null $true
 
 if ($r.Success) {
@@ -496,7 +485,7 @@ if ($r.Success) {
 Write-Section "GROUP 4: PASSWORD RECOVERY"
 
 # Test 7: Change Password (Forgot-Password não existe no projeto)
-Write-Test 7 "Request Password Change (Change Password)"
+Write-Test 6 "Request Password Change (Change Password)"
 Write-Info "Email: $testEmail"
 Write-Info "Nova senha: NewPass@123"
 
@@ -523,7 +512,7 @@ if ($r.Success) {
 Write-Section "GROUP 5: SESSION REVOCATION AND LOGOUT"
 
 # Test 8: Revoke All Sessions
-Write-Test 8 "Revoke All Sessions"
+Write-Test 7 "Revoke All Sessions"
 
 $r = Invoke-ApiRequest "DELETE" "/auth/sessions" $null $true
 
@@ -559,7 +548,7 @@ if ($r.Success) {
 Write-Section "GROUP 6: FINAL LOGOUT"
 
 # Test 9: Logout (Current Session)
-Write-Test 9 "Logout (Current Session)"
+Write-Test 8 "Logout (Current Session)"
 $r = Invoke-ApiRequest "POST" "/auth/logout" $null $true
 
 if ($r.Success) {

@@ -134,7 +134,7 @@ public class AuthService {
         Role adminRole = roleRepository
                 .findByNameIgnoreCase("ROLE_ADMIN")
                 .orElseThrow(() -> {
-                    logger.error("❌ CRITICAL: ROLE_ADMIN not found in database!");
+                    logger.error("CRITICAL: ROLE_ADMIN not found in database!");
                     return new IllegalStateException("ROLE_ADMIN role not found - database may be misconfigured");
                 });
 

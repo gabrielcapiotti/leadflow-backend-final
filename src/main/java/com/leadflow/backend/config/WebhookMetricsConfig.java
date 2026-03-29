@@ -33,32 +33,7 @@ public class WebhookMetricsConfig {
         log.info("Initializing WebhookMetricsTracker with MeterRegistry: {}", 
                 meterRegistry.getClass().getSimpleName());
         
-        WebhookMetricsTracker tracker = new WebhookMetricsTracker(meterRegistry);
-        tracker.initialize();
-        
-        return tracker;
-    }
-
-    /**
-     * Optional: Customize the MeterRegistry with global tags
-     * These tags appear on ALL metrics automatically
-     * 
-     * Useful for:
-     * - Service identification in Prometheus
-     * - Environment segregation
-     * - Application-wide filtering
-     */
-    @Bean
-    public MeterRegistry.Config customizeMeterRegistry(MeterRegistry registry) {
-        registry.config()
-                .commonTags(
-                        "app", "leadflow-backend",
-                        "service", "webhook-processor",
-                        "module", "billing"
-                );
-        
-        log.debug("Global meter tags configured: app=leadflow-backend, service=webhook-processor");
-        return registry.config();
+        return new WebhookMetricsTracker(meterRegistry);
     }
 
     /**

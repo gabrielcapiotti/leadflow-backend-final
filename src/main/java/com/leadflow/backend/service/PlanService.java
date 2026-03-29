@@ -33,4 +33,11 @@ public class PlanService {
         return planRepository.findByNameIgnoreCase(planName)
                 .orElseGet(this::getActivePlan);
     }
+
+    /**
+     * Get all available plans
+     */
+    public java.util.List<Plan> getAllPlans() {
+        return planRepository.findAll();
+    }
 }

@@ -9,16 +9,19 @@ import com.leadflow.backend.service.vendor.QuotaService;
 import com.leadflow.backend.service.PlanService;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.logging.Logger;
 
 @RestController
 @RequestMapping(value = {"/vendors", "/api/vendors"})
@@ -29,6 +32,7 @@ public class VendorController {
     private final UsageService usageService;
     private final QuotaService quotaService;
     private final PlanService planService;
+    private static final Logger logger = Logger.getLogger(VendorController.class.getName());
 
     public VendorController(
             VendorRepository repository,
@@ -43,6 +47,18 @@ public class VendorController {
         this.quotaService = quotaService;
         this.planService = planService;
     }
+    
+    // 🔒 DTO para CREATE (segurança - cliente não controla entidade JPA)
+    public static record CreateVendorRequest(
+        String slug,
+        String name,
+        String nomeVendedor,
+        String whatsappVendedor,
+        String nomeEmpresa,
+        String logoUrl,
+        String corDestaque,
+        String mensagemBoasVindas
+    ) {}
 
     /* ======================================================
        FILTER (SEGURA)
@@ -81,50 +97,84 @@ public class VendorController {
     }
 
     /* ======================================================
-       CREATE (SEGURA)
+       CREATE (IDEMPOTENTE + SEGURA)
        ====================================================== */
 
     @PostMapping
     @Transactional
-    public Vendor create(@RequestBody @NonNull Vendor vendor) {
-
+    public ResponseEntity<?> create(@RequestBody @NonNull CreateVendorRequest req) {
         String tenant = TenantContext.getTenant();
+        
+        if (tenant == null || tenant.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tenant context required");
+        }
 
-        Vendor safe = Objects.requireNonNull(vendor);
+        // 🔥 CRÍTICO: Vendor.id = tenantId significa 1:1
+        // Se vendor já existe para este tenant, retornar 409 CONFLICT
+        UUID tenantUUID;
+        try {
+            tenantUUID = UUID.fromString(tenant);
+        } catch (IllegalArgumentException e) {
+            // Public tenant é named, não UUID
+            // Usar um hash do tenant name como ID determinístico
+            tenantUUID = UUID.nameUUIDFromBytes(tenant.getBytes());
+        }
+        
+        // 🔥 IDEMPOTÊNCIA: Se vendor já existe para este tenant, retornar existente
+        var existingVendor = repository.findByIdAndTenantId(tenantUUID, tenant);
+        if (existingVendor.isPresent()) {
+            logger.info("⚠️ Vendor already exists for tenant: " + tenant + ", returning 409 CONFLICT");
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT, 
+                "Vendor already exists for this tenant"
+            );
+        }
 
-        // 🔥 CRÍTICO: set tenant
-        safe.setTenantId(tenant);
+        // 🔒 valida slug único por tenant
+        if (repository.existsBySlugAndTenantId(req.slug(), tenant)) {
+            throw new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "Slug already exists in tenant"
+            );
+        }
 
-        // 🔥 CRÍTICO: associar usuário autenticado ao vendor
+        // 🔒 Construir vendor apenas com campos seguros
+        Vendor vendor = new Vendor();
+        vendor.setId(tenantUUID); // 🔥 CRÍTICO: Alinhamento de identidade
+        vendor.setTenantId(tenant);
+        vendor.setSlug(req.slug());
+        vendor.setName(req.name());
+        vendor.setNomeVendedor(req.nomeVendedor());
+        vendor.setWhatsappVendedor(req.whatsappVendedor() != null ? req.whatsappVendedor() : "0000000000");
+        vendor.setNomeEmpresa(req.nomeEmpresa());
+        vendor.setLogoUrl(req.logoUrl());
+        vendor.setCorDestaque(req.corDestaque());
+        vendor.setMensagemBoasVindas(req.mensagemBoasVindas());
+        vendor.setEmailInvalid(false);
+        vendor.setCreatedAt(Instant.now());
+        
+        // 🔥 Associar usuário autenticado
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (auth != null && auth.isAuthenticated()) {
             String userEmail = auth.getName();
             if (userEmail != null && !userEmail.isBlank()) {
-                safe.setUserEmail(userEmail);
+                vendor.setUserEmail(userEmail);
             }
         }
 
-        // defaults
-        safe.setEmailInvalid(false);
-
-        if (safe.getCreatedAt() == null) {
-            safe.setCreatedAt(Instant.now());
+        try {
+            trialService.initializeTrial(vendor);
+            Vendor saved = repository.save(vendor);
+            usageService.initializeUsage(saved.getId(), planService.getActivePlan());
+            quotaService.initializePlanLimits(saved.getId());
+            trialService.enableTrialFeatures(saved);
+            
+            logger.info("✅ Vendor created successfully: " + saved.getId());
+            return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+        } catch (Exception e) {
+            logger.severe("❌ Error creating vendor: " + e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create vendor", e);
         }
-
-        // 🔒 valida slug único por tenant
-        if (repository.existsBySlugAndTenantId(safe.getSlug(), tenant)) {
-            throw new IllegalArgumentException("Slug already exists in tenant");
-        }
-
-        trialService.initializeTrial(safe);
-
-        Vendor saved = repository.save(safe);
-
-        usageService.initializeUsage(saved.getId(), planService.getActivePlan());
-        quotaService.initializePlanLimits(saved.getId());
-        trialService.enableTrialFeatures(saved);
-
-        return saved;
     }
 
     /* ======================================================

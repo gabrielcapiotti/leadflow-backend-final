@@ -1,20 +1,24 @@
 package com.leadflow.backend.resilience.config;
 
+import com.leadflow.backend.config.metrics.MetricsTags;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerConfig;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.core.registry.EntryAddedEvent;
 import io.github.resilience4j.core.registry.EntryRemovedEvent;
 import io.github.resilience4j.core.registry.RegistryEventConsumer;
-import io.github.resilience4j.micrometer.tagged.TaggedCircuitBreakerMetrics;
 import io.github.resilience4j.retry.Retry;
 import io.github.resilience4j.retry.RetryConfig;
 import io.github.resilience4j.retry.RetryRegistry;
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Resilience4j Configuration for Circuit Breaker and Retry patterns.
@@ -26,6 +30,8 @@ import java.time.Duration;
 @Configuration
 @Slf4j
 public class Resilience4jConfiguration {
+
+    private final Set<String> registeredCircuitBreakers = ConcurrentHashMap.newKeySet();
 
     /**
      * Circuit Breaker for Stripe API calls.
@@ -159,21 +165,33 @@ public class Resilience4jConfiguration {
     }
 
     /**
-     * Register event consumer to log circuit breaker events.
+     * Register event consumer to log circuit breaker events and register metrics.
+     * 
+     * ⚠️ IMPORTANT: Registers gauges with consistent tags ONLY ONCE per circuit breaker
+     * to prevent Prometheus "tag keys mismatch" errors.
      */
     @Bean
-    public RegistryEventConsumer<CircuitBreaker> circuitBreakerEventConsumer() {
+    public RegistryEventConsumer<CircuitBreaker> circuitBreakerEventConsumer(
+            MeterRegistry meterRegistry) {
         return new RegistryEventConsumer<CircuitBreaker>() {
             @Override
             public void onEntryAddedEvent(EntryAddedEvent<CircuitBreaker> entryAddedEvent) {
                 CircuitBreaker circuitBreaker = entryAddedEvent.getAddedEntry();
-                log.info("Circuit Breaker registered: {}", circuitBreaker.getName());
+                String name = circuitBreaker.getName();
+                
+                log.info("Circuit Breaker registered: {}", name);
+                
+                // Register gauge ONLY ONCE, with standardized tags
+                if (registeredCircuitBreakers.add(name)) {
+                    registerCircuitBreakerGauge(name, circuitBreaker, meterRegistry);
+                }
             }
 
             @Override
             public void onEntryRemovedEvent(EntryRemovedEvent<CircuitBreaker> entryRemovedEvent) {
                 CircuitBreaker circuitBreaker = entryRemovedEvent.getRemovedEntry();
                 log.info("Circuit Breaker removed: {}", circuitBreaker.getName());
+                registeredCircuitBreakers.remove(circuitBreaker.getName());
             }
 
             @Override
@@ -184,11 +202,18 @@ public class Resilience4jConfiguration {
     }
 
     /**
-     * Register metrics for Circuit Breakers.
+     * Register circuit breaker state gauge with MetricsTags-standardized tags.
+     * Ensures: [application, environment, service, name, state]
      */
-    @Bean
-    public TaggedCircuitBreakerMetrics circuitBreakerMetrics(CircuitBreakerRegistry circuitBreakerRegistry) {
-        return TaggedCircuitBreakerMetrics.ofCircuitBreakerRegistry(circuitBreakerRegistry);
+    private void registerCircuitBreakerGauge(String name, CircuitBreaker cb, MeterRegistry meterRegistry) {
+        Gauge.builder(
+                "resilience4j.circuitbreaker.state",
+                cb,
+                c -> (double) c.getState().getOrder()  // CLOSED=0, OPEN=1, HALF_OPEN=2
+        )
+        .tags(MetricsTags.circuitBreakerTags(name, cb.getState().name()))
+        .description("Circuit Breaker State (0=CLOSED, 1=OPEN, 2=HALF_OPEN)")
+        .register(meterRegistry);
     }
 
     /**

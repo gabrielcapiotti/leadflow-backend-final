@@ -63,7 +63,7 @@ public class StripeWebhookValidator {
                 throw new StripeSignatureVerificationException("Webhook signature verification failed");
             }
             
-            log.info("✅ StripeWebhookValidator: Signature verification successful");
+            log.info("StripeWebhookValidator: Signature verification successful");
             
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             log.error("Failed to compute HMAC-SHA256", e);

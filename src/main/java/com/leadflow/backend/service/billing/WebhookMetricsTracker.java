@@ -45,26 +45,11 @@ public class WebhookMetricsTracker {
      */
     public WebhookMetricsTracker(MeterRegistry meterRegistry) {
         this.meterRegistry = meterRegistry;
+        // Note: DO NOT register meters here - let them be created on-demand
+        // to ensure MeterFilters are applied first
     }
 
-    /**
-     * Initialize all meters and gauges
-     * Called once at startup by WebhookMetricsConfig
-     */
-    public void initialize() {
-        log.info("Initializing webhook metrics trackers");
-
-        // Register Gauges (snapshot values)
-        Gauge.builder("webhook.queue.size", queueSize::get)
-                .description("Current number of webhook events in processing queue")
-                .register(meterRegistry);
-
-        Gauge.builder("webhook.active.tenants", activeTenants::get)
-                .description("Number of active tenants with pending webhooks")
-                .register(meterRegistry);
-
-        log.info("Webhook metrics initialization complete");
-    }
+    // REMOVED: initialize() method - meters are created on-demand with proper tag filtering
 
     // =====================================================
     // EVENT THROUGHPUT METRICS
@@ -245,14 +230,19 @@ public class WebhookMetricsTracker {
     /**
      * Record current circuit breaker state (as gauge)
      * State mapping: 0=CLOSED, 1=OPEN, 2=HALF_OPEN
+     * 
+     * Uses idempotent registration: Only registers once, subsequent calls update the value
      */
     public void recordCircuitBreakerState(CircuitBreakerConfig.CircuitState state) {
         int stateValue = state == CircuitBreakerConfig.CircuitState.CLOSED ? 0 :
                         state == CircuitBreakerConfig.CircuitState.OPEN ? 1 : 2;
 
-        Gauge.builder("webhook.circuit.breaker.state", () -> stateValue)
-                .description("Current circuit breaker state (0=CLOSED, 1=OPEN, 2=HALF_OPEN)")
-                .register(meterRegistry);
+        // Check if gauge already exists
+        if (meterRegistry.find("webhook.circuit.breaker.state").gauge() == null) {
+            Gauge.builder("webhook.circuit.breaker.state", () -> stateValue)
+                    .description("Current circuit breaker state (0=CLOSED, 1=OPEN, 2=HALF_OPEN)")
+                    .register(meterRegistry);
+        }
     }
 
     // =====================================================
@@ -268,15 +258,23 @@ public class WebhookMetricsTracker {
 
     /**
      * Update tenant-specific queue size
+     * Uses idempotent registration: Only registers once per tenant
      */
     public void setTenantQueueSize(UUID tenantId, int size) {
         AtomicInteger tenantSize = tenantQueueSizeMap.computeIfAbsent(tenantId.toString(), 
                 k -> new AtomicInteger(0));
         tenantSize.set(size);
 
-        Gauge.builder("webhook.tenant.queue.size", tenantSize::get)
-                .tag("tenant_id", tenantId.toString())
-                .register(meterRegistry);
+        // Check if gauge already exists for this tenant
+        String tenantIdStr = tenantId.toString();
+        if (meterRegistry.find("webhook.tenant.queue.size")
+                .tag("tenant_id", tenantIdStr)
+                .gauge() == null) {
+            
+            Gauge.builder("webhook.tenant.queue.size", tenantSize::get)
+                    .tag("tenant_id", tenantIdStr)
+                    .register(meterRegistry);
+        }
     }
 
     /**

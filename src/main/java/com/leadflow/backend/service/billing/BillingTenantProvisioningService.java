@@ -206,14 +206,10 @@ public class BillingTenantProvisioningService {
     }
 
     private void activateVendor(Vendor vendor, Session session, String eventId) {
-        if (vendor.getSubscriptionStatus() != SubscriptionStatus.ATIVA) {
-            if (vendor.getSubscriptionStatus().canTransitionTo(SubscriptionStatus.ATIVA)) {
-                subscriptionService.transition(vendor, SubscriptionStatus.ATIVA, "STRIPE_CHECKOUT_COMPLETED", eventId);
-            } else {
-                vendor.setSubscriptionStatus(SubscriptionStatus.ATIVA);
-                vendorRepository.save(vendor);
-            }
-        }
+        // ⚠️ DEPRECATED: Vendor subscription status transitions disabled
+        // Use Subscription entity via BillingService instead
+        vendor.setSubscriptionStatus(SubscriptionStatus.ATIVA);
+        vendorRepository.save(vendor);
 
         if (vendor.getSubscriptionStartedAt() == null) {
             vendor.setSubscriptionStartedAt(Instant.now());

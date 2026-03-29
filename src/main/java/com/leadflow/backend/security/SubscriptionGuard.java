@@ -1,44 +1,38 @@
 package com.leadflow.backend.security;
 
+import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
-import com.leadflow.backend.entities.vendor.SubscriptionStatus;
-import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.multitenancy.context.TenantContext;
-import com.leadflow.backend.repository.VendorRepository;
-import com.leadflow.backend.service.vendor.SubscriptionService;
+import com.leadflow.backend.repository.SubscriptionRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
-import org.springframework.security.authentication.AnonymousAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.Optional;
 
 @Component
 public class SubscriptionGuard {
 
     private static final Logger log = LoggerFactory.getLogger(SubscriptionGuard.class);
 
-    private final VendorRepository vendorRepository;
-    private final SubscriptionService subscriptionService;
+    private final SubscriptionRepository subscriptionRepository;
 
     @Value("${app.billing.enabled:false}")
     private boolean billingEnabled;
 
-    public SubscriptionGuard(VendorRepository vendorRepository,
-                             SubscriptionService subscriptionService) {
+    public SubscriptionGuard(SubscriptionRepository subscriptionRepository) {
 
-        this.vendorRepository = Objects.requireNonNull(vendorRepository);
-        this.subscriptionService = Objects.requireNonNull(subscriptionService);
+        this.subscriptionRepository = Objects.requireNonNull(subscriptionRepository);
     }
 
     /* ======================================================
-       ACCESS RESOLUTION (CORRIGIDO)
+       ACCESS RESOLUTION (CORRIGIDO - NOW USES SUBSCRIPTION)
        ====================================================== */
 
     public SubscriptionAccessLevel resolveAccess() {
@@ -50,26 +44,42 @@ public class SubscriptionGuard {
         }
 
         try {
-            Vendor vendor = resolveVendorStrict();
+            // NEW: Get tenantId directly from TenantContext (simpler than email + tenantId query)
+            String tenantStr = TenantContext.getTenant();
+            if (tenantStr == null || tenantStr.isBlank()) {
+                log.error("TenantContext is NULL");
+                throw new AccessDeniedException("Tenant context not resolved");
+            }
 
-            SubscriptionAccessLevel level =
-                    subscriptionService.getAccessLevel(vendor);
+            UUID tenantId = UUID.fromString(tenantStr);
 
-            if (isExpired(vendor) &&
+            // NEW: Query Subscription by tenantId (NOT via deprecated Vendor)
+            Optional<Subscription> subscriptionOpt = subscriptionRepository.findByTenantId(tenantId);
+            
+            if (subscriptionOpt.isEmpty()) {
+                log.warn("Subscription not found for tenant={}", tenantId);
+                throw new AccessDeniedException("Subscription not found");
+            }
+
+            Subscription subscription = subscriptionOpt.get();
+
+            // NEW: Map subscription status directly to access level
+            SubscriptionAccessLevel level = mapSubscriptionToAccessLevel(subscription);
+
+            // Check expiration
+            if (isSubscriptionExpired(subscription) && 
                 level != SubscriptionAccessLevel.BLOCKED) {
-
-                log.warn("Subscription expired → forcing BLOCKED (vendorId={})",
-                        vendor.getId());
-
+                log.warn("Subscription expired for tenant={}", tenantId);
                 return SubscriptionAccessLevel.BLOCKED;
             }
 
             return level;
 
         } catch (AccessDeniedException ex) {
-
-            // 🔥 NÃO quebrar fluxo — tratar como bloqueado
             log.warn("Access resolution failed: {}", ex.getMessage());
+            throw ex;
+        } catch (Exception ex) {
+            log.error("❌ FAILED to resolve subscription access", ex);
             return SubscriptionAccessLevel.BLOCKED;
         }
     }
@@ -103,59 +113,29 @@ public class SubscriptionGuard {
     }
 
     /* ======================================================
-       INTERNAL RESOLUTION (ISOLADO)
-       ====================================================== */
-
-    private Vendor resolveVendorStrict() {
-
-        Authentication authentication =
-                SecurityContextHolder.getContext().getAuthentication();
-
-        if (authentication == null ||
-            !authentication.isAuthenticated() ||
-            authentication instanceof AnonymousAuthenticationToken) {
-
-            throw new AccessDeniedException("Authentication required");
-        }
-
-        String email = authentication.getName();
-
-        if (email == null || email.isBlank()) {
-            throw new AccessDeniedException("Invalid authentication principal");
-        }
-
-        String tenant = TenantContext.getTenant();
-
-        if (tenant == null || tenant.isBlank()) {
-            log.error("TenantContext is NULL for user={}", maskEmail(email));
-            throw new AccessDeniedException("Tenant context not resolved");
-        }
-
-        return vendorRepository
-                .findByUserEmailAndTenantId(email, tenant)
-                .stream()
-                .findFirst()
-                .orElseThrow(() -> {
-                    log.warn("Vendor not found → user={}, tenant={}",
-                            maskEmail(email), tenant);
-                    return new AccessDeniedException("Vendor not found");
-                });
-    }
-
-    /* ======================================================
        HELPERS
        ====================================================== */
 
-    private String maskEmail(String email) {
-        if (email == null || email.length() < 5) {
-            return "***";
+    /* NEW: Map Subscription status to access level */
+    private SubscriptionAccessLevel mapSubscriptionToAccessLevel(Subscription subscription) {
+        if (subscription == null || subscription.getStatus() == null) {
+            return SubscriptionAccessLevel.BLOCKED;
         }
-        return email.substring(0, 2) + "***@***";
+
+        return switch (subscription.getStatus()) {
+            case ACTIVE, TRIALING -> SubscriptionAccessLevel.FULL;
+            case PAST_DUE -> SubscriptionAccessLevel.READ_ONLY;
+            case CANCELLED, INCOMPLETE, COMPLETED -> SubscriptionAccessLevel.BLOCKED;
+        };
     }
 
-    private boolean isExpired(Vendor vendor) {
-        return vendor.getSubscriptionExpiresAt() != null &&
-               vendor.getSubscriptionExpiresAt().isBefore(Instant.now()) &&
-               vendor.getSubscriptionStatus() != SubscriptionStatus.INADIMPLENTE;
+    /* NEW: Check if subscription has expired */
+    private boolean isSubscriptionExpired(Subscription subscription) {
+        if (subscription == null || subscription.getExpiresAt() == null) {
+            return false;
+        }
+        
+        LocalDateTime now = LocalDateTime.now();
+        return subscription.getExpiresAt().isBefore(now);
     }
 }

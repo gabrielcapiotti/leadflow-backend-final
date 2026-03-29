@@ -10,6 +10,8 @@ import com.leadflow.backend.repository.VendorRepository;
 import com.leadflow.backend.repository.user.UserRepository;
 
 import jakarta.transaction.Transactional;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 import org.springframework.stereotype.Service;
 
@@ -18,6 +20,9 @@ import java.util.UUID;
 
 @Service
 public class VendorService {
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     private final VendorRepository vendorRepository;
     private final UserRepository userRepository;
@@ -66,7 +71,23 @@ public class VendorService {
             throw new IllegalArgumentException("User and userId cannot be null");
         }
 
+        // 🔥 CRÍTICO: Validar tenantId ANTES de converter para UUID
+        if (user.getTenantId() == null || user.getTenantId().isBlank()) {
+            throw new IllegalStateException("User tenantId is null or blank - cannot create vendor");
+        }
+
+        UUID tenantUUID = UUID.fromString(user.getTenantId());
+        
+        // 🔥 CRÍTICO: Verificar se vendor já existe (concorrência)
+        if (vendorRepository.existsById(tenantUUID)) {
+            return vendorRepository.findById(tenantUUID).get();
+        }
+
         Vendor vendor = new Vendor();
+        
+        // 🔥 CRÍTICO: vendor.id DEVE ser igual ao tenantId para alinhamento de identidade
+        // Isso garante que subscription.tenant_id (FK) possa referenciar vendor.id corretamente
+        vendor.setId(tenantUUID);
         
         vendor.setUserEmail(normalizeEmail(user.getEmail()));
         // ✅ FIXO: Name agora é único com suffix (evita constraint violation)
@@ -79,13 +100,20 @@ public class VendorService {
         // ✅ CRÍTICO: Usar tenantId do User, não do TenantContext
         vendor.setTenantId(user.getTenantId());
         
-        Vendor savedVendor = vendorRepository.save(vendor);
+        // 🔥 FIX: Usar persist() em vez de save() para evitar erro de optimistic locking
+        // Quando ID é manual (preenchido), save() usa merge() que presume existência
+        // persist() é correto para novas entidades mesmo com ID manual
+        try {
+            entityManager.persist(vendor);
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to persist vendor: " + e.getMessage(), e);
+        }
         
         // 🔴 REMOVIDO: usageService.initializeUsage() 
         // Side-effects críticos devem ser síncronos
         // Orquestrados no nível de negócio (RegisterService, etc)
 
-        return savedVendor;
+        return vendor;
     }
 
     /**

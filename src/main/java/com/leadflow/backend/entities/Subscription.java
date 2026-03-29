@@ -5,7 +5,7 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "subscriptions", schema = "public")
+@Table(name = "subscriptions")
 public class Subscription {
 
     @Id
@@ -72,7 +72,7 @@ public class Subscription {
 
         sub.tenantId = tenantId;
         sub.plan = plan;
-        sub.status = SubscriptionStatus.INCOMPLETE;
+        sub.status = SubscriptionStatus.TRIALING;
         
         // stripe_customer_id remains NULL until Stripe integration completes
         // Will be populated during checkout/payment process
@@ -223,9 +223,11 @@ public class Subscription {
        ====================================================== */
 
     public enum SubscriptionStatus {
+        TRIALING,
         ACTIVE,
         PAST_DUE,
         CANCELLED,
-        INCOMPLETE
+        INCOMPLETE,
+        COMPLETED
     }
 }

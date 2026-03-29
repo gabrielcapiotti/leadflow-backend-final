@@ -26,6 +26,7 @@ public class BillingDashboardController {
     private final BillingDashboardService billingDashboardService;
     private final VendorContext vendorContext;
     private final SubscriptionService subscriptionService;
+    private final com.leadflow.backend.service.PlanService planService;
 
     // =====================================================
     // ADMIN ENDPOINTS (EXPLICIT TENANT)
@@ -377,6 +378,120 @@ public class BillingDashboardController {
             log.error("Error fetching webhook breakdown by status", e);
             return ResponseEntity.internalServerError().build();
         }
+    }
+
+    // =====================================================
+    // TRANCHE 1: MISSING ENDPOINTS (reutilizando legacy)
+    // =====================================================
+
+    @GetMapping("/plans")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.List<com.leadflow.backend.dto.billing.PlanDTO>> getPlans() {
+        log.info("Fetching available billing plans");
+
+        try {
+            var plans = planService.getAllPlans();
+            var planDTOs = plans.stream()
+                .map(com.leadflow.backend.dto.billing.PlanDTO::fromEntity)
+                .collect(java.util.stream.Collectors.toList());
+
+            return ResponseEntity.ok(planDTOs);
+        } catch (Exception e) {
+            log.error("Error fetching billing plans", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/invoices")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<java.util.List<com.leadflow.backend.dto.billing.InvoiceDTO>> getMyInvoices(
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(required = false) String startingAfter) {
+        
+        UUID tenantId = resolveTenantSafe();
+
+        if (tenantId == null) {
+            log.warn("User has no tenant - returning empty invoices");
+            return ResponseEntity.ok(java.util.List.of());
+        }
+
+        try {
+            // Reutilizar lógica do legacy /billing/invoices
+            var subscription = subscriptionService.getSubscriptionByVendorId(
+                vendorContext.getCurrentVendorId()
+            );
+
+            String stripeCustomerId = subscription.isEmpty() ? null : subscription.get().getStripeCustomerId();
+            if (stripeCustomerId == null || stripeCustomerId.isBlank() || "not_set".equals(stripeCustomerId)) {
+                return ResponseEntity.ok(java.util.List.of());
+            }
+
+            java.util.Map<String, Object> params = new java.util.HashMap<>();
+            params.put("customer", stripeCustomerId);
+            params.put("limit", Math.min(limit, 100));
+            if (startingAfter != null) {
+                params.put("starting_after", startingAfter);
+            }
+
+            com.stripe.model.InvoiceCollection invoices = com.stripe.model.Invoice.list(params);
+
+            java.util.List<com.leadflow.backend.dto.billing.InvoiceDTO> result = invoices.getData().stream()
+                .map(this::convertToInvoiceDTO)
+                .collect(java.util.stream.Collectors.toList());
+
+            return ResponseEntity.ok(result);
+
+        } catch (com.stripe.exception.StripeException e) {
+            log.error("Error fetching invoices from Stripe", e);
+            return ResponseEntity.internalServerError().build();
+        } catch (Exception e) {
+            log.error("Error fetching invoices", e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    @GetMapping("/overview")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<?> getOverview() {
+        UUID tenantId = resolveTenantSafe();
+
+        if (tenantId == null) {
+            log.warn("User has no tenant - returning empty overview");
+            return ResponseEntity.ok(new com.leadflow.backend.dto.billing.BillingDashboardDTO());
+        }
+
+        try {
+            com.leadflow.backend.dto.billing.BillingDashboardDTO overview = 
+                billingDashboardService.getBillingDashboard(tenantId);
+
+            return ResponseEntity.ok(overview);
+
+        } catch (Exception e) {
+            log.error("Error fetching billing overview for tenant: {}", tenantId, e);
+            return ResponseEntity.internalServerError().build();
+        }
+    }
+
+    // =====================================================
+    // HELPER: Converter Stripe Invoice para DTO (reutilizado)
+    // =====================================================
+
+    private com.leadflow.backend.dto.billing.InvoiceDTO convertToInvoiceDTO(com.stripe.model.Invoice invoice) {
+        return com.leadflow.backend.dto.billing.InvoiceDTO.builder()
+            .id(invoice.getId())
+            .number(invoice.getNumber())
+            .status(invoice.getStatus())
+            .amount(new java.math.BigDecimal(invoice.getAmountDue()).divide(
+                new java.math.BigDecimal(100), 2, java.math.RoundingMode.HALF_UP))
+            .currency(invoice.getCurrency())
+            .createdAt(java.time.Instant.ofEpochSecond(invoice.getCreated()))
+            .dueDate(invoice.getDueDate() != null ? 
+                java.time.Instant.ofEpochSecond(invoice.getDueDate()) : null)
+            .paidAt(invoice.getStatusTransitions() != null && invoice.getStatusTransitions().getPaidAt() != null ? 
+                java.time.Instant.ofEpochSecond(invoice.getStatusTransitions().getPaidAt()) : null)
+            .pdfUrl(invoice.getInvoicePdf())
+            .description(invoice.getDescription())
+            .build();
     }
 
     // =====================================================

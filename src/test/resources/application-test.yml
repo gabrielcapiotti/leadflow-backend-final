@@ -27,7 +27,6 @@ spring:
       ddl-auto: create
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.PostgreSQLDialect
         format_sql: true
         multiTenancy: SCHEMA
         jdbc:

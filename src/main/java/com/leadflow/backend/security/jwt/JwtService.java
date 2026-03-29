@@ -97,7 +97,7 @@ public class JwtService implements InitializingBean {
         Instant expiresAt = now.plusMillis(expirationMillis);
         String tokenId = UUID.randomUUID().toString();
         
-        logger.info("🔐 GENERATING NEW JWT TOKEN: user={}, tokenId={}, tenant={}", 
+        logger.info("GENERATING NEW JWT TOKEN: user={}, tokenId={}, tenant={}", 
             user.getEmail(), tokenId, tenantSchema);
 
         String token = Jwts.builder()

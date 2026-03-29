@@ -23,6 +23,13 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
     
     Optional<Subscription> findByTenantId(UUID tenantId);
 
+    @Query("""
+        SELECT s FROM Subscription s
+        JOIN FETCH s.plan
+        WHERE s.tenantId = :tenantId
+    """)
+    Optional<Subscription> findByTenantIdWithPlanFetch(@Param("tenantId") UUID tenantId);
+
     Optional<Subscription> findByTenantIdAndStripeSubscriptionId(UUID tenantId, String stripeSubscriptionId);
 
     @Query("SELECT s FROM Subscription s WHERE s.status = :status " +
@@ -33,5 +40,18 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, Long
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate
     );
+
+    @Query("""
+        SELECT DISTINCT s FROM Subscription s
+        JOIN FETCH s.plan
+    """)
+    List<Subscription> findAllWithPlan();
+
+    @Query("""
+        SELECT s FROM Subscription s
+        JOIN FETCH s.plan
+        WHERE s.tenantId = :tenantId
+    """)
+    List<Subscription> findAllByTenantIdWithPlan(@Param("tenantId") UUID tenantId);
 
 }

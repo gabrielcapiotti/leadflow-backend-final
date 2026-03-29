@@ -6,33 +6,23 @@ import io.micrometer.core.instrument.config.MeterFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
 public class MetricsConfig {
 
     /*
-     * Tags comuns para todas as métricas
+     * Global tags: Applied to all metrics for consistent identification
+     * Uses centralized MetricsTags for consistency across all configurations
      */
     @Bean
     public MeterFilter commonTags() {
-        return MeterFilter.commonTags(
-                List.of(
-                        Tag.of("application", "leadflow-backend")
-                )
-        );
-    }
-
-    /*
-     * Proteção contra explosão de métricas (high cardinality)
-     */
-    @Bean
-    public MeterFilter denyHighCardinality() {
-        return MeterFilter.maximumAllowableTags(
-                "lead.created.total",
-                "vendor",
-                1000,
-                MeterFilter.deny()
-        );
+        List<Tag> tags = new ArrayList<>();
+        tags.add(Tag.of("application", MetricsTags.getApplication()));
+        tags.add(Tag.of("environment", MetricsTags.getEnvironment()));
+        tags.add(Tag.of("service", MetricsTags.getService()));
+        
+        return MeterFilter.commonTags(tags);
     }
 }

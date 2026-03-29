@@ -53,4 +53,4 @@ security:
 # ============================================================
 app:
   billing:
-    enabled: false                               # Desabilita validação de billing em modo desenvolvimento
+    enabled: true                                # Ativa validação de billing em modo desenvolvimento

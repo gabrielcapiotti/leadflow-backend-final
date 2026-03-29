@@ -4,7 +4,6 @@ import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.entities.SubscriptionAudit;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
-import com.leadflow.backend.entities.vendor.SubscriptionStatus;
 import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.exception.SubscriptionInactiveException;
 import com.leadflow.backend.repository.SubscriptionAuditRepository;
@@ -60,6 +59,72 @@ public class SubscriptionService {
         this.notificationService = notificationService;
         log.info("✅ SubscriptionService initialized - billingEnabled={}", billingEnabled);
     }
+
+    /* ======================================================
+       ONBOARDING INITIALIZATION
+       ====================================================== */
+
+    /**
+     * 🔥 CREATE DEFAULT SUBSCRIPTION FOR NEW TENANT (ONBOARDING)
+     * 
+     * Creates a subscription automatically when a user registers.
+     * This is the ONLY way subscriptions are created at onboarding time.
+     * 
+     * Idempotent: if subscription already exists, returns it (no duplicate)
+     * 
+     * Usage:
+     *   1. Tenant created
+     *   2. Vendor created  
+     *   3. ✅ createDefaultSubscription(tenantId) ← YOU ARE HERE
+     *   4. Usage initialized
+     * 
+     * @param tenantId UUID of the newly created tenant
+     * @return Subscription entity (newly created or existing)
+     * @throws IllegalStateException if default plan not found
+     */
+    @Transactional
+    public Subscription createDefaultSubscription(UUID tenantId) {
+
+        log.info("🔄 Creating default subscription for tenant: {}", tenantId);
+
+        // 🔥 IDEMPOTENCY: Avoid creating duplicate subscriptions
+        Optional<Subscription> existing = subscriptionRepository.findByTenantId(tenantId);
+        if (existing.isPresent()) {
+            log.info("✅ Subscription already exists for tenant: {}", tenantId);
+            return existing.get();
+        }
+
+        // 🔥 Find default plan (should always be ONE active plan)
+        Plan defaultPlan = planService.getActivePlan();
+
+        if (defaultPlan == null) {
+            log.error("❌ CRITICAL: No active plan found - cannot create subscription");
+            throw new IllegalStateException(
+                "Default plan not found - subscription creation failed. " +
+                "Ensure at least one Plan with active=true exists in database."
+            );
+        }
+
+        log.info("📋 Using plan: {} (id={})", defaultPlan.getName(), defaultPlan.getId());
+
+        // 🔥 Create new subscription
+        Subscription subscription = new Subscription();
+        subscription.setTenantId(tenantId);
+        subscription.setPlan(defaultPlan);
+        subscription.setStatus(Subscription.SubscriptionStatus.TRIALING);
+        subscription.setStartedAt(LocalDateTime.now());
+        
+        // Trial period: 14 days from now
+        subscription.setExpiresAt(LocalDateTime.now().plusDays(14));
+
+        // 🔥 Save to database
+        Subscription saved = subscriptionRepository.save(subscription);
+
+        log.info("✅ Default subscription created: id={}, tenant={}, status={}, expires={}",
+            saved.getId(), tenantId, saved.getStatus(), saved.getExpiresAt());
+
+        return saved;
+    }
     
 
     /**
@@ -72,14 +137,13 @@ public class SubscriptionService {
      * @throws IllegalStateException Always
      */
     @Deprecated(forRemoval = true)
-    public void transition(Vendor vendor,
-                           SubscriptionStatus newStatus,
+    public void transition(Subscription.SubscriptionStatus newStatus,
                            String reason,
                            String externalEventId) {
-        log.error("❌ DEPRECATED: Vendor.transition() called. Use BillingService only.");
+        log.error("❌ DEPRECATED: Subscription transition() called. Use BillingService only.");
         throw new IllegalStateException(
-            "Vendor subscription transitions are disabled. " +
-            "Use BillingService and the Subscription entity for all state changes."
+            "Subscription transitions via transition() are disabled. " +
+            "Use BillingService and persistence methods for all state changes."
         );
     }
 
@@ -675,6 +739,17 @@ public class SubscriptionService {
     public Optional<Subscription> getSubscriptionByVendorId(UUID vendorId) {
         // Single source of truth: database repository only
         return subscriptionRepository.findByTenantId(vendorId);
+    }
+
+    /**
+     * Get subscription by tenant ID (replaces Vendor-based access resolution)
+     * Used by SubscriptionGuard to determine access levels for multi-tenant operations.
+     * 
+     * @param tenantId the tenant ID
+     * @return Optional containing the Subscription entity if found
+     */
+    public Optional<Subscription> getSubscriptionByTenantId(UUID tenantId) {
+        return subscriptionRepository.findByTenantId(tenantId);
     }
 
     /**

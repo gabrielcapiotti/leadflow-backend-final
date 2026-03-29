@@ -2,7 +2,7 @@ package com.leadflow.backend.repository.base;
 
 import com.leadflow.backend.multitenancy.filter.HibernateFilterConfiguration;
 import jakarta.persistence.EntityManager;
-import org.springframework.data.jpa.repository.support.JpaRepositoryImplementation;
+
 import org.springframework.data.jpa.repository.support.SimpleJpaRepository;
 
 /**

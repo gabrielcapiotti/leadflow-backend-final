@@ -130,7 +130,7 @@ public class UserSessionService {
 
         repository.saveAndFlush(session);
         
-        log.info("✅ SESSION PERSISTED & FLUSHED: sessionId={}, tokenId={}, user={}, tenant={}", 
+        log.info("SESSION PERSISTED & FLUSHED: sessionId={}, tokenId={}, user={}, tenant={}", 
             session.getId(), tokenId, userId, tenantId);
     }
 

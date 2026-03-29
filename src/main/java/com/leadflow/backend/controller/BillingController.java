@@ -16,6 +16,7 @@ import com.leadflow.backend.service.billing.StripeService;
 import com.leadflow.backend.service.billing.StripeWebhookValidator;
 import com.leadflow.backend.service.billing.StripeWebhookAlertService;
 import com.leadflow.backend.service.billing.StripeCustomerMappingService;
+import com.leadflow.backend.service.billing.BillingDashboardService;
 import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Invoice;
@@ -67,6 +68,7 @@ public class BillingController {
     private final VendorContext vendorContext;
     private final StripeCustomerMappingService stripeCustomerMappingService;
     private final TenantRepository tenantRepository;
+    private final BillingDashboardService billingDashboardService;
 
     /**
      * Creates a Stripe checkout session for subscription payment.
@@ -270,7 +272,7 @@ public class BillingController {
     @PreAuthorize("isAuthenticated()")
     @Operation(
         summary = "Create subscription",
-        description = "Creates or activates a new subscription for the authenticated vendor",
+        description = "Creates or activates a new subscription for the authenticated user via TenantContext",
         tags = {"Billing"}
     )
     @ApiResponses(value = {
@@ -280,35 +282,26 @@ public class BillingController {
         @ApiResponse(responseCode = "400", description = "Invalid plan ID or request"),
         @ApiResponse(responseCode = "401", description = "Unauthorized")
     })
-    public ResponseEntity<SubscriptionDetailsDTO> createSubscription(
+    public ResponseEntity<?> createSubscription(
             @Valid @RequestBody SubscriptionCreateRequest request
     ) {
         try {
-            UUID vendorId = vendorContext.getCurrentVendorId();
+            String planId = request.getPlanId() != null ? request.getPlanId() : "STANDARD";
             
-            if (vendorId == null) {
-                log.error("❌ VendorContext.getCurrentVendorId() returned null");
-                return ResponseEntity.badRequest().build();
-            }
-
-            String planId = request.getPlanId() != null ? request.getPlanId() : "Leadflow Standard";
+            log.info("🔵 Creating subscription with plan code: {} (legacy endpoint)", planId);
             
-            log.info("🔵 Creating subscription for vendor {} with plan {}", vendorId, planId);
+            // Use BillingDashboardService which resolves TenantContext correctly
+            SubscriptionDetailsDTO subscription = billingDashboardService.createSubscription(planId);
             
-            var subscription = subscriptionService.createOrUpdateSubscription(vendorId, planId);
+            log.info("✅ Subscription created successfully");
+            return ResponseEntity.status(201).body(subscription);
             
-            if (subscription.isEmpty()) {
-                log.error("❌ createOrUpdateSubscription returned empty for vendor {} plan {}", vendorId, planId);
-                return ResponseEntity.status(400).build();
-            }
-
-            log.info("✅ Subscription created: {}", subscription.get().getId());
-            return ResponseEntity.status(201).body(
-                SubscriptionDetailsDTO.fromEntity(subscription.get())
-            );
         } catch (Exception e) {
-            log.error("❌ Error creating subscription: {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
-            return ResponseEntity.badRequest().build();
+            log.error("❌ Error creating subscription (legacy): {} - {}", e.getClass().getSimpleName(), e.getMessage(), e);
+            return ResponseEntity.badRequest().body(java.util.Map.of(
+                "error", "subscription_creation_failed",
+                "message", e.getMessage()
+            ));
         }
     }
 

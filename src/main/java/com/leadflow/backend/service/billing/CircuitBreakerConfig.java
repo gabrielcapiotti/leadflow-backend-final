@@ -82,7 +82,7 @@ public class CircuitBreakerConfig {
                 return true;
             }
             // Excedeu tentativas, reabrir circuit
-            log.error("❌ Circuit breaker re-opening (max attempts exceeded in HALF_OPEN)");
+            log.error("Circuit breaker re-opening (max attempts exceeded in HALF_OPEN)");
             transitionToOpen();
             return false;
         }
@@ -101,7 +101,7 @@ public class CircuitBreakerConfig {
         successCount.incrementAndGet();
 
         if (current == CircuitState.HALF_OPEN) {
-            log.info("✅ Circuit breaker recovered successfully. Transitioning back to CLOSED");
+            log.info("Circuit breaker recovered successfully. Transitioning back to CLOSED");
             transitionToClosed();
         }
 

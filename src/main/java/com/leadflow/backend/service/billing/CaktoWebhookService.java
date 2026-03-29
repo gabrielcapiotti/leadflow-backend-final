@@ -153,12 +153,9 @@ public class CaktoWebhookService {
         vendor.setNextBillingAt(resolveNextBillingAt(payload));
 
         if (vendor.getSubscriptionStatus() != SubscriptionStatus.ATIVA) {
-            subscriptionService.transition(
-                    vendor,
-                    SubscriptionStatus.ATIVA,
-                    "WEBHOOK_APPROVED",
-                    payload.getId()
-            );
+            // ⚠️ DEPRECATED: Use Subscription entity via BillingService
+            vendor.setSubscriptionStatus(SubscriptionStatus.ATIVA);
+            vendorRepository.save(vendor);
             return true;
         }
 
@@ -175,20 +172,10 @@ public class CaktoWebhookService {
             default -> SubscriptionStatus.SUSPENSA;
         };
 
-        String reason = switch (normalizedStatus) {
-            case "canceled" -> "WEBHOOK_CANCELED";
-            case "expired" -> "WEBHOOK_EXPIRED";
-            case "failed" -> "WEBHOOK_FAILED";
-            default -> "WEBHOOK_STATUS_CHANGE";
-        };
-
         if (vendor.getSubscriptionStatus() != targetStatus) {
-            subscriptionService.transition(
-                    vendor,
-                    targetStatus,
-                    reason,
-                    externalEventId
-            );
+            // ⚠️ DEPRECATED: Use Subscription entity via BillingService
+            vendor.setSubscriptionStatus(targetStatus);
+            vendorRepository.save(vendor);
             return true;
         }
 

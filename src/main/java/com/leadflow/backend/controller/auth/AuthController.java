@@ -1,6 +1,5 @@
 package com.leadflow.backend.controller.auth;
 
-import com.leadflow.backend.entities.auth.UserSession;
 import com.leadflow.backend.dto.auth.*;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.multitenancy.context.TenantContext;
@@ -15,6 +14,7 @@ import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
 import com.leadflow.backend.service.vendor.VendorService;
 import com.leadflow.backend.service.vendor.UsageService;
+import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Tenant;
 import com.leadflow.backend.repository.PlanRepository;
@@ -51,10 +51,11 @@ public class AuthController {
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
     private final TenantRepository tenantRepository;
-    private final VendorService vendorService;
+
     private final UsageService usageService;
     private final PlanRepository planRepository;
     private final AuthenticationManager authenticationManager;
+    private final SubscriptionService subscriptionService;
 
     public AuthController(
             AuthService authService,
@@ -63,10 +64,10 @@ public class AuthController {
             UserSessionService userSessionService,
             TenantService tenantService,
             TenantRepository tenantRepository,
-            VendorService vendorService,
             UsageService usageService,
             PlanRepository planRepository,
-            AuthenticationManager authenticationManager
+            AuthenticationManager authenticationManager,
+            SubscriptionService subscriptionService
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
@@ -74,10 +75,10 @@ public class AuthController {
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
         this.tenantRepository = tenantRepository;
-        this.vendorService = vendorService;
         this.usageService = usageService;
         this.planRepository = planRepository;
         this.authenticationManager = authenticationManager;
+        this.subscriptionService = subscriptionService;
     }
 
     /* ======================================================
@@ -123,10 +124,17 @@ public class AuthController {
                 tenantId.toString()
         );
 
-        // ✅ ORQUESTRAÇÃO CRÍTICA: Criar vendor APENAS durante registro
+        // ✅ VENDOR criado no AuthService.registerUser() — sem duplicação aqui
         try {
-            var vendor = vendorService.createVendor(user);
-            log.info("✓ Vendor created successfully for new user: {} (vendor={})", user.getId(), vendor.getId());
+
+            // 🔥 CREATE DEFAULT SUBSCRIPTION (novo)
+            try {
+                subscriptionService.createDefaultSubscription(tenantId);
+                log.info("✓ Default subscription created successfully for tenant: {}", tenantId);
+            } catch (Exception e) {
+                log.warn("⚠️  Subscription creation failed (non-critical): {}", e.getMessage());
+                // Não interrompe o fluxo - vendor foi criado OK
+            }
 
             // ✅ Inicializar usage com plano padrão
             try {
@@ -134,8 +142,11 @@ public class AuthController {
                         .stream()
                         .findFirst()
                         .orElseThrow(() -> new IllegalStateException("No active plan found"));
-                usageService.initializeUsage(vendor.getId(), defaultPlan);
-                log.info("✓ Usage initialized successfully for vendor: {}", vendor.getId());
+                
+                // 🔥 CRÍTICO: vendor.id = tenantId (alinhamento de identidade)
+                UUID vendorId = UUID.fromString(user.getTenantId());
+                usageService.initializeUsage(vendorId, defaultPlan);
+                log.info("✓ Usage initialized successfully for vendor: {}", vendorId);
             } catch (Exception e) {
                 log.warn("⚠️  Usage initialization failed (non-critical): {}", e.getMessage());
                 // Não interrompe o fluxo - vendor foi criado OK
@@ -187,7 +198,7 @@ public class AuthController {
         String tenant = extractTenantFromRequest(httpRequest);
         
         if (tenant == null || tenant.isBlank()) {
-            log.error("❌ Login failed: No tenant provided in request");
+            log.error("Login failed: No tenant provided in request");
             throw new UnauthorizedException("Tenant ID is required for login");
         }
 
@@ -442,7 +453,7 @@ public class AuthController {
 
         if (secret != null && secret.equals(expectedSecret)) {
             isInternalSecret = true;
-            log.info("✅ Admin registration authorized via X-Internal-Secret");
+            log.info("Admin registration authorized via X-Internal-Secret");
         }
 
         // 🔐 CHECK 2: Validate authenticated ADMIN user
@@ -451,7 +462,7 @@ public class AuthController {
                     .anyMatch(auth -> auth.getAuthority().equals("ROLE_ADMIN"));
             if (hasAdminRole) {
                 isAuthenticatedAdmin = true;
-                log.info("✅ Admin registration authorized via authenticated ADMIN user");
+                log.info("Admin registration authorized via authenticated ADMIN user");
             }
         }
 
@@ -477,7 +488,7 @@ public class AuthController {
         }
 
         if (tenant == null || tenant.isBlank()) {
-            log.error("❌ Admin registration failed: No tenant provided in request");
+            log.error("Admin registration failed: No tenant provided in request");
             throw new UnauthorizedException("Tenant ID is required");
         }
 

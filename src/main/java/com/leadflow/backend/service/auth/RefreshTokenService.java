@@ -72,7 +72,7 @@ public class RefreshTokenService {
         log.debug("IP: {}, UserAgent: {}", ipAddress, userAgent);
 
         if (rawToken == null || rawToken.isBlank()) {
-            log.error("❌ Token is null or blank");
+            log.error("Token is null or blank");
             throw new IllegalArgumentException("Invalid refresh token");
         }
 
@@ -92,7 +92,7 @@ public class RefreshTokenService {
 
         // 🔒 REUSE DETECTION
         if (token.isRevoked()) {
-            log.error("❌ Token is revoked - REUSE DETECTED");
+            log.error("Token is revoked - REUSE DETECTED");
             repository.deleteByUser_Id(token.getUser().getId());
             throw new IllegalStateException("Refresh token reuse detected");
         }
@@ -100,7 +100,7 @@ public class RefreshTokenService {
         log.debug("✓ Token is not revoked");
 
         if (token.isExpired()) {
-            log.error("❌ Token is expired");
+            log.error("Token is expired");
             token.revoke();
             repository.save(token);
             throw new IllegalArgumentException("Refresh token expired");
@@ -116,7 +116,7 @@ public class RefreshTokenService {
         log.debug("Stored fingerprint:  {}", storedFingerprint);
 
         if (!storedFingerprint.equals(currentFingerprint)) {
-            log.error("❌ Device fingerprint mismatch - DEVICE CHANGE DETECTED");
+            log.error("Device fingerprint mismatch - DEVICE CHANGE DETECTED");
             repository.deleteByUser_Id(token.getUser().getId());
             throw new IllegalStateException("Device mismatch detected");
         }

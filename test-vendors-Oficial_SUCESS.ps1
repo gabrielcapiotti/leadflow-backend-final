@@ -249,44 +249,34 @@ $global:TestCount++
 # [5] CREATE VENDOR IN TENANT A
 # ========================================================================
 
-Write-Header "[5] Create Vendor in Tenant A"
+Write-Header "[5] GET Vendor Auto-Created in Register"
 
 $vendorId = ""
 $vendorSlug = ""
 
 try {
-    $vendorSlug = "vendor-test-" + $uniqueSuffix + "-" + (-join((65..90) + (97..122) | Get-Random -Count 8 | ForEach {[char]$_}))
-    
-    $vendorData = @{
-        name = "Vendor $uniqueSuffix (Tenant A)"
-        nomeVendedor = "Gabriel Capiotti"
-        userEmail = $userEmail
-        nomeEmpresa = "Tech Solutions - Tenant A"
-        whatsappVendedor = "+5511987654321"
-        logoUrl = "https://example.com/logo.png"
-        corDestaque = "#FF6B35"
-        mensagemBoasVindas = "Bem-vindo à Tech Solutions!"
-        slug = $vendorSlug
-    }
-
-    $createResponse = Invoke-WebRequest -Uri "$BaseURL/vendors" `
-        -Method POST `
-        -ContentType "application/json" `
+    $getVendorResponse = Invoke-WebRequest -Uri "$BaseURL/vendors" `
+        -Method GET `
         -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
-        -Body ($vendorData | ConvertTo-Json) `
         -UseBasicParsing
 
-    $vendorResponse = $createResponse.Content | ConvertFrom-Json
-
-    if ($createResponse.StatusCode -eq 200) {
-        $vendorId = $vendorResponse.id
-        Write-Success "Create Vendor (Tenant A)" 200
-        Write-Host "   Vendor ID: $vendorId" -ForegroundColor DarkGray
-        Write-Host "   Slug: $vendorSlug" -ForegroundColor DarkGray
-        Write-Host "   Email: $($vendorResponse.userEmail)" -ForegroundColor DarkGray
-        $global:Passed++
+    if ($getVendorResponse.StatusCode -eq 200) {
+        $vendors = $getVendorResponse.Content | ConvertFrom-Json
+        
+        if ($vendors -is [array] -and $vendors.Count -gt 0) {
+            $vendorId = $vendors[0].id
+            $vendorSlug = $vendors[0].slug
+            
+            Write-Success "Get Auto-Created Vendor" 200
+            Write-Host "   Vendor ID: $vendorId" -ForegroundColor DarkGray
+            Write-Host "   Slug: $vendorSlug" -ForegroundColor DarkGray
+            $global:Passed++
+        } else {
+            Write-Fail "Get Vendor - not found" 404
+            $global:Failed++
+        }
     } else {
-        Write-Fail "Create Vendor (Tenant A)" $createResponse.StatusCode
+        Write-Fail "Get Vendor" $getVendorResponse.StatusCode
         $global:Failed++
     }
 } catch {

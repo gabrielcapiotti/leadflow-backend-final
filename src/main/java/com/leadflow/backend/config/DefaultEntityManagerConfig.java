@@ -43,7 +43,7 @@ public class DefaultEntityManagerConfig {
 
         // 🔥 SEM MULTI-TENANCY POR SCHEMA
         properties.put("hibernate.hbm2ddl.auto", "none");
-        properties.put("hibernate.dialect", "org.hibernate.dialect.PostgreSQLDialect");
+        // Hibernate 6+ auto-detects PostgreSQL dialect, no need to specify
 
         return builder
                 .dataSource(dataSource)

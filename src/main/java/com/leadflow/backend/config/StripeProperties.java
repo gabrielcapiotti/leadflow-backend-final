@@ -52,7 +52,7 @@ public class StripeProperties {
         
         // Initialize Stripe SDK with secret key
         Stripe.apiKey = api.secretKey;
-        log.info("✅ Stripe SDK initialized successfully");
+        log.info("Stripe SDK initialized successfully");
         
         // Log configuration summary
         log.info("Stripe Configuration Summary:");
