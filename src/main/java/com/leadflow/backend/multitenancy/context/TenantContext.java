@@ -12,23 +12,25 @@ public final class TenantContext {
             LoggerFactory.getLogger(TenantContext.class);
 
     /**
-     * Regex para validar tenant identifiers - aceita UUIDs ou schema names PostgreSQL.
-     * Padrões válidos:
+     * Regex para validar tenant identifiers - aceita UUIDs.
+     * Padrão válido:
      * - UUID: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-     * - Schema: deve iniciar com letra ou underscore, apenas alphanumeric + underscore
      */
     private static final Pattern VALID_TENANT =
-            Pattern.compile("^([a-z_][a-z0-9_]{0,62}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$");
+            Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
     /**
-     * Tenant padrão utilizado quando necessário.
+     * Tenant padrão (public) - como UUID
+     * Este é um tenant especial para contextos públicos
      */
-    private static final String DEFAULT_TENANT = "public";
+    private static final java.util.UUID DEFAULT_TENANT = 
+            java.util.UUID.fromString("00000000-0000-0000-0000-000000000000");
 
     /**
-     * ThreadLocal que mantém o tenant atual.
+     * ThreadLocal que mantém o tenant atual como UUID.
+     * NUNCA como String - sempre UUID para evitar manipulação indevida.
      */
-    private static final ThreadLocal<String> CURRENT_TENANT =
+    private static final ThreadLocal<java.util.UUID> CURRENT_TENANT =
             new ThreadLocal<>();
 
     private TenantContext() {
@@ -39,47 +41,45 @@ public final class TenantContext {
        SET
        ====================================================== */
 
-    public static void setTenant(String tenant) {
+    /**
+     * Set tenant as UUID (MANDATORY)
+     * 
+     * RULE: tenantId is ALWAYS UUID, never String.
+     * If you have a String tenant, parse it to UUID before calling this.
+     * 
+     * @param tenantId UUID tenant identifier (NOT nullable)
+     * @throws IllegalArgumentException if null
+     * @throws IllegalStateException if different tenant already set for this thread
+     */
+    public static void setTenant(java.util.UUID tenantId) {
 
-        if (tenant == null || tenant.isBlank()) {
+        if (tenantId == null) {
             throw new IllegalArgumentException(
-                    "Tenant identifier cannot be null or blank"
-            );
-        }
-
-        String normalized = tenant
-                .trim()
-                .toLowerCase(Locale.ROOT);
-
-        if (!VALID_TENANT.matcher(normalized).matches()) {
-
-            log.error("Invalid tenant identifier received: {}", tenant);
-
-            throw new IllegalArgumentException(
-                    "Invalid tenant identifier: " + tenant + ". " +
-                    "Must be UUID (xxxx-xxxx-...) or PostgreSQL schema name (public, tenant_xyz, etc)"
+                    "Tenant identifier cannot be null - must be a valid UUID"
             );
         }
 
         // Idempotent: Allow setting the same tenant twice (silent return)
         // But prevent setting a DIFFERENT tenant (security check)
-        String currentTenant = CURRENT_TENANT.get();
+        java.util.UUID currentTenant = CURRENT_TENANT.get();
         if (currentTenant != null) {
-            if (!currentTenant.equals(normalized)) {
+            if (!currentTenant.equals(tenantId)) {
                 throw new IllegalStateException(
-                        "Tenant already set for this thread. " +
-                        "Current: " + currentTenant + ", " +
-                        "Attempted: " + normalized
+                        String.format(
+                                "Tenant already set for this thread. Current: %s, Attempted: %s",
+                                currentTenant,
+                                tenantId
+                        )
                 );
             }
             // Same tenant already set - just return (idempotent)
             return;
         }
 
-        CURRENT_TENANT.set(normalized);
+        CURRENT_TENANT.set(tenantId);
 
         if (log.isDebugEnabled()) {
-            log.debug("Tenant context set: {}", normalized);
+            log.debug("Tenant context set: {}", tenantId);
         }
     }
 
@@ -87,10 +87,10 @@ public final class TenantContext {
        SET IF ABSENT
        ====================================================== */
 
-    public static void setIfAbsent(String tenant) {
+    public static void setIfAbsent(java.util.UUID tenantId) {
 
         if (CURRENT_TENANT.get() == null) {
-            setTenant(tenant);
+            setTenant(tenantId);
         }
     }
 
@@ -99,12 +99,14 @@ public final class TenantContext {
        ====================================================== */
 
     /**
-     * Usado quando o tenant é obrigatório
-     * (camada de domínio).
+     * Get current tenant UUID (MANDATORY - throws if not set)
+     * 
+     * @return Current tenant UUID
+     * @throws IllegalStateException if no tenant set in thread
      */
-    public static String getTenant() {
+    public static java.util.UUID getTenant() {
 
-        String tenant = CURRENT_TENANT.get();
+        java.util.UUID tenant = CURRENT_TENANT.get();
 
         if (tenant == null) {
             throw new IllegalStateException(
@@ -122,9 +124,9 @@ public final class TenantContext {
        ====================================================== */
 
     /**
-     * Alias explícito para uso em serviços.
+     * Alias for explicit tenant requirement in services
      */
-    public static String requireTenant() {
+    public static java.util.UUID requireTenant() {
         return getTenant();
     }
 
@@ -133,10 +135,9 @@ public final class TenantContext {
        ====================================================== */
 
     /**
-     * Usado por infraestrutura
-     * (ex: Hibernate CurrentTenantIdentifierResolver).
+     * Get current tenant UUID if present, null otherwise
      */
-    public static String getIfPresent() {
+    public static java.util.UUID getIfPresent() {
         return CURRENT_TENANT.get();
     }
 
@@ -144,9 +145,9 @@ public final class TenantContext {
        GET WITH FALLBACK
        ====================================================== */
 
-    public static String getOrDefault() {
+    public static java.util.UUID getOrDefault() {
 
-        String tenant = CURRENT_TENANT.get();
+        java.util.UUID tenant = CURRENT_TENANT.get();
 
         if (tenant == null) {
 
@@ -181,7 +182,7 @@ public final class TenantContext {
      */
     public static void clear() {
 
-        String tenant = CURRENT_TENANT.get();
+        java.util.UUID tenant = CURRENT_TENANT.get();
 
         if (tenant != null && log.isDebugEnabled()) {
             log.debug("Clearing tenant context: {}", tenant);

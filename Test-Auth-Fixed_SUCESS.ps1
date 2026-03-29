@@ -208,6 +208,7 @@ Write-Info "Password: $testPassword"
 
 $r = Invoke-ApiRequest "POST" "/auth/register" @{
     name = "Test User Auth"
+    
     email = $testEmail
     password = $testPassword
     confirmPassword = $testPassword

@@ -45,13 +45,11 @@ public class SubscriptionGuard {
 
         try {
             // NEW: Get tenantId directly from TenantContext (simpler than email + tenantId query)
-            String tenantStr = TenantContext.getTenant();
-            if (tenantStr == null || tenantStr.isBlank()) {
+            UUID tenantId = TenantContext.getTenant();
+            if (tenantId == null) {
                 log.error("TenantContext is NULL");
                 throw new AccessDeniedException("Tenant context not resolved");
             }
-
-            UUID tenantId = UUID.fromString(tenantStr);
 
             // NEW: Query Subscription by tenantId (NOT via deprecated Vendor)
             Optional<Subscription> subscriptionOpt = subscriptionRepository.findByTenantId(tenantId);

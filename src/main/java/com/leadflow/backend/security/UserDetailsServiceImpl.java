@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
+import java.util.UUID;
 
 @Service
 public class UserDetailsServiceImpl implements UserDetailsService {
@@ -40,9 +41,9 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         String normalizedEmail = normalizeEmail(email);
 
-        String tenantId = TenantContext.getTenant();
+        UUID tenantId = TenantContext.getTenant();
 
-        if (tenantId == null || tenantId.isBlank()) {
+        if (tenantId == null) {
             log.error("Tenant ID is missing during authentication");
             throw new UsernameNotFoundException("Tenant not provided");
         }
@@ -53,7 +54,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
             tenantId
         );
 
-        // 🔥 CRITICAL FIX: Login is tenant-aware in multi-tenant architecture
+        // CRITICAL FIX: Login is tenant-aware in multi-tenant architecture
         // Identity = (email + tenant_id). Email alone is NOT globally unique.
         // TenantFilter ensures tenant context is set before this method is called.
         User user = userRepository

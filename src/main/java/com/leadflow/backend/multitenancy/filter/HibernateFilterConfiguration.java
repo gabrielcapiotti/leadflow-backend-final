@@ -31,13 +31,13 @@ public class HibernateFilterConfiguration {
      */
     public static void enableTenantFilter(EntityManager em) {
         
-        String tenant = TenantContext.getTenant();
+        java.util.UUID tenant = TenantContext.getTenant();
         
         Session session = em.unwrap(Session.class);
         
         session
             .enableFilter(TENANT_FILTER)
-            .setParameter(TENANT_FILTER_PARAM, tenant);
+            .setParameter(TENANT_FILTER_PARAM, tenant.toString());
     }
 
     /**

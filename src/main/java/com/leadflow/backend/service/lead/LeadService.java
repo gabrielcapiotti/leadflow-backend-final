@@ -53,7 +53,7 @@ public class LeadService {
     public User resolveUser(String email) {
 
         String normalized = normalizeEmail(email);
-        String tenant = TenantContext.requireTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         return userRepository
                 .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalized, tenant)

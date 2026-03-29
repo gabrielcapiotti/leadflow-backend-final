@@ -12,7 +12,6 @@ import com.leadflow.backend.security.jwt.JwtToken;
 import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
-import com.leadflow.backend.service.vendor.VendorService;
 import com.leadflow.backend.service.vendor.UsageService;
 import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.leadflow.backend.entities.Plan;
@@ -20,6 +19,7 @@ import com.leadflow.backend.entities.Tenant;
 import com.leadflow.backend.repository.PlanRepository;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 
 import org.slf4j.Logger;
@@ -121,7 +121,7 @@ public class AuthController {
                 request.name(),
                 request.email(),
                 request.password(),
-                tenantId.toString()
+                tenantId
         );
 
         // ✅ VENDOR criado no AuthService.registerUser() — sem duplicação aqui
@@ -144,7 +144,7 @@ public class AuthController {
                         .orElseThrow(() -> new IllegalStateException("No active plan found"));
                 
                 // 🔥 CRÍTICO: vendor.id = tenantId (alinhamento de identidade)
-                UUID vendorId = UUID.fromString(user.getTenantId());
+                UUID vendorId = UUID.fromString(user.getTenantId().toString());
                 usageService.initializeUsage(vendorId, defaultPlan);
                 log.info("✓ Usage initialized successfully for vendor: {}", vendorId);
             } catch (Exception e) {
@@ -162,7 +162,7 @@ public class AuthController {
         JwtToken accessToken = jwtService.generateToken(user, tenantId.toString());
 
         try {
-            createSession(user.getId(), tenantId.toString(), accessToken, httpRequest);
+            createSession(user.getId(), tenantId, accessToken, httpRequest);
             log.info("✓ Session created successfully for new user: {} (tenantId={})", user.getId(), tenantId);
         } catch (Exception e) {
             log.error("❌ CRITICAL: Session creation failed during registration for user: {} - {}", 
@@ -193,40 +193,7 @@ public class AuthController {
             @Valid @RequestBody LoginRequest request,
             HttpServletRequest httpRequest
     ) {
-        // 🔒 CRITICAL FIX: Login is PUBLIC - cannot use TenantContext (JWT doesn't exist yet)
-        // Must receive tenant from header or request body
-        String tenant = extractTenantFromRequest(httpRequest);
-        
-        if (tenant == null || tenant.isBlank()) {
-            log.error("Login failed: No tenant provided in request");
-            throw new UnauthorizedException("Tenant ID is required for login");
-        }
-
-        // ✅ FIX: Convert schemaName to tenantId
-        // - If tenant starts with "t_", it's a schemaName → query DB to get tenantId (UUID)
-        // - Otherwise, assume it's already tenantId (UUID)
-        String resolvedTenantId = tenant;
-        if (tenant.startsWith("t_")) {
-            log.info("🔍 [LOGIN] Tenant from header is schemaName (t_...). Querying DB for ACTIVE tenants only...");
-            log.info("🔍 [LOGIN] Query: findBySchemaNameIgnoreCaseAndDeletedAtIsNull('{}') [soft-delete aware]", tenant);
-            
-            // ✅ CRITICAL FIX: Use soft-delete aware query to exclude deleted tenants
-            // This prevents stale/deleted tenant records from being returned
-            var foundTenant = tenantRepository.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenant);
-            if (foundTenant.isPresent()) {
-                Tenant tenantEntity = foundTenant.get();
-                resolvedTenantId = tenantEntity.getId().toString();
-                log.info("✓ [LOGIN] Found ACTIVE Tenant in DB: id={}, schemaName={}", 
-                    tenantEntity.getId(), tenantEntity.getSchemaName());
-            } else {
-                log.error("❌ [LOGIN] ACTIVE Tenant NOT found in database for schemaName: {} (may be soft-deleted)", tenant);
-                throw new UnauthorizedException("Invalid tenant");
-            }
-        } else {
-            log.info("ℹ️ [LOGIN] Tenant from header is already UUID format (no t_ prefix): {}", resolvedTenantId);
-        }
-
-        log.info("Login attempt for user: {} (tenant={})", maskEmail(request.email()), resolvedTenantId);
+        log.info("Login attempt for user: {}", maskEmail(request.email()));
 
         // ✅ CRITICAL FIX: AuthenticationManager.authenticate() calls UserDetailsServiceImpl
         // UserDetailsService will:
@@ -249,15 +216,34 @@ public class AuthController {
 
             log.info("User authenticated successfully via Spring Security: {}", user.getId());
 
-            JwtToken accessToken = jwtService.generateToken(user, tenant);
+            // ✅ CRITICAL FIX: Use user.getTenantId() DIRECTLY (UUID from authenticated user record)
+            // SINGLE SOURCE OF TRUTH - no header, no conversion
+            UUID tenantIdFromUser = user.getTenantId();
+            
+            if (tenantIdFromUser == null) {
+                log.error("CRITICAL: User {} has NULL tenantId", user.getId());
+                throw new IllegalStateException("User tenant association is null");
+            }
+            
+            String tenantIdString = tenantIdFromUser.toString();
+            log.debug("Tenant identity: userId={}, tenantId={}", user.getId(), tenantIdString);
+            
+            JwtToken accessToken = jwtService.generateToken(user, tenantIdString);
             
             log.info("🔐 Generated new accessToken with tokenId={} for user={}", 
                 accessToken.getTokenId(), user.getId());
 
             // Session creation must not fail - if it does, it's a critical auth system issue
             try {
-                createSession(user.getId(), resolvedTenantId, accessToken, httpRequest);
-                log.info("✅ Session created successfully for user: {} (tenantId={})", user.getId(), resolvedTenantId);
+                // Re-fetch to validate consistency before session creation
+                UUID validateTenantId = user.getTenantId();
+                if (!validateTenantId.equals(tenantIdFromUser)) {
+                    log.error("CRITICAL: Tenant ID mismatch! {} vs {}", tenantIdFromUser, validateTenantId);
+                    throw new IllegalStateException("Tenant validation failed");
+                }
+                
+                createSession(user.getId(), tenantIdFromUser, accessToken, httpRequest);
+                log.info("Session created for user: {} (tenantId={})", user.getId(), tenantIdString);
             } catch (Exception e) {
                 log.error("❌ CRITICAL: Session creation failed for user={}. Error={}", user.getId(), e.getMessage(), e);
                 throw e;  // Re-throw to be handled by GlobalExceptionHandler
@@ -272,7 +258,7 @@ public class AuthController {
             log.info("User {} logged in successfully", user.getId());
 
             return ResponseEntity.ok(
-                    new AuthResponse(accessToken.getToken(), refreshToken, tenant)
+                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdString)
             );
         } finally {
             TenantContext.clear();
@@ -288,8 +274,21 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        // Get tenant from TenantContext (single source of truth)
-        String tenantId = TenantContext.requireTenant();
+        // 🔒 SECURITY: Get tenant from TenantContext (JWT-based, authoritative)
+        UUID contextTenant = TenantContext.requireTenant();
+        
+        // 🔒 SECURITY: Validate user belongs to this tenant
+        UUID userTenant = user.getUser().getTenantId();
+        
+        if (!contextTenant.equals(userTenant)) {
+            log.warn(
+                    "❌ SECURITY BREACH ATTEMPT: User {} from tenant {} tried to access tenant {} context",
+                    user.getId(),
+                    userTenant,
+                    contextTenant
+            );
+            return ResponseEntity.status(HttpServletResponse.SC_FORBIDDEN).build();
+        }
 
         return ResponseEntity.ok(Map.of(
                 "id", user.getId(),
@@ -298,7 +297,7 @@ public class AuthController {
                         .findFirst()
                         .map(a -> a.getAuthority())
                         .orElse("ROLE_USER"),
-                "tenantId", tenantId
+                "tenantId", contextTenant.toString()
         ));
     }
 
@@ -314,7 +313,7 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        String tenant = resolveTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         String tokenId = extractTokenId(request);
 
@@ -336,7 +335,7 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        String tenant = resolveTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         userSessionService.revokeSpecificSession(
                 sessionId,
@@ -353,7 +352,7 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        String tenant = resolveTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         userSessionService.revokeAllUserSessions(user.getId(), tenant);
 
@@ -384,8 +383,9 @@ public class AuthController {
         log.debug("✓ Refresh token validated and rotated");
         
         // ✅ NOW extract tenant from the user we got back (has tenant from DB)
-        String tenant = result.user().getTenantId();
-        log.debug("✓ Tenant extracted from user: {}", tenant);
+        UUID tenantId = result.user().getTenantId();
+        String tenant = tenantId.toString();
+        log.debug("✓ Tenant extracted from user: {}", tenantId);
         
         // ✅ CRITICAL FIX: Refresh is PUBLIC and just renews JWT
         // It should NOT modify the session in the database
@@ -396,13 +396,13 @@ public class AuthController {
         // Generate NEW JWT with NEW tokenId (generates fresh identity)
         JwtToken newAccessToken = jwtService.generateTokenForRefresh(
                 result.user(), 
-                tenant
+                tenant  // Pass as String (already converted above)
         );
         
         log.info("✓ New access token generated with fresh tokenId: {}", newAccessToken.getTokenId());
 
         return ResponseEntity.ok(
-                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenant)
+                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenant)  // tenant is String
         );
     }
 
@@ -418,7 +418,7 @@ public class AuthController {
 
         CustomUserDetails user = requireAuthenticatedUser(authentication);
 
-        String tenant = resolveTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         String tokenId = extractTokenId(request);
 
@@ -478,7 +478,7 @@ public class AuthController {
         String tenant;
         if (isAuthenticatedAdmin && authentication != null) {
             // Use tenant from authenticated admin's context
-            tenant = TenantContext.getTenant();
+            tenant = TenantContext.getTenant().toString();  // getTenant() returns UUID, convert to String
             if (tenant == null || tenant.isBlank()) {
                 tenant = extractTenantFromRequest(httpRequest);
             }
@@ -492,6 +492,8 @@ public class AuthController {
             throw new UnauthorizedException("Tenant ID is required");
         }
 
+        UUID tenantId = parseAndValidateTenantId(tenant); // Converts String (schemaName or UUID) to UUID
+
         log.info("🔑 Registering ADMIN user for tenant: {} | Email: {}", tenant, maskEmail(request.email()));
 
         // ✅ Register user with ADMIN role
@@ -499,13 +501,13 @@ public class AuthController {
                 request.name(),
                 request.email(),
                 request.password(),
-                tenant
+                tenantId
         );
 
         // ✅ Generate JWT token for immediate use
-        TenantContext.setTenant(tenant);
+        TenantContext.setTenant(tenantId);
         try {
-            JwtToken accessToken = jwtService.generateToken(user, tenant);
+            JwtToken accessToken = jwtService.generateToken(user, tenantId.toString());
 
             String refreshToken = refreshTokenService.generate(
                     user,
@@ -591,13 +593,14 @@ public class AuthController {
 
     private String resolveTenant() {
         // Single source of truth: TenantContext (from JWT)
-        return TenantContext.requireTenant();
+        // Returns UUID as String (to keep compatibility with existing code)
+        return TenantContext.requireTenant().toString();
     }
 
     private String resolveTenant(HttpServletRequest request) {
         // Single source of truth: TenantContext (from JWT via TenantFilter)
         // No fallback to header - TenantResolver already validated it
-        return TenantContext.requireTenant();
+        return TenantContext.requireTenant().toString();  // Convert UUID to String
     }
 
     private String validateTenant(String tenant, String source) {
@@ -659,11 +662,21 @@ public class AuthController {
 
     private void createSession(
             UUID userId,
-            String tenantId,
+            UUID tenantId,
             JwtToken token,
             HttpServletRequest request
     ) {
-
+        // Validate UUIDs are not null and properly formatted
+        if (tenantId == null) {
+            throw new IllegalStateException("tenantId cannot be null");
+        }
+        
+        String tenantStr = tenantId.toString();
+        if (!tenantStr.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+            log.error("CRITICAL: Invalid UUID format for tenantId: {}", tenantStr);
+            throw new IllegalStateException("Invalid UUID format");
+        }
+        
         userSessionService.createSession(
                 userId,
                 tenantId,
@@ -693,5 +706,48 @@ public class AuthController {
         }
 
         return email.substring(0, 2) + "***" + email.substring(at);
+    }
+
+    /**
+     * Parse and validate tenant from String (header/param) to UUID
+     * 
+     * Input can be:
+     * - UUID format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" → returns as UUID
+     * - SchemaName format: "t_..." → queries DB to get actual tenant UUID
+     * 
+     * @param tenant String tenant identifier (UUID or schemaName)
+     * @return UUID tenant identifier from database
+     * @throws UnauthorizedException if tenant is invalid or not found
+     */
+    private UUID parseAndValidateTenantId(String tenant) {
+        
+        if (tenant == null || tenant.isBlank()) {
+            throw new UnauthorizedException("Tenant ID is required");
+        }
+        
+        // Case 1: Input is schemaName (starts with "t_")
+        if (tenant.startsWith("t_")) {
+            log.debug("🔍 [PARSE_TENANT] Tenant from header is schemaName (t_...). Querying DB...");
+            
+            var foundTenant = tenantRepository.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenant);
+            if (foundTenant.isPresent()) {
+                UUID tenantId = foundTenant.get().getId();
+                log.debug("✓ [PARSE_TENANT] Found ACTIVE Tenant in DB: id={}, schemaName={}", tenantId, tenant);
+                return tenantId;
+            } else {
+                log.error("❌ [PARSE_TENANT] ACTIVE Tenant NOT found in database for schemaName: {}", tenant);
+                throw new UnauthorizedException("Invalid tenant");
+            }
+        }
+        
+        // Case 2: Input is UUID format
+        try {
+            UUID tenantId = UUID.fromString(tenant);
+            log.debug("✓ [PARSE_TENANT] Tenant is UUID format: {}", tenantId);
+            return tenantId;
+        } catch (IllegalArgumentException e) {
+            log.error("❌ [PARSE_TENANT] Invalid tenant format (not UUID, not schemaName): {}", tenant);
+            throw new UnauthorizedException("Invalid tenant format");
+        }
     }
 }

@@ -6,7 +6,6 @@ import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.StripeCustomerRepository;
 import com.leadflow.backend.repository.StripeEventLogRepository;
 import com.leadflow.backend.service.billing.*;
-import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.leadflow.backend.util.StripeEventJsonExtractor;
 import com.stripe.model.Event;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,7 +26,6 @@ import java.util.stream.Collectors;
 public class StripeWebhookController {
 
     private final StripeService stripeService;
-    private final StripeWebhookProcessingService webhookProcessingService;
     private final StripeWebhookProcessor webhookProcessor;
     private final StripeEventLogRepository eventLogRepository;
     private final StripeEventIdempotencyService idempotencyService;
@@ -103,11 +101,14 @@ public class StripeWebhookController {
             // 5️⃣ PROCESSAR EVENTO (com isolamento de tenant)
             // ============================================================
             try {
-                // 🔥 Use tenantUuid directly (not string tenantId)
+                // 🔥 TenantContext.setTenant() expects UUID (not String)
+                // Only set if we have a valid tenant UUID
                 if (tenantUuid != null) {
-                    TenantContext.setTenant(tenantUuid.toString());
+                    TenantContext.setTenant(tenantUuid);  // Pass UUID directly
                 } else {
-                    TenantContext.setTenant("public");
+                    // For public webhooks without tenant context, skip setTenant
+                    // (TenantContext will not be set, operations will fail if they require tenant)
+                    log.debug("No tenant context available for webhook processing");
                 }
 
                 webhookProcessor.process(event);
@@ -185,29 +186,6 @@ public class StripeWebhookController {
             log.error("[WEBHOOK] Error resolving tenant for customer {}: {}", customerId, e.getMessage());
             return null;
         }
-    }
-
-    /**
-     * Extrai o ID do customer do evento Stripe.
-     * Suporta múltiplos tipos de objetos.
-     * 
-     * @deprecated Use StripeEventJsonExtractor.getString(dataObject, "customer") instead
-     */
-    @Deprecated
-    private String extractCustomerIdFromEvent(Event event) {
-        try {
-            if (event.getData() != null && event.getData().getObject() != null) {
-                Object obj = event.getData().getObject();
-
-                if (obj instanceof com.stripe.model.Customer c) return c.getId();
-                if (obj instanceof com.stripe.model.Charge c) return c.getCustomer();
-                if (obj instanceof com.stripe.model.Invoice i) return i.getCustomer();
-                if (obj instanceof com.stripe.model.Subscription s) return s.getCustomer();
-            }
-        } catch (Exception e) {
-            log.debug("Could not extract customer ID from event", e);
-        }
-        return "unknown";
     }
 
     /**

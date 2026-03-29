@@ -88,18 +88,20 @@ public class JwtService implements InitializingBean {
 
     /* ====================================================== */
 
-    public JwtToken generateToken(User user, String tenantSchema) {
+    public JwtToken generateToken(User user, String tenantUUID) {
 
         validateUser(user);
-        validateTenant(tenantSchema);
+        validateTenant(tenantUUID);
 
         Instant now = Instant.now(clock);
         Instant expiresAt = now.plusMillis(expirationMillis);
         String tokenId = UUID.randomUUID().toString();
         
         logger.info("GENERATING NEW JWT TOKEN: user={}, tokenId={}, tenant={}", 
-            user.getEmail(), tokenId, tenantSchema);
+            user.getEmail(), tokenId, tenantUUID);
 
+        // ✅ CRITICAL FIX: Store tenant as String in JWT but validate it first
+        // Never manipulate UUID strings - serialize directly
         String token = Jwts.builder()
                 .setId(tokenId)
                 .setSubject(user.getEmail())
@@ -108,7 +110,7 @@ public class JwtService implements InitializingBean {
                 .setExpiration(Date.from(expiresAt))
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().getName())
-                .claim("tenant", tenantSchema)
+                .claim("tenant", tenantUUID)  // Store exactly as-is, no manipulation
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
@@ -120,27 +122,28 @@ public class JwtService implements InitializingBean {
      * Generate token for refresh - generates a NEW tokenId for each refresh
      * This prevents collisions and allows proper session rotation
      */
-    public JwtToken generateTokenForRefresh(User user, String tenantSchema) {
+    public JwtToken generateTokenForRefresh(User user, String tenantUUID) {
 
         validateUser(user);
-        validateTenant(tenantSchema);
+        validateTenant(tenantUUID);
 
         Instant now = Instant.now(clock);
         Instant expiresAt = now.plusMillis(expirationMillis);
-        String newTokenId = UUID.randomUUID().toString();  // 🔥 CRITICAL: Generate NEW tokenId, never reuse
+        String newTokenId = UUID.randomUUID().toString();
         
-        logger.info("🔐 REFRESHING JWT TOKEN: user={}, newTokenId={}, tenant={}", 
-            user.getEmail(), newTokenId, tenantSchema);
+        logger.info("REFRESHING JWT TOKEN: user={}, newTokenId={}, tenant={}", 
+            user.getEmail(), newTokenId, tenantUUID);
 
+        // ✅ CRITICAL FIX: Store tenant exactly as provided, no manipulation
         String token = Jwts.builder()
-                .setId(newTokenId)  // ✅ Use new tokenId instead of reusing
+                .setId(newTokenId)
                 .setSubject(user.getEmail())
                 .setIssuer(issuer)
                 .setIssuedAt(Date.from(now))
                 .setExpiration(Date.from(expiresAt))
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().getName())
-                .claim("tenant", tenantSchema)
+                .claim("tenant", tenantUUID)  // No manipulation
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
@@ -269,8 +272,16 @@ public class JwtService implements InitializingBean {
     }
 
     public String extractTenant(String token) {
-        return extractClaim(token,
+        String tenant = extractClaim(token,
                 claims -> claims.get("tenant", String.class));
+        
+        // ✅ CRITICAL VALIDATION: Verify tenant extracted from JWT is valid UUID format
+        if (tenant != null && !tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+            logger.error("CRITICAL: Invalid UUID format extracted from JWT tenant claim: {}", tenant);
+            throw new IllegalArgumentException("JWT contains malformed tenant UUID");
+        }
+        
+        return tenant;
     }
 
     public String extractTokenId(String token) {

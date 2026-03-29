@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import java.util.Base64;
+import java.util.UUID;
 
 import com.leadflow.backend.service.notification.SendGridEmailService;
 import com.leadflow.backend.multitenancy.context.TenantContext;
@@ -71,7 +72,7 @@ public class PasswordResetService {
         }
 
         String normalizedEmail = email.trim().toLowerCase();
-        String tenant = TenantContext.requireTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         return userRepository
                 .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)

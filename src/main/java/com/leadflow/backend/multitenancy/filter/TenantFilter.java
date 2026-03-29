@@ -80,7 +80,7 @@ public class TenantFilter extends OncePerRequestFilter {
 
         logger.debug("TenantFilter executing for path: {}", request.getRequestURI());
 
-        String tenant = null;
+        java.util.UUID tenant = null;
 
         try {
 
@@ -89,15 +89,31 @@ public class TenantFilter extends OncePerRequestFilter {
                Cada request começa limpo - threads são reutilizadas!
                ============================================= */
 
-            TenantContext.clear();
+            com.leadflow.backend.multitenancy.context.TenantContext.clear();
 
             /* =============================================
-               RESOLVE TENANT
+               🔒 SECURITY: If JWT present, skip tenant resolution from header
+               JWT will be the sole source of truth (set by JwtAuthenticationFilter)
+               ============================================= */
+            
+            String authHeader = request.getHeader("Authorization");
+            boolean hasJwt = authHeader != null && authHeader.startsWith("Bearer ");
+            
+            if (hasJwt) {
+                // 🔒 Skip header-based tenant resolution when JWT is present
+                // JwtAuthenticationFilter will set the tenant from JWT (authoritative source)
+                logger.debug("JWT detected - skipping header-based tenant resolution, deferring to JwtAuthenticationFilter");
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            /* =============================================
+               RESOLVE TENANT (only for non-JWT requests)
                ============================================= */
 
             tenant = tenantResolver.resolveTenant(request);
 
-            if (tenant == null || tenant.isBlank()) {
+            if (tenant == null) {
 
                 logger.warn("Tenant not resolved for path: {}", request.getRequestURI());
 
@@ -109,24 +125,20 @@ public class TenantFilter extends OncePerRequestFilter {
             }
 
             logger.debug(
-                    "Tenant resolved: {}",
-                    LogSanitizer.sanitize(tenant)
+                    "Tenant resolved from header: {}",
+                    tenant
             );
 
             /* =============================================
                SET CONTEXT (ÚNICA RESPONSABILIDADE)
                ============================================= */
 
-            TenantContext.setTenant(tenant);
+            com.leadflow.backend.multitenancy.context.TenantContext.setTenant(tenant);
             
             logger.info("🎯 [TENANT-CONTEXT] SET for request: path={}, tenant={}, threadId={}", 
                 request.getRequestURI(), 
-                LogSanitizer.sanitize(tenant),
+                tenant,
                 Thread.currentThread().getId());
-            
-            // ✅ Multi-tenancy is enforced via explicit tenantId parameter in queries
-            // ✅ NOT via Hibernate Filter (non-deterministic, session-dependent)
-            // ✅ TenantContext is available for audit/logging only
 
             filterChain.doFilter(request, response);
 

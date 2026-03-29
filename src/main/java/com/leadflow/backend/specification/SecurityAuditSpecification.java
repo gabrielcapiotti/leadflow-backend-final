@@ -42,8 +42,8 @@ public final class SecurityAuditSpecification {
             if (tenant != null && !tenant.isBlank()) {
                 predicates.add(
                         cb.equal(
-                                cb.lower(root.get("tenant")),
-                                tenant.trim().toLowerCase()
+                                root.get("tenant"),
+                                tenant
                         )
                 );
             }

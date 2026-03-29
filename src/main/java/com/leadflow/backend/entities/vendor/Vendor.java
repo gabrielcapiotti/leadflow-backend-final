@@ -54,8 +54,8 @@ public class Vendor {
     @Column(nullable = false)
     private String userEmail;
 
-    @Column(nullable = false, length = 63, updatable = false)
-    private String tenantId;
+    @Column(nullable = false, updatable = false)
+    private UUID tenantId;
 
     @Column(nullable = false)
     private boolean emailInvalid = false;
@@ -79,7 +79,7 @@ public class Vendor {
         this.updatedAt = now;
         
         // Fail-fast: tenant_id MUST be set before persistence
-        if (this.tenantId == null || this.tenantId.trim().isEmpty()) {
+        if (this.tenantId == null) {
             throw new IllegalArgumentException(
                 "SECURITY: tenant_id cannot be null - missing X-Tenant-Id context"
             );
@@ -263,11 +263,12 @@ public class Vendor {
         this.subscriptionStatus = SubscriptionStatus.valueOf(statusAssinatura.toUpperCase());
     }
 
-    public String getTenantId() {
+    public UUID getTenantId() {
         return tenantId;
     }
 
-    public void setTenantId(String tenantId) {
+    public void setTenantId(UUID tenantId) {
+        if (tenantId == null) throw new IllegalArgumentException("tenantId cannot be null");
         this.tenantId = tenantId;
     }
 

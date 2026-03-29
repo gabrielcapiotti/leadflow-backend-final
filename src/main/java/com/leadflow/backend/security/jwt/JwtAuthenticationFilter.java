@@ -107,7 +107,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             }
 
             /* =====================================================
-               TENANT CONTEXT SETUP (EARLY)
+               TENANT CONTEXT SETUP (FROM JWT - AUTHORITATIVE SOURCE)
+               🔒 JWT is the sole source of truth for tenant
                ===================================================== */
             String tenant = jwtService.extractTenant(token);
             
@@ -117,25 +118,61 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            // ✅ Validate JWT tenant matches request context tenant (set by TenantFilter)
-            String tenantFromContext = TenantContext.getTenant();
-
-            if (!tenant.equals(tenantFromContext)) {
-                logger.warn(
-                        "JWT tenant mismatch: JWT={} | Context={} | path={}",
-                        LogSanitizer.sanitize(tenant),
-                        LogSanitizer.sanitize(tenantFromContext),
-                        request.getRequestURI()
-                );
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant");
+            // ✅ CRITICAL VALIDATION: Verify tenant format before UUID conversion
+            if (!tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+                logger.error("CRITICAL: Invalid UUID format in JWT tenant after extraction: {}", LogSanitizer.sanitize(tenant));
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant format in token");
                 return;
             }
 
+            UUID tenantId;
+            try {
+                tenantId = UUID.fromString(tenant);
+                // ✅ VALIDATION: Verify UUID was correctly reconstructed from String
+                String reconstructed = tenantId.toString();
+                if (!reconstructed.equals(tenant)) {
+                    logger.error("CRITICAL: UUID mismatch after conversion! Original: {} | Reconstructed: {}", 
+                        LogSanitizer.sanitize(tenant), LogSanitizer.sanitize(reconstructed));
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Tenant format validation failed");
+                    return;
+                }
+            } catch (IllegalArgumentException e) {
+                logger.error("CRITICAL: Failed to parse UUID from JWT tenant: {} | Error: {}", 
+                    LogSanitizer.sanitize(tenant), e.getMessage());
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant format");
+                return;
+            }
+
+            // 🔒 FORCE JWT tenant as authoritative - overwrites any header-based value
+            // This prevents header-based tenant switching attacks
+            // ✅ By now, tenantId has been triple-validated: format check, UUID.fromString(), roundtrip test
+            TenantContext.setTenant(tenantId);
+            
             logger.debug(
-                    "AUTH CONTEXT | email={} | tenant={}",
+                    "🔒 AUTH CONTEXT SET (from JWT) | email={} | tenant={}",
                     LogSanitizer.sanitize(email),
                     LogSanitizer.sanitize(tenant)
             );
+
+            /* =====================================================
+               🔒 SECURITY: DETECT HEADER MISMATCH ATTACK
+               If X-Tenant-ID header present and differs from JWT tenant,
+               reject with 403 Forbidden (explicit header switch attempt)
+               ===================================================== */
+            String headerTenant = request.getHeader("X-Tenant-ID");
+            if (headerTenant != null && !headerTenant.isBlank()) {
+                // Header present - validate it matches JWT tenant
+                if (!headerTenant.equalsIgnoreCase(tenant)) {
+                    logger.warn(
+                            "🔒 SECURITY: Tenant mismatch attack detected | JWT tenant: {} | header tenant: {} | email: {}",
+                            LogSanitizer.sanitize(tenant),
+                            LogSanitizer.sanitize(headerTenant),
+                            LogSanitizer.sanitize(email)
+                    );
+                    response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant mismatch: header does not match JWT");
+                    return;
+                }
+            }
 
             /* =====================================================
                LOAD USER (WITH CONTEXT)
@@ -174,7 +211,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 userSessionService.processSessionActivity(
                         tokenId,
-                        tenant,
+                        tenantId,
                         request.getRemoteAddr(),
                         request.getHeader("User-Agent")
                 );

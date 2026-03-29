@@ -30,7 +30,6 @@ public class BillingDashboardService {
     private final UsageLimitRepository usageLimitRepository;
     private final PlanRepository planRepository;
     private final StripeService stripeService;
-    private final PlanService planService;
 
     // =====================================================
     // ENTRYPOINT (PADRÃO CORRETO)
@@ -79,17 +78,13 @@ public class BillingDashboardService {
 
     private UUID resolveTenant() {
 
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
 
-        if (tenant == null || tenant.isBlank()) {
+        if (tenant == null) {
             throw new IllegalStateException("Tenant not found in context");
         }
 
-        try {
-            return UUID.fromString(tenant);
-        } catch (IllegalArgumentException ex) {
-            throw new IllegalStateException("Invalid tenant format: " + tenant);
-        }
+        return tenant;
     }
 
     /**

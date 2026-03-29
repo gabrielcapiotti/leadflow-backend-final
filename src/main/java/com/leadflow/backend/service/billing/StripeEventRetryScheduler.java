@@ -117,7 +117,7 @@ public class StripeEventRetryScheduler {
             }
 
             // Definir contexto do tenant
-            TenantContext.setTenant(tenantId.toString());
+            TenantContext.setTenant(tenantId);
 
             try {
                 // Buscar eventos prontos para retry APENAS DESTE TENANT

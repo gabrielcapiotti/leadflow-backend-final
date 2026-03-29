@@ -63,19 +63,19 @@ public class TenantResolver {
      * NO FALLBACK to header in authenticated endpoints
      * 
      * @param request HttpServletRequest with headers
-     * @return tenantSchema from JWT (if authenticated)
+     * @return tenantId UUID from JWT (if authenticated)
      * @throws ResponseStatusException if mismatch detected or tenant cannot be resolved
      */
-    public String resolveTenant(HttpServletRequest request) {
+    public java.util.UUID resolveTenant(HttpServletRequest request) {
 
         // Step 1: Try JWT token (ONLY source of truth for authenticated requests)
-        String tenantFromJwt = extractTenantFromJwt(request);
+        java.util.UUID tenantFromJwt = extractTenantFromJwt(request);
         
-        if (tenantFromJwt != null && !tenantFromJwt.isBlank()) {
+        if (tenantFromJwt != null) {
             // ✅ JWT FOUND - validate header STRICTLY
-            String tenantFromHeader = extractTenantFromHeader(request);
+            java.util.UUID tenantFromHeader = extractTenantFromHeader(request);
             
-            if (tenantFromHeader != null && !tenantFromHeader.isBlank()) {
+            if (tenantFromHeader != null) {
                 // Both JWT and header present - must match exactly
                 if (!tenantFromJwt.equals(tenantFromHeader)) {
                     logger.error("SECURITY BREACH ATTEMPT: Tenant mismatch: JWT={} vs HEADER={}", 
@@ -93,15 +93,15 @@ public class TenantResolver {
         }
 
         // Step 2: No JWT - check header (for public endpoints only)
-        String tenantFromHeader = extractTenantFromHeader(request);
-        if (tenantFromHeader != null && !tenantFromHeader.isBlank()) {
+        java.util.UUID tenantFromHeader = extractTenantFromHeader(request);
+        if (tenantFromHeader != null) {
             // Header only acceptable if no JWT present (public endpoints)
             return tenantFromHeader;
         }
 
         // Step 3: Fallback for development environment (ONLY in dev/test)
         if (isDevEnvironment()) {
-            return "public";
+            return java.util.UUID.fromString("00000000-0000-0000-0000-000000000000");
         }
 
         // Step 4: No tenant found - error
@@ -112,36 +112,48 @@ public class TenantResolver {
     }
 
     /**
-     * Extract tenant from headers with case-insensitive fallback
+     * Extract tenant from headers with strict UUID validation
      * 
-     * Tries multiple variations:
+     * Tries multiple header variations:
      * 1. X-Tenant-ID (standard)
      * 2. X-Tenant-Id (common variation)
      * 3. x-tenant-id (lowercase)
      * 
      * @param request HttpServletRequest
-     * @return tenant value or null if not found
+     * @return UUID tenant identifier or null if not found/invalid
      */
-    private String extractTenantFromHeader(HttpServletRequest request) {
+    private java.util.UUID extractTenantFromHeader(HttpServletRequest request) {
         // Try standard case
         String tenant = request.getHeader("X-Tenant-ID");
         if (tenant != null && !tenant.isBlank()) {
-            return tenant;
+            return parseUUID(tenant);
         }
         
         // Try mixed case
         tenant = request.getHeader("X-Tenant-Id");
         if (tenant != null && !tenant.isBlank()) {
-            return tenant;
+            return parseUUID(tenant);
         }
         
         // Try lowercase
         tenant = request.getHeader("x-tenant-id");
         if (tenant != null && !tenant.isBlank()) {
-            return tenant;
+            return parseUUID(tenant);
         }
         
         return null;
+    }
+
+    /**
+     * Parse String to UUID with error handling
+     */
+    private java.util.UUID parseUUID(String value) {
+        try {
+            return java.util.UUID.fromString(value.trim());
+        } catch (IllegalArgumentException e) {
+            logger.warn("Invalid UUID format in header: {}", value);
+            return null;
+        }
     }
 
     /**
@@ -159,12 +171,12 @@ public class TenantResolver {
     }
 
     /**
-     * Extract tenant from JWT token
+     * Extract tenant UUID from JWT token
      * 
      * @param request HttpServletRequest with Authorization header
-     * @return tenant from JWT claims, or null if JWT not found/invalid
+     * @return tenant UUID from JWT claims, or null if JWT not found/invalid
      */
-    private String extractTenantFromJwt(HttpServletRequest request) {
+    private java.util.UUID extractTenantFromJwt(HttpServletRequest request) {
         String token = extractJwtToken(request);
 
         if (token == null) {
@@ -172,9 +184,11 @@ public class TenantResolver {
         }
 
         try {
-            return jwtService.extractTenant(token);
+            String tenantStr = jwtService.extractTenant(token);
+            return java.util.UUID.fromString(tenantStr);
         } catch (Exception e) {
             // JWT extraction failed, fall back to header
+            logger.debug("Failed to extract tenant from JWT: {}", e.getMessage());
             return null;
         }
     }

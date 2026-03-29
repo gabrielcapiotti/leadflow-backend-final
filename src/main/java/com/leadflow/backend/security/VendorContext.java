@@ -47,9 +47,9 @@ public class VendorContext {
         // ✅ Normalizar email: lowercase + trim (deve ser igual ao que foi salvo em Vendor)
         String normalizedEmail = email.trim().toLowerCase();
 
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
         
-        if (tenant == null || tenant.isBlank()) {
+        if (tenant == null) {
             throw new UnauthorizedException("Tenant context not resolved - cannot lookup vendor");
         }
 

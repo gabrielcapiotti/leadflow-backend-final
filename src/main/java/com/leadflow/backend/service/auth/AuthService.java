@@ -73,16 +73,16 @@ public class AuthService {
     /* ====================================================== */
 
     @Transactional
-    public User registerUser(String name, String email, String password, String tenant) {
+    public User registerUser(String name, String email, String password, java.util.UUID tenantId) {
 
         validateInput(name, email, password);
 
         String normalizedEmail = normalizeEmail(email);
 
         if (userRepository
-                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)) {
+                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenantId)) {
 
-            audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, false);
+            audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenantId.toString(), false);
             throw new UnauthorizedException("Email already in use");
         }
 
@@ -98,16 +98,16 @@ public class AuthService {
                 passwordEncoder.encode(password),
                 userRole
         );
-        user.setTenantId(tenant);
+        user.setTenantId(tenantId);
 
         User savedUser = userRepository.saveAndFlush(user); // 🔥 saveAndFlush garante visibilidade imediata
 
         // 🔥 CRÍTICO: Criar Vendor associado ao usuário
         vendorService.createVendor(savedUser);
 
-        logger.info("User registered successfully: {} (tenant={})", normalizedEmail, tenant);
+        logger.info("User registered successfully: {} (tenant={})", normalizedEmail, tenantId);
 
-        audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, true);
+        audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenantId.toString(), true);
 
         return savedUser;
     }
@@ -117,16 +117,16 @@ public class AuthService {
     /* ====================================================== */
 
     @Transactional
-    public User registerAdmin(String name, String email, String password, String tenant) {
+    public User registerAdmin(String name, String email, String password, java.util.UUID tenantId) {
 
         validateInput(name, email, password);
 
         String normalizedEmail = normalizeEmail(email);
 
         if (userRepository
-                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)) {
+                .existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenantId)) {
 
-            audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, false);
+            audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenantId.toString(), false);
             throw new UnauthorizedException("Email already in use");
         }
 
@@ -144,16 +144,16 @@ public class AuthService {
                 passwordEncoder.encode(password),
                 adminRole
         );
-        user.setTenantId(tenant);
+        user.setTenantId(tenantId);
 
         User savedUser = userRepository.saveAndFlush(user);
 
         // 🔥 CRÍTICO: Criar Vendor associado ao usuário admin
         vendorService.createVendor(savedUser);
 
-        logger.info("🔑 ADMIN user registered successfully: {} (tenant={})", normalizedEmail, tenant);
+        logger.info("🔑 ADMIN user registered successfully: {} (tenant={})", normalizedEmail, tenantId);
 
-        audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenant, true);
+        audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenantId.toString(), true);
 
         return savedUser;
     }
@@ -204,7 +204,7 @@ public class AuthService {
                 });
 
         // ✅ Extract tenant from user - this is THE authority
-        final String tenantContext = user.getTenantId();
+        final String tenantContext = user.getTenantId().toString();
 
         if (user.isAccountLocked()) {
 
@@ -278,7 +278,7 @@ public class AuthService {
         try {
             HttpServletRequest request = currentRequest();
 
-            String auditTenant = tenant != null ? tenant : TenantContext.getIfPresent();
+            String auditTenant = tenant != null ? tenant : TenantContext.getIfPresent() != null ? TenantContext.getIfPresent().toString() : null;
 
             auditService.log(
                     action,
@@ -334,7 +334,7 @@ public class AuthService {
         }
 
         String normalizedEmail = normalizeEmail(email);
-        String tenant = TenantContext.requireTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         User user = userRepository
                 .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(normalizedEmail, tenant)
@@ -357,7 +357,7 @@ public class AuthService {
             );
         }
 
-        String tenant = TenantContext.requireTenant();
+        UUID tenant = TenantContext.requireTenant();
 
         User user = userRepository
                 .findByIdAndTenantIdAndDeletedAtIsNull(userId, tenant)
@@ -369,8 +369,9 @@ public class AuthService {
         logger.info("Password changed for user: {}", user.getEmail());
         audit(SecurityAction.PASSWORD_CHANGED, user.getEmail(), true);
 
-        // � Revoga TODAS as sessões (incluindo a atual)
-        userSessionService.revokeAllUserSessions(userId, tenant);
+        // Revoga TODAS as sessoes
+        UUID tenantId = UUID.fromString(tenant.toString());
+        userSessionService.revokeAllUserSessions(userId, tenantId);
         logger.info("All sessions revoked for user after password change: {}", user.getEmail());
 
         // ✅ NÃO lança exception aqui

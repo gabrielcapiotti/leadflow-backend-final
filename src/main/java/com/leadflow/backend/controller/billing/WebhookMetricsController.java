@@ -20,15 +20,12 @@ import java.util.*;
 @Slf4j
 public class WebhookMetricsController {
 
-    private final WebhookMetricsTracker metricsTracker;
     private final StripeEventLogRepository eventLogRepository;
     private final MeterRegistry meterRegistry;
 
     public WebhookMetricsController(
-            WebhookMetricsTracker metricsTracker,
             StripeEventLogRepository eventLogRepository,
             MeterRegistry meterRegistry) {
-        this.metricsTracker = metricsTracker;
         this.eventLogRepository = eventLogRepository;
         this.meterRegistry = meterRegistry;
     }

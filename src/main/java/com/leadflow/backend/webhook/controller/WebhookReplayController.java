@@ -41,7 +41,6 @@ public class WebhookReplayController {
     private final WebhookReplayService webhookReplayService;
     private final WebhookTenantValidator tenantValidator;
 
-    @Autowired
     public WebhookReplayController(
             WebhookReplayService webhookReplayService,
             WebhookTenantValidator tenantValidator) {
@@ -172,7 +171,7 @@ public class WebhookReplayController {
                 return ResponseEntity.notFound().build();
             }
             
-            String tenantId = TenantContext.getTenant();
+            String tenantId = TenantContext.getTenant().toString();
             
             // Validate webhook belongs to current tenant
             tenantValidator.validateFailedWebhookTenant(webhookId, tenantId);
@@ -242,7 +241,7 @@ public class WebhookReplayController {
 
         log.info("Delete requested for webhook: {}", webhookId);
         try {
-            String tenantId = TenantContext.getTenant();
+            String tenantId = TenantContext.getTenant().toString();
             
             // Validate webhook belongs to current tenant
             tenantValidator.validateFailedWebhookTenant(webhookId, tenantId);

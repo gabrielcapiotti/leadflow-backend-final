@@ -13,6 +13,8 @@ import jakarta.transaction.Transactional;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
+import java.util.Optional;
+
 import org.springframework.stereotype.Service;
 
 import java.util.Locale;
@@ -43,9 +45,9 @@ public class VendorService {
 
     @Transactional
     public Vendor createVendor(User user) {
-        // 🔥 CRÍTICO: Chave de lookup = (email + tenantId) para isolamento multi-tenant
+        // CRITICAL: Chave de lookup = (email + tenantId) para isolamento multi-tenant
         // Antes fazia lookup por email APENAS, causando vendor leakage entre tenants
-        var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCaseAndTenantId(
+        Optional<Vendor> existingVendor = vendorRepository.findFirstByUserEmailIgnoreCaseAndTenantId(
                 normalizeEmail(user.getEmail()),
                 user.getTenantId()
         );
@@ -72,11 +74,11 @@ public class VendorService {
         }
 
         // 🔥 CRÍTICO: Validar tenantId ANTES de converter para UUID
-        if (user.getTenantId() == null || user.getTenantId().isBlank()) {
-            throw new IllegalStateException("User tenantId is null or blank - cannot create vendor");
+        if (user.getTenantId() == null) {
+            throw new IllegalStateException("User tenantId is null - cannot create vendor");
         }
 
-        UUID tenantUUID = UUID.fromString(user.getTenantId());
+        UUID tenantUUID = user.getTenantId();
         
         // 🔥 CRÍTICO: Verificar se vendor já existe (concorrência)
         if (vendorRepository.existsById(tenantUUID)) {
@@ -130,13 +132,13 @@ public class VendorService {
         }
 
         String normalizedEmail = normalizeEmail(email);
-        String tenantId = TenantContext.getTenant();
+        UUID tenantId = TenantContext.getTenant();
         
-        if (tenantId == null || tenantId.isBlank()) {
+        if (tenantId == null) {
             throw new IllegalStateException("Tenant context is not available");
         }
         
-        // 🔥 CRÍTICO: Chave de lookup = (email + tenantId) para isolamento multi-tenant
+        // CRITICAL: Chave de lookup = (email + tenantId) para isolamento multi-tenant
         var existingVendor = vendorRepository.findFirstByUserEmailIgnoreCaseAndTenantId(normalizedEmail, tenantId);
         if (existingVendor.isPresent()) {
             return existingVendor.get();

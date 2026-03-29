@@ -50,7 +50,7 @@ public class Lead {
         }
         // Automatically set tenant from TenantContext
         if (tenantId == null) {
-            this.tenantId = TenantContext.requireTenant();
+            this.tenantId = TenantContext.requireTenant().toString();
         }
     }
 

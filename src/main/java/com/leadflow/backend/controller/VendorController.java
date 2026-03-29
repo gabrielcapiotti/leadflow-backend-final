@@ -16,12 +16,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
-import java.util.logging.Logger;
 
 @RestController
 @RequestMapping(value = {"/vendors", "/api/vendors"})
@@ -32,7 +32,7 @@ public class VendorController {
     private final UsageService usageService;
     private final QuotaService quotaService;
     private final PlanService planService;
-    private static final Logger logger = Logger.getLogger(VendorController.class.getName());
+    private static final Logger logger = LoggerFactory.getLogger(VendorController.class);
 
     public VendorController(
             VendorRepository repository,
@@ -69,7 +69,7 @@ public class VendorController {
             @RequestParam(required = false) String user_email,
             @RequestParam(required = false) String slug
     ) {
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
 
         if (user_email != null) {
             return repository.findByUserEmailAndTenantId(user_email, tenant);
@@ -90,7 +90,7 @@ public class VendorController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Vendor> getById(@PathVariable UUID id) {
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
         return repository.findByIdAndTenantId(id, tenant)
                 .map(ResponseEntity::ok)
                 .orElseGet(() -> ResponseEntity.notFound().build());
@@ -103,27 +103,18 @@ public class VendorController {
     @PostMapping
     @Transactional
     public ResponseEntity<?> create(@RequestBody @NonNull CreateVendorRequest req) {
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
         
-        if (tenant == null || tenant.isBlank()) {
+        if (tenant == null) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Tenant context required");
         }
 
-        // 🔥 CRÍTICO: Vendor.id = tenantId significa 1:1
-        // Se vendor já existe para este tenant, retornar 409 CONFLICT
-        UUID tenantUUID;
-        try {
-            tenantUUID = UUID.fromString(tenant);
-        } catch (IllegalArgumentException e) {
-            // Public tenant é named, não UUID
-            // Usar um hash do tenant name como ID determinístico
-            tenantUUID = UUID.nameUUIDFromBytes(tenant.getBytes());
-        }
-        
-        // 🔥 IDEMPOTÊNCIA: Se vendor já existe para este tenant, retornar existente
-        var existingVendor = repository.findByIdAndTenantId(tenantUUID, tenant);
+        // CRITICAL: Vendor.id = tenantId means 1:1 relationship
+        // If vendor already exists for this tenant, return 409 CONFLICT
+        // IDEMPOTENCY: If vendor already exists for this tenant, return existing
+        var existingVendor = repository.findByIdAndTenantId(tenant, tenant);
         if (existingVendor.isPresent()) {
-            logger.info("⚠️ Vendor already exists for tenant: " + tenant + ", returning 409 CONFLICT");
+            logger.info("⚠️ Vendor already exists for tenant: {}, returning 409 CONFLICT", String.valueOf(tenant));
             throw new ResponseStatusException(
                 HttpStatus.CONFLICT, 
                 "Vendor already exists for this tenant"
@@ -138,9 +129,9 @@ public class VendorController {
             );
         }
 
-        // 🔒 Construir vendor apenas com campos seguros
+        // Construir vendor apenas com campos seguros
         Vendor vendor = new Vendor();
-        vendor.setId(tenantUUID); // 🔥 CRÍTICO: Alinhamento de identidade
+        vendor.setId(tenant);
         vendor.setTenantId(tenant);
         vendor.setSlug(req.slug());
         vendor.setName(req.name());
@@ -169,10 +160,10 @@ public class VendorController {
             quotaService.initializePlanLimits(saved.getId());
             trialService.enableTrialFeatures(saved);
             
-            logger.info("✅ Vendor created successfully: " + saved.getId());
+            logger.info("✅ Vendor created successfully: {}", saved.getId());
             return ResponseEntity.status(HttpStatus.CREATED).body(saved);
         } catch (Exception e) {
-            logger.severe("❌ Error creating vendor: " + e.getMessage());
+            logger.error("❌ Error creating vendor: {}", e.getMessage(), e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create vendor", e);
         }
     }
@@ -186,7 +177,7 @@ public class VendorController {
             @PathVariable @NonNull UUID id,
             @RequestBody @NonNull Vendor data
     ) {
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
 
         Vendor vendor = repository
                 .findByIdAndTenantId(id, tenant)
@@ -213,7 +204,7 @@ public class VendorController {
     @DeleteMapping("/{id}")
     public void delete(@PathVariable UUID id) {
 
-        String tenant = TenantContext.getTenant();
+        UUID tenant = TenantContext.getTenant();
 
         Vendor vendor = repository
                 .findByIdAndTenantId(id, tenant)

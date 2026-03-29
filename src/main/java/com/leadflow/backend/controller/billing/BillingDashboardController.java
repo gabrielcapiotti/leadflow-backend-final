@@ -272,14 +272,12 @@ public class BillingDashboardController {
 
     private UUID resolveTenantSafe() {
         try {
-            String tenantString = com.leadflow.backend.multitenancy.context.TenantContext.getTenant();
-            
-            if (tenantString == null || tenantString.isBlank()) {
-                log.warn("TenantContext returned null/blank tenant");
-                return null;
-            }
-            
-            return UUID.fromString(tenantString);
+            // ✅ TenantContext.getTenant() returns UUID (not String)
+            return com.leadflow.backend.multitenancy.context.TenantContext.getTenant();
+        } catch (IllegalStateException e) {
+            // Tenant not set in thread (no authenticated user)
+            log.debug("No tenant in context: {}", e.getMessage());
+            return null;
         } catch (Exception e) {
             log.error("Failed to resolve tenant from TenantContext", e);
             return null;

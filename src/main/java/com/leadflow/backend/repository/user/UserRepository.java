@@ -16,18 +16,18 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     Optional<User> findByIdAndDeletedAtIsNull(UUID id);
 
-    Optional<User> findByIdAndTenantIdAndDeletedAtIsNull(UUID id, String tenantId);
+    Optional<User> findByIdAndTenantIdAndDeletedAtIsNull(UUID id, UUID tenantId);
 
     Optional<User> findByEmailIgnoreCaseAndDeletedAtIsNull(String email);
 
     Optional<User> findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
             String email,
-            String tenantId
+            UUID tenantId
     );
 
     boolean existsByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
             String email,
-            String tenantId
+            UUID tenantId
     );
 
     Page<User> findAllByDeletedAtIsNull(Pageable pageable);

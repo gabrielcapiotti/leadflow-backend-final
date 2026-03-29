@@ -46,28 +46,14 @@ public class UserSessionService {
     }
 
     /* ======================================================
-       TENANT ID CONVERSION HELPER
-       ====================================================== */
-
-    private UUID toTenantUUID(String tenantId) {
-        try {
-            return UUID.fromString(tenantId);
-        } catch (Exception e) {
-            throw new UnauthorizedException("Invalid tenantId (must be UUID): " + tenantId);
-        }
-    }
-
-    /* ======================================================
        DEVICE LIMIT ENFORCEMENT
        ====================================================== */
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    private void enforceDeviceLimit(UUID userId, String tenantId) {
-
-        UUID tenantUuid = toTenantUUID(tenantId);
+    private void enforceDeviceLimit(UUID userId, UUID tenantId) {
 
         long activeCount =
-                repository.countByUserIdAndTenantIdAndActiveTrue(userId, tenantUuid);
+                repository.countByUserIdAndTenantIdAndActiveTrue(userId, tenantId);
 
         if (activeCount < maxDevices) {
             return;
@@ -76,7 +62,7 @@ public class UserSessionService {
         List<UserSession> activeSessions =
                 repository.findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtAsc(
                         userId,
-                        tenantUuid
+                        tenantId
                 );
 
         int sessionsToRemove = (int) (activeCount - maxDevices + 1);
@@ -98,7 +84,7 @@ public class UserSessionService {
 
     @Transactional
     public void createSession(UUID userId,
-                              String tenantId,
+                              UUID tenantId,
                               String tokenId,
                               String ipAddress,
                               String userAgent) {
@@ -110,10 +96,16 @@ public class UserSessionService {
         if (tokenId.isBlank()) {
             throw new UnauthorizedException("tokenId cannot be blank");
         }
+        
+        // Validate UUID format
+        String tenantStr = tenantId.toString();
+        if (!tenantStr.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
+            log.error("CRITICAL: Malformed UUID in createSession: {}", tenantStr);
+            throw new IllegalArgumentException("Invalid tenantId format");
+        }
 
-        log.info("🔐 CREATE SESSION: userId={}, tenantId={}, tokenId={}", userId, tenantId, tokenId);
+        log.info("CREATE SESSION: userId={}, tenantId={}, tokenId={}", userId, tenantId, tokenId);
 
-        UUID tenantUuid = toTenantUUID(tenantId);
         enforceDeviceLimit(userId, tenantId);
 
         Instant now = Instant.now(clock);
@@ -121,7 +113,7 @@ public class UserSessionService {
         UserSession session =
                 new UserSession(
                         userId,
-                        tenantUuid,
+                        tenantId,
                         tokenId,
                         ipAddress,
                         userAgent,
@@ -130,7 +122,14 @@ public class UserSessionService {
 
         repository.saveAndFlush(session);
         
-        log.info("SESSION PERSISTED & FLUSHED: sessionId={}, tokenId={}, user={}, tenant={}", 
+        // Verify persisted UUID matches
+        UUID persisted = session.getTenantId();
+        if (!persisted.equals(tenantId)) {
+            log.error("CRITICAL: UUID corruption detected after persistence! Input: {} Output: {}", tenantId, persisted);
+            throw new IllegalStateException("Session persistence corrupted UUID");
+        }
+        
+        log.info("SESSION PERSISTED: sessionId={}, tokenId={}, user={}, tenant={}", 
             session.getId(), tokenId, userId, tenantId);
     }
 
@@ -140,17 +139,15 @@ public class UserSessionService {
 
     @Transactional
     public void processSessionActivity(String tokenId,
-                                       String tenantId,
+                                       UUID tenantId,
                                        String currentIp,
                                        String currentUserAgent) {
 
         log.debug("🔍 PROCESSING SESSION ACTIVITY: tokenId={}, tenantId={}", tokenId, tenantId);
 
-        UUID tenantUuid = toTenantUUID(tenantId);
-
         // ✅ IDEMPOTENT: Treat missing session as already logged out
         UserSession session = repository
-                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantUuid)
+                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId)
                 .orElse(null);
         
         if (session == null) {
@@ -217,7 +214,7 @@ public class UserSessionService {
        ====================================================== */
 
     @Transactional
-    public void revokeSession(String tokenId, String tenantId) {
+    public void revokeSession(String tokenId, UUID tenantId) {
 
         if (tokenId == null || tokenId.isBlank()) {
             throw new ResponseStatusException(
@@ -226,11 +223,9 @@ public class UserSessionService {
             );
         }
 
-        UUID tenantUuid = toTenantUUID(tenantId);
-
         // ✅ IDEMPOTENT: Only revoke if session is active, silently succeed if not found or already revoked
         repository
-                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantUuid)
+                .findByTokenIdAndTenantIdAndActiveTrue(tokenId, tenantId)
                 .ifPresent(session -> {
                     session.revoke(Instant.now(clock));
                     log.debug("✓ Session revoked: {}", session.getId());
@@ -242,26 +237,25 @@ public class UserSessionService {
        ====================================================== */
 
     @Transactional
-    public void revokeAllUserSessions(UUID userId, String tenantId) {
+    public void revokeAllUserSessions(UUID userId, UUID tenantId) {
 
         repository.revokeAllActiveSessions(
                 userId,
-                toTenantUUID(tenantId),
+                tenantId,
                 Instant.now(clock)
         );
     }
-
     /* ======================================================
        VALIDATE SESSION
        ====================================================== */
 
     @Transactional(readOnly = true)
-    public void validateActiveSession(String tokenId, String tenantId) {
+    public void validateActiveSession(String tokenId, UUID tenantId) {
 
         boolean exists =
                 repository.existsByTokenIdAndTenantIdAndActiveTrue(
                         tokenId,
-                        toTenantUUID(tenantId)
+                        tenantId
                 );
 
         if (!exists) {
@@ -274,27 +268,26 @@ public class UserSessionService {
        ====================================================== */
 
     @Transactional(readOnly = true)
-    public List<UserSession> getActiveSessionsForUser(UUID userId, String tenantId) {
+    public List<UserSession> getActiveSessionsForUser(UUID userId, UUID tenantId) {
 
         return repository.findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtDesc(
                 userId,
-                toTenantUUID(tenantId)
+                tenantId
         );
     }
-
     /* ======================================================
        LIST ACTIVE SESSIONS
        ====================================================== */
 
     @Transactional(readOnly = true)
     public List<SessionResponse> listActiveSessions(UUID userId,
-                                                    String tenantId,
+                                                    UUID tenantId,
                                                     String currentTokenId) {
 
         return repository
                 .findByUserIdAndTenantIdAndActiveTrueOrderByCreatedAtDesc(
                         userId,
-                        toTenantUUID(tenantId)
+                        tenantId
                 )
                 .stream()
                 .map(session -> new SessionResponse(
@@ -315,14 +308,14 @@ public class UserSessionService {
     @Transactional
     public void revokeSpecificSession(UUID sessionId,
                                       UUID userId,
-                                      String tenantId,
+                                      UUID tenantId,
                                       String currentTokenId) {
 
         UserSession session = repository
                 .findByIdAndUserIdAndTenantIdAndActiveTrue(
                         sessionId,
                         userId,
-                        toTenantUUID(tenantId)
+                        tenantId
                 )
                 .orElse(null);
         
@@ -351,14 +344,12 @@ public class UserSessionService {
     @Transactional
     public void updateSessionTokenIdAfterRefresh(String oldTokenId,
                                                   String newTokenId,
-                                                  String tenantId) {
+                                                  UUID tenantId) {
         log.info("🔄 UPDATING SESSION AFTER REFRESH: oldTokenId={}, newTokenId={}, tenantId={}", 
             oldTokenId, newTokenId, tenantId);
         
-        UUID tenantUuid = toTenantUUID(tenantId);
-        
         UserSession session = repository
-                .findByTokenIdAndTenantIdAndActiveTrue(oldTokenId, tenantUuid)
+                .findByTokenIdAndTenantIdAndActiveTrue(oldTokenId, tenantId)
                 .orElse(null);
         
         if (session == null) {

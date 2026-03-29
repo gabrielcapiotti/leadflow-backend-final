@@ -59,10 +59,10 @@ public class User {
         }
         
         // 🔒 ETAPA 5: Fail-fast - tenant é OBRIGATÓRIO
-        if (tenantId == null || tenantId.trim().isEmpty()) {
+        if (tenantId == null) {
             throw new IllegalStateException(
                 "User.tenantId is required and cannot be null. " +
-                "Call TenantContext.requireTenant() before saving user."
+                "Must be a valid UUID tenant identifier."
             );
         }
     }
@@ -98,8 +98,8 @@ public class User {
        MULTI-TENANT
        ====================================================== */
 
-    @Column(name = "tenant_id", nullable = false, length = 63)
-    private String tenantId;
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     /* ======================================================
        RELATIONSHIPS
@@ -189,8 +189,11 @@ public class User {
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public int getFailedAttempts() { return failedAttempts; }
     public LocalDateTime getLockUntil() { return lockUntil; }
-    public String getTenantId() { return tenantId; }
-    public void setTenantId(String tenantId) { this.tenantId = tenantId; }
+    public UUID getTenantId() { return tenantId; }
+    public void setTenantId(UUID tenantId) {
+        if (tenantId == null) throw new IllegalArgumentException("tenantId cannot be null");
+        this.tenantId = tenantId;
+    }
 
     /* ======================================================
        DOMAIN METHODS

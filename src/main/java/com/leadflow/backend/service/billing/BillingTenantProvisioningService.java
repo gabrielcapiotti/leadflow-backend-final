@@ -40,7 +40,6 @@ public class BillingTenantProvisioningService {
     private final PaymentEventService paymentEventService;
     private final PaymentCheckoutRequestRepository checkoutRepository;
     private final SubscriptionRepository subscriptionRepository;
-    private final SubscriptionService subscriptionService;
     private final VendorFeatureService vendorFeatureService;
     private final QuotaService quotaService;
     private final PlanService planService;
@@ -69,7 +68,6 @@ public class BillingTenantProvisioningService {
         this.paymentEventService = Objects.requireNonNull(paymentEventService);
         this.checkoutRepository = Objects.requireNonNull(checkoutRepository);
         this.subscriptionRepository = Objects.requireNonNull(subscriptionRepository);
-        this.subscriptionService = Objects.requireNonNull(subscriptionService);
         this.vendorFeatureService = Objects.requireNonNull(vendorFeatureService);
         this.quotaService = Objects.requireNonNull(quotaService);
         this.planService = Objects.requireNonNull(planService);

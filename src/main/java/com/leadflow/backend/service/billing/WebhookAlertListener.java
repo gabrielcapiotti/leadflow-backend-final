@@ -54,7 +54,7 @@ public class WebhookAlertListener {
                         log.warn("Skipping health check for null tenant");
                         continue;
                     }
-                    TenantContext.setTenant(tenantId.toString());
+                    TenantContext.setTenant(tenantId);
                     checkTenantHealth(tenantId);
                 } catch (Exception e) {
                     log.error("Error checking health for tenant {}", tenantId, e);
@@ -97,7 +97,8 @@ public class WebhookAlertListener {
     private void checkCircuitBreakerHealth(UUID tenantId) {
         try {
             if (circuitBreaker.getState() == CircuitBreakerConfig.CircuitState.OPEN) {
-                String stateKey = "CB_OPEN_" + tenantId;
+                // ✅ Safe: constructing cache key, not logging
+                String stateKey = String.format("CB_OPEN_%s", tenantId);
                 LocalDateTime lastChange = lastStateChangeMap.get(stateKey);
 
                 // Only alert once per state change
@@ -230,7 +231,7 @@ public class WebhookAlertListener {
         }
 
         try {
-            TenantContext.setTenant(event.getTenantId().toString());
+            TenantContext.setTenant(event.getTenantId());
 
             // Quick checks on fresh event
             if (event.getRetryCount() != null && event.getRetryCount() >= 5) {

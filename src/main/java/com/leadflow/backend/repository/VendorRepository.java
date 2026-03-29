@@ -38,17 +38,17 @@ public interface VendorRepository extends JpaRepository<Vendor, UUID> {
        TENANT-AWARE LOOKUPS (MULTI-TENANT ISOLATION)
        ====================================================== */
 
-    Optional<Vendor> findByIdAndTenantId(UUID id, String tenantId);
+    Optional<Vendor> findByIdAndTenantId(UUID id, UUID tenantId);
 
-    Optional<Vendor> findBySlugAndTenantId(String slug, String tenantId);
+    Optional<Vendor> findBySlugAndTenantId(String slug, UUID tenantId);
 
-    List<Vendor> findByUserEmailAndTenantId(String email, String tenantId);
+    List<Vendor> findByUserEmailAndTenantId(String email, UUID tenantId);
     
-    Optional<Vendor> findFirstByUserEmailIgnoreCaseAndTenantId(String email, String tenantId);
+    Optional<Vendor> findFirstByUserEmailIgnoreCaseAndTenantId(String email, UUID tenantId);
 
-    List<Vendor> findAllByTenantId(String tenantId);
+    List<Vendor> findAllByTenantId(UUID tenantId);
 
-    boolean existsBySlugAndTenantId(String slug, String tenantId);
+    boolean existsBySlugAndTenantId(String slug, UUID tenantId);
 
     /* ======================================================
        GLOBAL QUERIES (PUBLIC SCHEMA)
