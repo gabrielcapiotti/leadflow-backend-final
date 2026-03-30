@@ -98,8 +98,8 @@ public class UserService {
     @Transactional
     public User updateUser(UUID id, String name, String email, UUID roleId) {
 
-        if (id == null || roleId == null) {
-            throw new IllegalArgumentException("Id and roleId cannot be null");
+        if (id == null) {
+            throw new IllegalArgumentException("Id cannot be null");
         }
 
         if (name == null || name.isBlank()) {
@@ -116,10 +116,14 @@ public class UserService {
 
         User user = getByIdOrThrow(id);
 
-        Role role = roleRepository.findById(roleId)
-                .orElseThrow(() ->
-                        new IllegalArgumentException("Role not found")
-                );
+        // roleId is optional - only update if provided (ADMIN only)
+        if (roleId != null) {
+            Role role = roleRepository.findById(roleId)
+                    .orElseThrow(() ->
+                            new IllegalArgumentException("Role not found")
+                    );
+            user.changeRole(role);
+        }
 
         String normalizedEmail = email.trim().toLowerCase();
 
@@ -135,7 +139,6 @@ public class UserService {
         // Domain methods
         user.changeName(name.trim());
         user.changeEmail(normalizedEmail);
-        user.changeRole(role);
 
         // Persist changes
         return userRepository.save(user);

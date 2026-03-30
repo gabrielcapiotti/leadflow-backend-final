@@ -1,5 +1,6 @@
 package com.leadflow.backend.entities.vendor;
 
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
@@ -11,6 +12,9 @@ public class VendorLead {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     @Column(nullable = false)
     private UUID vendorId;
@@ -50,6 +54,9 @@ public class VendorLead {
     @PrePersist
     public void onCreate() {
         this.createdDate = Instant.now();
+        if (tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
     }
 
     // ======================
@@ -57,6 +64,7 @@ public class VendorLead {
     // ======================
 
     public UUID getId() { return id; }
+    public UUID getTenantId() { return tenantId; }
     public UUID getVendorId() { return vendorId; }
     public String getNomeCompleto() { return nomeCompleto; }
     public String getWhatsapp() { return whatsapp; }
@@ -74,6 +82,7 @@ public class VendorLead {
     // SETTERS
     // ======================
 
+    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
     public void setVendorId(UUID vendorId) { this.vendorId = vendorId; }
     public void setNomeCompleto(String nomeCompleto) { this.nomeCompleto = nomeCompleto; }
     public void setWhatsapp(String whatsapp) { this.whatsapp = whatsapp; }

@@ -151,7 +151,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             logger.debug(
                     "🔒 AUTH CONTEXT SET (from JWT) | email={} | tenant={}",
                     LogSanitizer.sanitize(email),
-                    LogSanitizer.sanitize(tenant)
+                    tenantId.toString()
             );
 
             /* =====================================================
@@ -245,9 +245,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                     "Unexpected JWT authentication error: {}",
                     LogSanitizer.sanitize(ex.getMessage())
             );
+        } finally {
+            // 🔴 CRITICAL: Ensure filterChain is called ALWAYS
+            // This prevents exceptions from blocking downstream filters
+            // Note: TenantFilter.finally() will clean up TenantContext for next request
+            try {
+                filterChain.doFilter(request, response);
+            } catch (Exception ex) {
+                logger.error("Error in downstream filter chain: {}", ex.getMessage());
+            }
         }
-
-        filterChain.doFilter(request, response);
     }
 
     private String extractToken(HttpServletRequest request) {

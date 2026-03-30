@@ -2,6 +2,8 @@ package com.leadflow.backend.service.monitoring;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tags;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -11,34 +13,40 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MetricsService {
 
     private final MeterRegistry registry;
+    private final String applicationName;
+    private final String environment;
+    private final String service;
 
-    private final Counter leadsCreatedTotal;
-    private final Counter hotLeadsTotal;
-    private final Counter aiExecutionsTotal;
-    private final Counter aiFailuresTotal;
+    private final Map<String, Counter> leadCounters = new ConcurrentHashMap<>();
+    private final Map<String, Counter> hotLeadCounters = new ConcurrentHashMap<>();
+    private final Map<String, Counter> aiExecutionCounters = new ConcurrentHashMap<>();
+    private final Map<String, Counter> aiFailureCounters = new ConcurrentHashMap<>();
+
+    public MetricsService(
+            MeterRegistry registry,
+            @Value("${spring.application.name:leadflow-backend}") String applicationName,
+            @Value("${app.environment:development}") String environment,
+            @Value("${app.service:api}") String service
+    ) {
+        this.registry = registry;
+        this.applicationName = applicationName;
+        this.environment = environment;
+        this.service = service;
+    }
+
+    private Tags getBaseTags(String vendor) {
+        return Tags.of(
+                "application", applicationName,
+                "environment", environment,
+                "service", service,
+                "vendor", vendor
+        );
+    }
 
     /*
-     * Cache de counters por vendor para evitar recriação constante
+     * Vendor global (para agregação total)
      */
-    private final Map<String, Counter> vendorLeadCounters = new ConcurrentHashMap<>();
-    private final Map<String, Counter> vendorAiCounters = new ConcurrentHashMap<>();
-
-    public MetricsService(MeterRegistry registry) {
-
-        this.registry = registry;
-
-        this.leadsCreatedTotal =
-                registry.counter("lead.created.total");
-
-        this.hotLeadsTotal =
-                registry.counter("lead.hot.total");
-
-        this.aiExecutionsTotal =
-                registry.counter("ai.executions.total");
-
-        this.aiFailuresTotal =
-                registry.counter("ai.failures.total");
-    }
+    private static final String GLOBAL_VENDOR = "global";
 
     /*
      * ------------------------------
@@ -47,22 +55,31 @@ public class MetricsService {
      */
 
     public void incrementLeadCreated() {
-        leadsCreatedTotal.increment();
+        incrementLeadCreated(GLOBAL_VENDOR);
     }
 
     public void incrementLeadCreated(String vendorId) {
-
-        vendorLeadCounters
+        leadCounters
                 .computeIfAbsent(vendorId, id ->
                         registry.counter(
                                 "lead.created.total",
-                                "vendor", id
+                                getBaseTags(id)
                         ))
                 .increment();
     }
 
     public void incrementHotLead() {
-        hotLeadsTotal.increment();
+        incrementHotLead(GLOBAL_VENDOR);
+    }
+
+    public void incrementHotLead(String vendorId) {
+        hotLeadCounters
+                .computeIfAbsent(vendorId, id ->
+                        registry.counter(
+                                "lead.hot.total",
+                                getBaseTags(id)
+                        ))
+                .increment();
     }
 
     /*
@@ -72,31 +89,29 @@ public class MetricsService {
      */
 
     public void incrementAiExecutions() {
-        aiExecutionsTotal.increment();
+        incrementAiExecutions(GLOBAL_VENDOR);
     }
 
     public void incrementAiExecutions(String vendorId) {
-
-        vendorAiCounters
+        aiExecutionCounters
                 .computeIfAbsent(vendorId, id ->
                         registry.counter(
                                 "ai.executions.total",
-                                "vendor", id
+                                getBaseTags(id)
                         ))
                 .increment();
     }
 
     public void incrementAiFailures() {
-        aiFailuresTotal.increment();
+        incrementAiFailures(GLOBAL_VENDOR);
     }
 
     public void incrementAiFailures(String vendorId) {
-
-        vendorAiCounters
+        aiFailureCounters
                 .computeIfAbsent(vendorId, id ->
                         registry.counter(
                                 "ai.failures.total",
-                                "vendor", id
+                                getBaseTags(id)
                         ))
                 .increment();
     }

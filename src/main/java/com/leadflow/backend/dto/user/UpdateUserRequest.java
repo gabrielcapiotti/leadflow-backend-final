@@ -22,7 +22,8 @@ public final class UpdateUserRequest {
     @Size(max = 100, message = "Email deve ter no máximo 100 caracteres")
     private final String email;
 
-    @NotNull(message = "RoleId é obrigatório")
+    // roleId is optional - only ADMIN users need to provide it
+    // Normal users cannot update their own role through this endpoint
     private final UUID roleId;
 
     @JsonCreator

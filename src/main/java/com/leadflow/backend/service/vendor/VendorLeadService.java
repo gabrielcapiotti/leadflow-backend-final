@@ -12,6 +12,7 @@ import com.leadflow.backend.entities.vendor.VendorLead;
 import com.leadflow.backend.entities.vendor.VendorLeadConversation;
 import com.leadflow.backend.entities.vendor.VendorLeadStageHistory;
 import com.leadflow.backend.exception.ResourceNotFoundException;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.VendorLeadRepository;
 import com.leadflow.backend.repository.VendorLeadStageHistoryRepository;
 import com.leadflow.backend.repository.vendor.VendorLeadConversationRepository;
@@ -102,6 +103,10 @@ public class VendorLeadService {
                     lead.setVendorId(vendorId);
                 }
 
+                if (lead.getTenantId() == null) {
+                    lead.setTenantId(TenantContext.requireTenant());
+                }
+
                 lead.setNomeCompleto(nomeCompleto);
                 lead.setWhatsapp(whatsapp);
                 lead.setTipoConsorcio(node.path("tipoConsorcio").asText(null));
@@ -143,6 +148,7 @@ public class VendorLeadService {
 
         Vendor vendor = vendorContext.getCurrentVendor(); // fonte única
         UUID vendorId = vendor.getId();
+        UUID tenantId = TenantContext.requireTenant();
 
         String nomeCompleto = sanitizeNomeCompleto(request.getNomeCompleto());
         String whatsapp = sanitizeWhatsapp(request.getWhatsapp());
@@ -154,6 +160,7 @@ public class VendorLeadService {
 
         VendorLead lead = new VendorLead();
 
+        lead.setTenantId(tenantId);
         lead.setVendorId(vendorId);
         lead.setNomeCompleto(nomeCompleto);
         lead.setWhatsapp(whatsapp);

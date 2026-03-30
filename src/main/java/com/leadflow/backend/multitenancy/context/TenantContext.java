@@ -2,6 +2,7 @@ package com.leadflow.backend.multitenancy.context;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 
 import java.util.Locale;
 import java.util.regex.Pattern;
@@ -77,9 +78,12 @@ public final class TenantContext {
         }
 
         CURRENT_TENANT.set(tenantId);
+        
+        // Set tenant in MDC for logging (after validation)
+        MDC.put("tenant_id", tenantId.toString());
 
         if (log.isDebugEnabled()) {
-            log.debug("Tenant context set: {}", tenantId);
+            log.debug("Tenant context set: {} → MDC", tenantId);
         }
     }
 
@@ -189,5 +193,6 @@ public final class TenantContext {
         }
 
         CURRENT_TENANT.remove();
+        MDC.remove("tenant_id");  // Clean up MGC to prevent thread pool leaks
     }
 }

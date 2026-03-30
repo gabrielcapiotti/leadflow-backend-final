@@ -13,7 +13,7 @@ public class LeadResponse {
     private final String name;
     private final String email;
     private final String phone;
-    private final String tenantId;
+    private final UUID tenantId;
     private final LeadStatus status;
     @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
     private final LocalDateTime createdAt;
@@ -48,7 +48,7 @@ public class LeadResponse {
             String name,
             String email,
             String phone,
-            String tenantId,
+            UUID tenantId,
             LeadStatus status,
             LocalDateTime createdAt,
             LocalDateTime updatedAt
@@ -75,7 +75,7 @@ public class LeadResponse {
 
     public String getPhone() { return phone; }
 
-    public String getTenantId() { return tenantId; }
+    public UUID getTenantId() { return tenantId; }
 
     public LeadStatus getStatus() { return status; }
 

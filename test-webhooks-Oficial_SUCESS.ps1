@@ -172,6 +172,7 @@ try {
         -Headers @{
             "Content-Type" = "application/json"
             "Stripe-Signature" = $stripeSignature.Signature
+            "X-Tenant-ID" = "stripe-webhook"
         } `
         -Body $stripePayload `
         -UseBasicParsing

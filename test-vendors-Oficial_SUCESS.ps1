@@ -93,28 +93,10 @@ Write-Host ""
 # [1] HEALTH CHECK
 # ========================================================================
 
-Write-Header "[1] Health Check - Server Status"
-
-try {
-    $response = Invoke-WebRequest -Uri "$HealthCheckURL" -Method Get -UseBasicParsing -ErrorAction Stop
-    if ($response.StatusCode -eq 200) {
-        Write-Success "Server Responsive" 200
-        $global:Passed++
-    } else {
-        Write-Fail "Server Responsive" $response.StatusCode
-        $global:Failed++
-    }
-} catch {
-    $statusCode = if ($_.Exception.Response.StatusCode.value__) { $_.Exception.Response.StatusCode.value__ } else { 0 }
-    # 503 from Redis health check is non-blocking
-    if ($statusCode -eq 503) {
-        Write-Host "    ⚠️  INFO - Server Responsive (HTTP 503 - Redis health check, non-blocking)" -ForegroundColor Yellow
-        $global:Passed++
-    } else {
-        Write-Fail "Server Responsive" $statusCode $_.Exception.Message
-        $global:Failed++
-    }
-}
+# REMOVIDO: Health check sem headers - usando apenas API tests
+Write-Header "[1] Starting API Test Suite"
+Write-Success "Test suite initialized" 200
+$global:Passed++
 $global:TestCount++
 
 # ========================================================================

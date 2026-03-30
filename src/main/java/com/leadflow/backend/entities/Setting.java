@@ -1,6 +1,7 @@
 package com.leadflow.backend.entities;
 
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -12,7 +13,8 @@ import java.util.UUID;
 @Table(
     name = "settings",
     indexes = {
-        @Index(name = "idx_settings_user", columnList = "user_id")
+        @Index(name = "idx_settings_user", columnList = "user_id"),
+        @Index(name = "idx_settings_tenant", columnList = "tenant_id")
     }
 )
 public class Setting {
@@ -30,7 +32,17 @@ public class Setting {
         if (id == null) {
             id = UUID.randomUUID();
         }
+        if (tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
     }
+
+    /* ==========================
+       MULTI-TENANT
+       ========================== */
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     /* ==========================
        RELACIONAMENTO
@@ -115,6 +127,8 @@ public class Setting {
 
     public UUID getId() { return id; }
 
+    public UUID getTenantId() { return tenantId; }
+
     public User getUser() { return user; }
 
     public String getVendorName() { return vendorName; }
@@ -136,6 +150,10 @@ public class Setting {
     /* ==========================
        SETTERS (for partial updates)
        ========================== */
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
+    }
 
     public void setVendorName(String vendorName) {
         validateVendorName(vendorName);

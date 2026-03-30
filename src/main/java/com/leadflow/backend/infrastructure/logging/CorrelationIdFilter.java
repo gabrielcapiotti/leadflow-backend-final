@@ -73,8 +73,8 @@ public class CorrelationIdFilter extends OncePerRequestFilter {
         MDC.put(MDC_PATH, request.getRequestURI());
         MDC.put(MDC_IP, resolveClientIp(request));
 
-        // integração futura com multi-tenant
-        // MDC.put(MDC_TENANT, TenantContext.getTenant());
+        // MDC_TENANT é agora setado no TenantContext.setTenant() após JWT/header validation
+        // Nós apenas consumimos aqui se disponível
     }
 
     private String resolveClientIp(HttpServletRequest request) {

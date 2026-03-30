@@ -50,7 +50,7 @@ public class Lead {
         }
         // Automatically set tenant from TenantContext
         if (tenantId == null) {
-            this.tenantId = TenantContext.requireTenant().toString();
+            this.tenantId = TenantContext.requireTenant();
         }
     }
 
@@ -58,8 +58,8 @@ public class Lead {
        MULTI-TENANT ISOLATION
        ====================================================== */
 
-    @Column(name = "tenant_id", nullable = false, length = 63)
-    private String tenantId;
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     /* ======================================================
        RELATIONSHIPS (SCHEMA MULTI-TENANT SAFE)
@@ -151,7 +151,7 @@ public class Lead {
     public String getEmail() { return email; }
     public String getPhone() { return phone; }
     public LeadStatus getStatus() { return status; }
-    public String getTenantId() { return tenantId; }
+    public UUID getTenantId() { return tenantId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public LocalDateTime getDeletedAt() { return deletedAt; }

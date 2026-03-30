@@ -47,7 +47,7 @@ $tenantId = $null
 $getTenantUrl = "$BaseUrl/api/billing/test/get-tenant-id"
 
 try {
-    $tenantResponse = Invoke-WebRequest -Uri $getTenantUrl -UseBasicParsing -Method Get -TimeoutSec 10
+    $tenantResponse = Invoke-WebRequest -Uri $getTenantUrl -UseBasicParsing -Method Get -TimeoutSec 10 -Headers @{"X-Tenant-ID" = "public"}
     $tenantData = $tenantResponse.Content | ConvertFrom-Json
     $tenantId = $tenantData.tenantId
     Write-Host "  OK - Got tenant: $($tenantId.Substring(0, 8))..." -ForegroundColor Green
