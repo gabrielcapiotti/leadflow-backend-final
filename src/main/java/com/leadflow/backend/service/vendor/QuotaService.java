@@ -83,8 +83,7 @@ public class QuotaService {
         try {
             activePlan = planService.getActivePlan();
         } catch (RuntimeException e) {
-            System.out.println("ERROR: Unable to get active plan: " + e.getMessage());
-            e.printStackTrace(System.out);
+            log.error("ERROR: Unable to get active plan", e);
             throw new RuntimeException("Failed to get active plan", e);
         }
 

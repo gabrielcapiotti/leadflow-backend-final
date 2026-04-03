@@ -13,21 +13,6 @@ public class SubscriptionScheduler {
     private final SubscriptionService subscriptionService;
 
     /**
-     * Executa diariamente às 00:00 (meia-noite)
-     * para expirar assinaturas que atingiram a data de expiração
-     */
-    @Scheduled(cron = "0 0 0 * * *")
-    public void expireSubscriptionsDaily() {
-        try {
-            log.info("Starting scheduled subscription expiration check");
-            subscriptionService.expireSubscriptions();
-            log.info("Completed scheduled subscription expiration check");
-        } catch (Exception e) {
-            log.error("Error during scheduled subscription expiration", e);
-        }
-    }
-
-    /**
      * Executa todos os dias às 09:00
      * para notificar sobre assinaturas que expiram em 7 dias
      */

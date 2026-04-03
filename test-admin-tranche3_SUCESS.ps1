@@ -16,10 +16,17 @@
 
 param(
     [string]$BaseUrl = "http://localhost:8081",
-    [string]$AdminEmail = "admin@leadflow.test",
+    [string]$AdminEmail = $null,
     [string]$AdminPassword = "AdminPass123!",
     [string]$AdminSecret = "SUPER_SECRET_KEY_CHANGE_ME"
 )
+
+# Generate a unique admin email if not provided
+if (-not $AdminEmail) {
+    $uuid = [guid]::NewGuid().ToString().Substring(0, 8)
+    $timestamp = Get-Date -Format "yyyyMMddHHmmss"
+    $AdminEmail = "admin-$uuid-$timestamp@leadflow.test"
+}
 
 # ============================================================================
 # HELPER: Generate Unique Email (avoid conflicts)
@@ -241,7 +248,6 @@ $adminRegisterBody = @{
 $adminRegisterHeaders = @{
     "Content-Type" = "application/json"
     "Authorization" = "Bearer $normalUserToken"
-    "X-Tenant-ID" = $normalUserTenantId
 }
 
 $adminRegisterResponse = Invoke-ApiRequest -Method POST `
@@ -255,10 +261,13 @@ $adminRegisterResponse = Invoke-ApiRequest -Method POST `
 # Now use X-Internal-Secret as correct method
 Write-Test $testNum "POST /api/auth/register-admin (via X-Internal-Secret)"
 
+# Generate a tenant ID for admin registration
+$adminTenantIdForReg = "49c868d1-4da0-420e-8e0e-7b063dcc7390"
+
 $adminRegisterHeadersFallback = @{
     "Content-Type" = "application/json"
+    "X-Tenant-ID" = $adminTenantIdForReg
     "X-Internal-Secret" = $AdminSecret
-    "X-Tenant-ID" = $normalUserTenantId
 }
 
 $adminRegisterResponse = Invoke-ApiRequest -Method POST `
@@ -302,11 +311,11 @@ Write-Test $testNum "POST /api/auth/login (with X-Tenant-ID required)"
 $loginBody = @{
     email = $AdminEmail
     password = $AdminPassword
+    tenantId = $adminTenantId
 } | ConvertTo-Json
 
 $loginHeaders = @{
     "Content-Type" = "application/json"
-    "X-Tenant-ID" = $adminTenantId
 }
 
 $loginResponse = Invoke-ApiRequest -Method POST `
@@ -341,7 +350,6 @@ Write-Step 4 "TEST ALL ADMIN BILLING ENDPOINTS"
 $authHeaders = @{
     "Content-Type" = "application/json"
     "Authorization" = "Bearer $adminToken"
-    "X-Tenant-ID" = $adminTenantId
 }
 
 # TEST 4.1: GET /api/v1/admin/billing/users
@@ -490,7 +498,6 @@ if ($testUserResponse) {
         $testUserAuthHeaders = @{
             "Content-Type" = "application/json"
             "Authorization" = "Bearer $testUserToken"
-            "X-Tenant-ID" = $testUserTenantId
         }
 
         Write-Test 9 "GET /api/v1/admin/billing/users (should be 403)"
@@ -537,3 +544,6 @@ if ($global:FailCount -eq 0 -and $global:PassCount -gt 0) {
     Write-Host ""
     exit 1
 }
+
+
+

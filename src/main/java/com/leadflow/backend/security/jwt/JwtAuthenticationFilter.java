@@ -1,5 +1,6 @@
 package com.leadflow.backend.security.jwt;
 
+import com.leadflow.backend.config.converter.SafeUUIDDeserializer;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.security.CustomUserDetails;
@@ -99,7 +100,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 return;
             }
 
-            String email = jwtService.extractEmail(token);
+            String email;
+            try {
+                email = jwtService.extractEmail(token);
+            } catch (Exception ex) {
+                logger.debug("Failed to extract email from token: {}", ex.getMessage());
+                filterChain.doFilter(request, response);
+                return;
+            }
 
             if (email == null) {
                 filterChain.doFilter(request, response);
@@ -110,7 +118,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                TENANT CONTEXT SETUP (FROM JWT - AUTHORITATIVE SOURCE)
                🔒 JWT is the sole source of truth for tenant
                ===================================================== */
-            String tenant = jwtService.extractTenant(token);
+            String tenant;
+            try {
+                tenant = jwtService.extractTenant(token);
+            } catch (Exception ex) {
+                logger.debug("Failed to extract tenant from token: {}", ex.getMessage());
+                filterChain.doFilter(request, response);
+                return;
+            }
             
             if (tenant == null || tenant.isBlank()) {
                 logger.warn("Tenant missing in JWT for {}", request.getRequestURI());
@@ -127,59 +142,55 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
             UUID tenantId;
             try {
-                tenantId = UUID.fromString(tenant);
-                // ✅ VALIDATION: Verify UUID was correctly reconstructed from String
-                String reconstructed = tenantId.toString();
-                if (!reconstructed.equals(tenant)) {
-                    logger.error("CRITICAL: UUID mismatch after conversion! Original: {} | Reconstructed: {}", 
-                        LogSanitizer.sanitize(tenant), LogSanitizer.sanitize(reconstructed));
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Tenant format validation failed");
+                // Use safe UUID deserialization with corruption detection
+                tenantId = SafeUUIDDeserializer.deserialize(tenant);
+                
+                // DOUBLE-CHECK: Verify roundtrip after conversion
+                String tenantRoundtrip = tenantId.toString();
+                if (!tenantRoundtrip.equals(tenant)) {
+                    logger.error("CRITICAL: Tenant UUID roundtrip failed after conversion | Original: {} | Roundtrip: {}", 
+                        LogSanitizer.sanitize(tenant), LogSanitizer.sanitize(tenantRoundtrip));
+                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Tenant validation failed");
                     return;
                 }
+                
+                logger.debug("✅ Tenant UUID validated and converted successfully: {}", tenantId);
             } catch (IllegalArgumentException e) {
-                logger.error("CRITICAL: Failed to parse UUID from JWT tenant: {} | Error: {}", 
+                logger.error("CRITICAL: Failed to parse UUID from JWT tenant (corruption detected?): {} | Error: {}", 
                     LogSanitizer.sanitize(tenant), e.getMessage());
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant format");
                 return;
             }
 
-            // 🔒 FORCE JWT tenant as authoritative - overwrites any header-based value
+            // 🔒 FORCE JWT tenant as authoritative - header is completely ignored
             // This prevents header-based tenant switching attacks
             // ✅ By now, tenantId has been triple-validated: format check, UUID.fromString(), roundtrip test
             TenantContext.setTenant(tenantId);
             
             logger.debug(
-                    "🔒 AUTH CONTEXT SET (from JWT) | email={} | tenant={}",
+                    "🔒 AUTH CONTEXT SET (from JWT only) | email={} | tenant={}",
                     LogSanitizer.sanitize(email),
                     tenantId.toString()
             );
 
             /* =====================================================
-               🔒 SECURITY: DETECT HEADER MISMATCH ATTACK
-               If X-Tenant-ID header present and differs from JWT tenant,
-               reject with 403 Forbidden (explicit header switch attempt)
+               ✅ NOTE: X-Tenant-ID header is completely ignored
+               JWT is the sole source of truth for tenant identity
+               Any header-based tenant values are silently discarded
                ===================================================== */
-            String headerTenant = request.getHeader("X-Tenant-ID");
-            if (headerTenant != null && !headerTenant.isBlank()) {
-                // Header present - validate it matches JWT tenant
-                if (!headerTenant.equalsIgnoreCase(tenant)) {
-                    logger.warn(
-                            "🔒 SECURITY: Tenant mismatch attack detected | JWT tenant: {} | header tenant: {} | email: {}",
-                            LogSanitizer.sanitize(tenant),
-                            LogSanitizer.sanitize(headerTenant),
-                            LogSanitizer.sanitize(email)
-                    );
-                    response.sendError(HttpServletResponse.SC_FORBIDDEN, "Tenant mismatch: header does not match JWT");
-                    return;
-                }
-            }
 
             /* =====================================================
                LOAD USER (WITH CONTEXT)
                ===================================================== */
 
-            UserDetails userDetails =
-                    userDetailsService.loadUserByUsername(email);
+            UserDetails userDetails;
+            try {
+                userDetails = userDetailsService.loadUserByUsername(email);
+            } catch (Exception ex) {
+                logger.debug("User not found or error loading user details: {}", ex.getMessage());
+                filterChain.doFilter(request, response);
+                return;
+            }
 
             if (!(userDetails instanceof CustomUserDetails customUser)) {
                 filterChain.doFilter(request, response);
@@ -192,7 +203,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                TOKEN VALIDATION (WITH TENANT)
                ===================================================== */
 
-            if (!jwtService.isTokenValid(token, userDetails, userId, tenant)) {
+            boolean tokenValid;
+            try {
+                tokenValid = jwtService.isTokenValid(token, userDetails, userId, tenant);
+            } catch (Exception ex) {
+                logger.debug("Token validation failed: {}", ex.getMessage());
+                filterChain.doFilter(request, response);
+                return;
+            }
+
+            if (!tokenValid) {
                 filterChain.doFilter(request, response);
                 return;
             }
@@ -206,7 +226,14 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                SESSION TRACKING (NON-BLOCKING)
                ===================================================== */
 
-            String tokenId = jwtService.extractTokenId(token);
+            String tokenId;
+            try {
+                tokenId = jwtService.extractTokenId(token);
+            } catch (Exception ex) {
+                logger.debug("Failed to extract token ID: {}", ex.getMessage());
+                filterChain.doFilter(request, response);
+                return;
+            }
 
             try {
                 userSessionService.processSessionActivity(
@@ -238,21 +265,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             );
 
             SecurityContextHolder.getContext().setAuthentication(authToken);
+            
+            // ✅ Call filterChain EXACTLY ONCE (OncePerRequestFilter contract)
+            filterChain.doFilter(request, response);
 
         } catch (Exception ex) {
 
             logger.error(
-                    "Unexpected JWT authentication error: {}",
+                    "Unexpected authentication error: {}",
                     LogSanitizer.sanitize(ex.getMessage())
             );
-        } finally {
-            // 🔴 CRITICAL: Ensure filterChain is called ALWAYS
-            // This prevents exceptions from blocking downstream filters
-            // Note: TenantFilter.finally() will clean up TenantContext for next request
+            
+            // ✅ Even on exception, filterChain must be called once
             try {
                 filterChain.doFilter(request, response);
-            } catch (Exception ex) {
-                logger.error("Error in downstream filter chain: {}", ex.getMessage());
+            } catch (Exception chainEx) {
+                logger.error("Error in downstream filter chain: {}", chainEx.getMessage());
             }
         }
     }
@@ -261,11 +289,43 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         String authHeader = request.getHeader("Authorization");
 
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+        if (authHeader == null || authHeader.isBlank()) {
             return null;
         }
 
-        return authHeader.substring(7);
+        if (!authHeader.startsWith("Bearer ")) {
+            logger.debug("Invalid Authorization header format: missing 'Bearer ' prefix");
+            return null;
+        }
+
+        String token = authHeader.substring(7).trim();
+
+        // ✅ CRITICAL: Reject empty or blank token
+        if (token.isBlank()) {
+            logger.debug("Authorization header present but token is blank");
+            return null;
+        }
+
+        // ✅ CRITICAL: Basic structural validation
+        // JWT format: xxxxx.yyyyy.zzzzz (3 parts separated by dots)
+        if (!token.contains(".") || token.split("\\.").length != 3) {
+            logger.warn("Invalid token structure: expected JWT format (3 parts separated by dots)");
+            return null;
+        }
+
+        // ✅ CRITICAL: Detect obvious corruption (control characters, invalid UTF-8 sequences)
+        // Check for suspicious byte sequences like BOM or binary data
+        for (int i = 0; i < token.length(); i++) {
+            char c = token.charAt(i);
+            // JWT should only contain Base64URL chars: A-Z, a-z, 0-9, -, _, .
+            // Reject if we see control characters (< 32), high bytes (> 127), or other invalid chars
+            if (c < 32 || (c > 127 && c != '.')) {
+                logger.warn("Invalid token: contains suspicious characters (possible corruption/encoding issue)");
+                return null;
+            }
+        }
+
+        return token;
     }
 
     private boolean isTokenStillValidAfterPasswordChange(

@@ -22,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 
@@ -70,6 +71,18 @@ public class GlobalExceptionHandler {
     ) {
         return build(HttpStatus.BAD_REQUEST,
                 "Request body is invalid or unreadable");
+    }
+
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ApiErrorResponse> handleMissingRequestParameter(
+            MissingServletRequestParameterException ex
+    ) {
+        String message = String.format(
+                "Missing required request parameter '%s' of type '%s'",
+                ex.getParameterName(),
+                ex.getParameterType()
+        );
+        return build(HttpStatus.BAD_REQUEST, message);
     }
 
     /* =========================================================

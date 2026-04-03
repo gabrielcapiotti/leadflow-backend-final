@@ -60,7 +60,6 @@ function Write-Fail {
 function Get-Headers {
     # Returns consistent headers with tenant context
     return @{
-        "X-Tenant-Id" = $TenantHeader
         "Authorization" = "Bearer $AuthToken"
         "Content-Type" = "application/json"
     }
@@ -115,7 +114,6 @@ try {
     $response = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
         -Method POST `
         -Headers @{
-            "X-Tenant-ID" = $TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body (@{
@@ -163,12 +161,12 @@ try {
     $loginResponse = Invoke-WebRequest -Uri "$BaseURL/auth/login" `
         -Method POST `
         -Headers @{
-            "X-Tenant-ID" = $TenantId1  # Use correct tenant from register
             "Content-Type" = "application/json"
         } `
         -Body (@{
             email = $userEmail
             password = $userPassword
+            tenantId = $TenantId1
         } | ConvertTo-Json) `
         -UseBasicParsing
 
@@ -203,7 +201,6 @@ try {
     $profileResponse = Invoke-WebRequest -Uri "$BaseURL/auth/me" `
         -Method GET `
         -Headers @{
-            "X-Tenant-ID" = $TenantId1
             "Authorization" = "Bearer $AuthToken1"
             "Content-Type" = "application/json"
         } `
@@ -239,7 +236,7 @@ $vendorSlug = ""
 try {
     $getVendorResponse = Invoke-WebRequest -Uri "$BaseURL/vendors" `
         -Method GET `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     if ($getVendorResponse.StatusCode -eq 200) {
@@ -287,7 +284,7 @@ Write-Header "[6] Get Vendor by Slug (Tenant A)"
 try {
     $getResponse = Invoke-WebRequest -Uri "$BaseURL/vendors?slug=$vendorSlug" `
         -Method GET `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     if ($getResponse.StatusCode -eq 200) {
@@ -323,7 +320,7 @@ Write-Header "[7] List All Vendors (Tenant A)"
 try {
     $listResponse = Invoke-WebRequest -Uri "$BaseURL/vendors" `
         -Method GET `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     if ($listResponse.StatusCode -eq 200) {
@@ -351,7 +348,7 @@ Write-Header "[8] Filter Vendors by Email (Tenant A)"
 try {
     $filterResponse = Invoke-WebRequest -Uri "$BaseURL/vendors?user_email=$userEmail" `
         -Method GET `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     if ($filterResponse.StatusCode -eq 200) {
@@ -379,7 +376,7 @@ Write-Header "[9] Filter Vendor by Slug (Tenant A)"
 try {
     $slugFilterResponse = Invoke-WebRequest -Uri "$BaseURL/vendors?slug=$vendorSlug" `
         -Method GET `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     if ($slugFilterResponse.StatusCode -eq 200) {
@@ -425,7 +422,7 @@ try {
     $updateResponse = Invoke-WebRequest -Uri "$BaseURL/vendors/$vendorId" `
         -Method PUT `
         -ContentType "application/json" `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -Body ($updateData | ConvertTo-Json) `
         -UseBasicParsing
 
@@ -463,10 +460,10 @@ $TenantId2 = ""
 
 try {
     # Register second user in DIFFERENT TENANT (with fresh public tenant header)
+    Write-Host "   [DEBUG] Registering User 2..." -ForegroundColor Yellow
     $registerResponse2 = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
         -Method POST `
         -Headers @{
-            "X-Tenant-ID" = "public"
             "Content-Type" = "application/json"
         } `
         -Body (@{
@@ -475,34 +472,39 @@ try {
             confirmPassword = $userPassword
             name = "Second Vendor User"
         } | ConvertTo-Json) `
-        -UseBasicParsing
+        -UseBasicParsing -ErrorAction Stop
 
+    Write-Host "   [DEBUG] User 2 registered with status $($registerResponse2.StatusCode)" -ForegroundColor Yellow
     $registerResponse2Data = $registerResponse2.Content | ConvertFrom-Json
     $TenantId2 = $registerResponse2Data.tenantId  # Extract tenant ID from register response
+    Write-Host "   [DEBUG] Tenant ID 2: $TenantId2" -ForegroundColor Yellow
 
     # Login second user with CORRECT tenant
+    Write-Host "   [DEBUG] Logging in User 2..." -ForegroundColor Yellow
     $loginResponse2 = Invoke-WebRequest -Uri "$BaseURL/auth/login" `
         -Method POST `
         -Headers @{
-            "X-Tenant-ID" = $TenantId2  # Use extracted tenant ID
             "Content-Type" = "application/json"
         } `
-        -Body (@{ email = $user2Email; password = $userPassword } | ConvertTo-Json) `
-        -UseBasicParsing
+        -Body (@{ email = $user2Email; password = $userPassword; tenantId = $TenantId2 } | ConvertTo-Json) `
+        -UseBasicParsing -ErrorAction Stop
 
+    Write-Host "   [DEBUG] User 2 logged in with status $($loginResponse2.StatusCode)" -ForegroundColor Yellow
     $loginData2 = $loginResponse2.Content | ConvertFrom-Json
     $AuthToken2 = $loginData2.accessToken
+    Write-Host "   [DEBUG] Token acquired: $($AuthToken2.Substring(0, 30))..." -ForegroundColor Yellow
 
     # Get second user profile with CORRECT tenant
+    Write-Host "   [DEBUG] Getting User 2 profile..." -ForegroundColor Yellow
     $profileResponse2 = Invoke-WebRequest -Uri "$BaseURL/auth/me" `
         -Method GET `
         -Headers @{
-            "X-Tenant-ID" = $TenantId2  # Use correct tensor ID
             "Authorization" = "Bearer $AuthToken2"
             "Content-Type" = "application/json"
         } `
-        -UseBasicParsing
+        -UseBasicParsing -ErrorAction Stop
 
+    Write-Host "   [DEBUG] Profile retrieved with status $($profileResponse2.StatusCode)" -ForegroundColor Yellow
     $profileData2 = $profileResponse2.Content | ConvertFrom-Json
 
     Write-Success "Create User in Tenant B" 200
@@ -516,8 +518,15 @@ try {
     $global:Passed++
 } catch {
     $statusCode = if ($_.Exception.Response.StatusCode.value__) { $_.Exception.Response.StatusCode.value__ } else { 0 }
+    Write-Host "   [DEBUG] Error at: $($_.InvocationInfo.Line)" -ForegroundColor Red
     Write-Fail "Create User in Tenant B" $statusCode $_.Exception.Message
     $global:Failed++
+    
+    # Try to continue with what we have for next test
+    if ([string]::IsNullOrEmpty($AuthToken2)) {
+        Write-Host "   [DEBUG] AuthToken2 is empty - cross-tenant test will be skipped" -ForegroundColor Red
+        $AuthToken2 = $AuthToken1  # Use Token 1 as fallback for next test (will fail as expected)
+    }
 }
 $global:TestCount++
 
@@ -552,7 +561,7 @@ try {
         -Method GET `
         -Headers @{ 
             Authorization = "Bearer $AuthToken2"  # Token from Tenant B
-            "X-Tenant-ID" = $TenantId1           # But trying to access Tenant A's resource
+            "Content-Type" = "application/json"
         } `
         -UseBasicParsing -ErrorAction Stop
 
@@ -587,7 +596,7 @@ Write-Header "[13] Delete Vendor (Tenant A)"
 try {
     $deleteResponse = Invoke-WebRequest -Uri "$BaseURL/vendors/$vendorId" `
         -Method DELETE `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     if ($deleteResponse.StatusCode -eq 200) {
@@ -613,7 +622,7 @@ Write-Header "[14] Verify Vendor Deletion (Tenant A)"
 try {
     $verifyResponse = Invoke-WebRequest -Uri "$BaseURL/vendors?slug=$vendorSlug" `
         -Method GET `
-        -Headers @{ Authorization = "Bearer $AuthToken1"; "X-Tenant-ID" = $TenantId1 } `
+        -Headers @{ Authorization = "Bearer $AuthToken1" } `
         -UseBasicParsing
 
     $vendors = $verifyResponse.Content | ConvertFrom-Json
@@ -665,4 +674,8 @@ Write-Host "   - VendorController endpoints (CRUD + Filtering)" -ForegroundColor
 Write-Host "   - Multi-tenant isolation validation" -ForegroundColor DarkGray
 Write-Host "   - Cross-tenant access security test" -ForegroundColor DarkGray
 Write-Host ""
+
+
+
+
 

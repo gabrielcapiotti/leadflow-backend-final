@@ -130,11 +130,13 @@ public class BillingController {
         try {
             // Parse Stripe-Signature header format: "t=<timestamp>,v1=<signature>"
             if (stripeSignature == null || stripeSignature.isBlank()) {
-                log.warn("Missing Stripe-Signature header");
+                log.warn("Missing Stripe-Signature header - webhooks must come from Stripe with proper signature");
+                log.warn("For testing without Stripe, callers should use /api/billing/test endpoints instead");
                 webhookMetrics.recordEventType("invalid");
                 webhookMetrics.incrementFailureCounter("invalid", "missing_signature");
                 webhookAlertService.recordFailure("invalid", "Missing Stripe-Signature header", null);
-                return ResponseEntity.badRequest().body("Missing Stripe-Signature header");
+                return ResponseEntity.badRequest()
+                    .body("Missing Stripe-Signature header. Webhooks must be called by Stripe with HMAC signature.");
             }
 
             String timestamp = null;
@@ -507,9 +509,13 @@ public class BillingController {
             method.detach();
             log.info("Payment method {} detached", paymentMethodId);
             return ResponseEntity.noContent().build();
+        } catch (com.stripe.exception.InvalidRequestException e) {
+            // Payment method not found on Stripe
+            log.warn("Payment method {} not found or already detached: {}", paymentMethodId, e.getMessage());
+            return ResponseEntity.notFound().build();
         } catch (StripeException e) {
             log.error("Error detaching payment method: {}", paymentMethodId, e);
-            return ResponseEntity.notFound().build();
+            return ResponseEntity.status(500).build();
         }
     }
 

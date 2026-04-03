@@ -71,7 +71,7 @@ function Write-Summary {
 }
 
 Write-Host "LEADFLOW COMPLETE TEST SUITE" -ForegroundColor $ColorTitle
-Write-Host "22 Endpoints (Auth + Leads + History + Vendors + VendorLeads)" -ForegroundColor $ColorTitle
+Write-Host "23 Endpoints (Auth + Leads + History + Vendors + VendorLeads + AI Summary)" -ForegroundColor $ColorTitle
 Write-Host "Padrão: Criar vendor antes de testar VendorLeads" -ForegroundColor $ColorTitle
 Write-Host "════════════════════════════════════════════════════════════`n" -ForegroundColor $ColorTitle
 
@@ -95,7 +95,6 @@ try {
     $response = Invoke-WebRequest -Uri $RegisterUrl `
         -Method Post `
         -Headers @{ 
-            "X-Tenant-ID" = $TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body $registerBody `
@@ -123,12 +122,12 @@ try {
     $loginBody = @{
         email = $newEmail
         password = $newPassword
+        tenantId = $Global:TenantHeader
     } | ConvertTo-Json
 
     $response = Invoke-WebRequest -Uri $LoginUrl `
         -Method Post `
         -Headers @{ 
-            "X-Tenant-ID" = $Global:TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body $loginBody `
@@ -552,9 +551,62 @@ if ($VendorLeadId) {
 }
 
 # ============================================================================
-# TEST 18: DELETE VENDOR LEAD
+# TEST 18: PATCH VENDOR LEAD AGAIN (Verify Stage Update)
 # ============================================================================
-Write-Step "18" "Delete Vendor Lead"
+Write-Step "18" "PATCH Vendor Lead - Update to PROPOSTA Stage"
+if ($VendorLeadId) {
+    try {
+        $patchBody = @{
+            stage = "PROPOSTA"
+        } | ConvertTo-Json
+
+        $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
+            -Method Patch `
+            -Headers $Global:CurrentHeaders `
+            -Body $patchBody `
+            -UseBasicParsing `
+            -ErrorAction Stop
+        
+        $data = $response.Content | ConvertFrom-Json
+        Write-Success "PATCH Vendor Lead Stage" $response.StatusCode
+        Write-Host "   Updated Stage: $($data.stage)" -ForegroundColor DarkGray
+        $Global:TestCount++
+    } catch {
+        Write-Fail "PATCH Vendor Lead Stage" $_.Exception.Response.StatusCode $_.Exception.Message
+        $Global:TestCount++
+    }
+} else {
+    Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+}
+
+# ============================================================================
+# TEST 19: GENERATE VENDOR LEAD SUMMARY (AI - Resumo)
+# ============================================================================
+Write-Step "19" "POST /vendor-leads/{id}/resumo - Generate AI Summary"
+if ($VendorLeadId) {
+    try {
+        $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId/resumo" `
+            -Method Put `
+            -Headers $Global:CurrentHeaders `
+            -UseBasicParsing `
+            -ErrorAction Stop
+        
+        $summary = $response.Content
+        Write-Success "Generate Vendor Lead Summary" $response.StatusCode
+        Write-Host "   Summary (first 100 chars): $($summary.Substring(0, [Math]::Min(100, $summary.Length)))..." -ForegroundColor DarkGray
+        $Global:TestCount++
+    } catch {
+        Write-Fail "Generate Vendor Lead Summary" $_.Exception.Response.StatusCode $_.Exception.Message
+        $Global:TestCount++
+    }
+} else {
+    Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+}
+
+# ============================================================================
+# TEST 20: DELETE VENDOR LEAD
+# ============================================================================
+Write-Step "20" "Delete Vendor Lead"
 if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
@@ -574,9 +626,9 @@ if ($VendorLeadId) {
 }
 
 # ============================================================================
-# TEST 19: VALIDATE DELETION
+# TEST 21: VALIDATE DELETION
 # ============================================================================
-Write-Step "19" "Validate Vendor Lead Deletion"
+Write-Step "21" "Validate Vendor Lead Deletion"
 if ($VendorLeadId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
@@ -601,9 +653,9 @@ if ($VendorLeadId) {
 }
 
 # ============================================================================
-# TEST 20: DELETE VENDOR
+# TEST 22: DELETE VENDOR
 # ============================================================================
-Write-Step "20" "Delete Vendor"
+Write-Step "22" "Delete Vendor"
 if ($VendorId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorsUrl/$VendorId" `
@@ -623,9 +675,9 @@ if ($VendorId) {
 }
 
 # ============================================================================
-# TEST 21: VALIDATE VENDOR DELETION
+# TEST 23: VALIDATE VENDOR DELETION
 # ============================================================================
-Write-Step "21" "Validate Vendor Deletion"
+Write-Step "23" "Validate Vendor Deletion"
 if ($VendorId) {
     try {
         $response = Invoke-WebRequest -Uri "$VendorsUrl/$VendorId" `
@@ -660,3 +712,6 @@ if ($Global:FailCount -gt 0) {
 } else {
     exit 0
 }
+
+
+

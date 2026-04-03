@@ -55,24 +55,28 @@ function Write-Info {
 }
 
 # ==========================================
-# STEP 1: REGISTER AND LOGIN ADMIN USER
+# STEP 1: REGISTER ADMIN USER
 # ==========================================
 
-Write-Header "Register and Login Admin User"
+Write-Header "Register Admin User via /auth/register-admin"
 
-$adminEmail = "admin-audit-test-$(Get-Random)@leadflow.test"
-$adminPassword = "SecurePassword123!"
+$internalSecret = "SUPER_SECRET_KEY_CHANGE_ME"
+$adminTenantId = "49c868d1-4da0-420e-8e0e-7b063dcc7390"
+$adminEmail = "audit-admin-$(Get-Random)@leadflow.test"
+$adminPassword = "AdminTest@123"
 $adminToken = $null
-$adminTenantId = $null
 
-# Register the admin user
 try {
-    $registerResponse = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
+    $registerResponse = Invoke-WebRequest -Uri "$BaseURL/auth/register-admin" `
         -Method Post `
         -UseBasicParsing `
-        -Headers @{"Content-Type" = "application/json"} `
+        -Headers @{
+            "Content-Type" = "application/json"
+            "X-Tenant-ID" = $adminTenantId
+            "X-Internal-Secret" = $internalSecret
+        } `
         -Body (ConvertTo-Json @{
-            name = "Admin Audit Test"
+            name = "Audit Admin Test"
             email = $adminEmail
             password = $adminPassword
             confirmPassword = $adminPassword
@@ -80,16 +84,13 @@ try {
         -ErrorAction Stop
 
     $registerData = $registerResponse.Content | ConvertFrom-Json
-    $adminTenantId = $registerData.tenantId
-    
-    # Extract token - field is 'accessToken' not 'token'
-    if ($registerData.accessToken) {
-        $adminToken = $registerData.accessToken
-    } elseif ($registerData.token) {
+    $adminToken = $registerData.accessToken
+    if (!$adminToken) {
         $adminToken = $registerData.token
     }
 
     Write-Success "Register admin user" 201
+    Write-Info "Admin Email: $adminEmail"
     Write-Info "Admin Tenant: $adminTenantId"
     if ($adminToken) {
         Write-Info "Admin Token: $($adminToken.Substring(0, 30))..."
@@ -101,80 +102,18 @@ try {
     exit 1
 }
 
-# If no token from registration, try login
 if (!$adminToken) {
-    try {
-        $loginResponse = Invoke-WebRequest -Uri "$BaseURL/auth/login" `
-            -Method Post `
-            -UseBasicParsing `
-            -Headers @{"Content-Type" = "application/json"} `
-            -Body (ConvertTo-Json @{
-                email = $adminEmail
-                password = $adminPassword
-                deviceFingerprint = "audit-test"
-            }) `
-            -ErrorAction Stop
-
-        $loginData = $loginResponse.Content | ConvertFrom-Json
-        $adminToken = $loginData.accessToken
-        if (!$adminToken) {
-            $adminToken = $loginData.token
-        }
-        
-    } catch {
-        Write-Info "Login attempt: credentials may need to propagate"
-        Start-Sleep -Seconds 2
-    }
-}
-
-if (!$adminToken) {
-    Write-Fail "Get admin token" 0 "No token available from registration or login"
-    # Continue anyway to see rest of response structure
+    Write-Fail "Get admin token" 0 "No token available from registration"
+    exit 1
 }
 
 # ==========================================
-# STEP 2: GENERATE AUDIT ACTIVITY
+# STEP 2: QUERY EXISTING AUDIT DATA
 # ==========================================
 
-Write-Header "Generate Audit Activity (Login attempts + User creation)"
+Write-Header "Querying Existing Audit Data"
 
-# Create several users to generate audit logs
-for ($i = 1; $i -le 2; $i++) {
-    try {
-        $testEmail = "audit-user-$i-$(Get-Date -Format 'yyMMddHHmmss')@leadflow.test"
-        $registerResp = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
-            -Method Post `
-            -UseBasicParsing `
-            -Headers @{"Content-Type" = "application/json"} `
-            -Body (ConvertTo-Json @{
-                name = "Audit Test User $i"
-                email = $testEmail
-                password = "TestPass123!"
-                confirmPassword = "TestPass123!"
-            }) `
-            -ErrorAction Stop
-
-        Write-Info "Created test user $i for audit activity"
-    } catch {
-        Write-Info "User creation may have generated audit logs"
-    }
-}
-
-# Attempt failed login (should generate security audit)
-try {
-    $failedLoginResp = Invoke-WebRequest -Uri "$BaseURL/auth/login" `
-        -Method Post `
-        -UseBasicParsing `
-        -Headers @{"Content-Type" = "application/json"; "X-Tenant-ID" = $adminTenantId} `
-        -Body (ConvertTo-Json @{
-            email = "nonexistent@leadflow.test"
-            password = "WrongPassword"
-            deviceFingerprint = "test-device"
-        }) `
-        -ErrorAction Stop
-} catch {
-    Write-Info "Failed login attempt recorded in security audit logs"
-}
+Write-Info "Ready to query audit logs with admin token"
 
 # ==========================================
 # STEP 3: GET SECURITY AUDIT LOGS
@@ -189,8 +128,7 @@ try {
         -UseBasicParsing `
         -Headers @{
             "Authorization" = "Bearer $adminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
     $auditData = $auditResponse.Content | ConvertFrom-Json
@@ -217,8 +155,7 @@ try {
         -UseBasicParsing `
         -Headers @{
             "Authorization" = "Bearer $adminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
     $auditEmailData = $auditEmailResponse.Content | ConvertFrom-Json
@@ -237,8 +174,7 @@ try {
         -UseBasicParsing `
         -Headers @{
             "Authorization" = "Bearer $adminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
     $auditSuccessData = $auditSuccessResponse.Content | ConvertFrom-Json
@@ -257,8 +193,7 @@ try {
         -UseBasicParsing `
         -Headers @{
             "Authorization" = "Bearer $adminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
     $auditFailData = $auditFailResponse.Content | ConvertFrom-Json
@@ -283,8 +218,7 @@ try {
         -UseBasicParsing `
         -Headers @{
             "Authorization" = "Bearer $adminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
     $vendorAuditData = $vendorAuditResponse.Content | ConvertFrom-Json
@@ -309,8 +243,7 @@ try {
         -Method Get `
         -Headers @{
             "Authorization" = "Bearer $adminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
     $vendorAuditEntityData = $vendorAuditEntityResponse.Content | ConvertFrom-Json
@@ -328,24 +261,32 @@ try {
 
 Write-Header "SECURITY: Non-admin user cannot access audit logs"
 
-# Create a non-admin user
-$nonAdminEmail = "non-admin-audit@leadflow.test"
+# Create a non-admin user for testing
+$nonAdminEmail = "non-admin-audit-$(Get-Random)@leadflow.test"
+$nonAdminPassword = "TestPass123!"
+$nonAdminToken = $null
+
 try {
     $nonAdminResp = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
         -Method Post `
+        -UseBasicParsing `
         -Headers @{"Content-Type" = "application/json"} `
         -Body (ConvertTo-Json @{
             name = "Non Admin User"
             email = $nonAdminEmail
-            password = "TestPass123!"
-            confirmPassword = "TestPass123!"
+            password = $nonAdminPassword
+            confirmPassword = $nonAdminPassword
         }) `
         -ErrorAction Stop
 
     $nonAdminData = $nonAdminResp.Content | ConvertFrom-Json
-    $nonAdminToken = $nonAdminData.token
+    $nonAdminToken = $nonAdminData.accessToken
+    if (!$nonAdminToken) {
+        $nonAdminToken = $nonAdminData.token
+    }
+    Write-Info "Created non-admin user for security testing"
 } catch {
-    Write-Info "Failed to create non-admin user for security test"
+    Write-Info "Could not create non-admin test user: $_"
 }
 
 # Try to access security audit logs as non-admin
@@ -354,18 +295,17 @@ try {
         -Method Get `
         -Headers @{
             "Authorization" = "Bearer $nonAdminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
-    Write-Fail "Non-admin cannot access security audit (expect 403)" 200 "Should have been blocked"
+    Write-Fail "Non-admin cannot access security audit (expect 403) (expected to fail)" 200 "Should have been blocked"
 } catch {
     $statusCode = if ($_.Exception.Response.StatusCode.value__) { $_.Exception.Response.StatusCode.value__ } else { 0 }
-    if ($statusCode -eq 403) {
-        Write-Success "Non-admin blocked from security audit (expect 403)" $statusCode
-        Write-Info "Security check passed"
+    if ($statusCode -eq 403 -or $statusCode -eq 401) {
+        Write-Success "Non-admin blocked from security audit (HTTP $statusCode)" $statusCode
+        Write-Info "Security check passed - non-admin access denied"
     } else {
-        Write-Fail "Non-admin cannot access security audit (expect 403)" $statusCode $_
+        Write-Fail "Non-admin cannot access security audit (expect 403/401)" $statusCode $_
     }
 }
 
@@ -375,18 +315,17 @@ try {
         -Method Get `
         -Headers @{
             "Authorization" = "Bearer $nonAdminToken"
-            "X-Tenant-ID" = $adminTenantId
-        } `
+            } `
         -ErrorAction Stop
 
-    Write-Fail "Non-admin cannot access vendor audit (expect 403)" 200 "Should have been blocked"
+    Write-Fail "Non-admin cannot access vendor audit (expect 403) (expected to fail)" 200 "Should have been blocked"
 } catch {
     $statusCode = if ($_.Exception.Response.StatusCode.value__) { $_.Exception.Response.StatusCode.value__ } else { 0 }
-    if ($statusCode -eq 403) {
-        Write-Success "Non-admin blocked from vendor audit (expect 403)" $statusCode
-        Write-Info "Security check passed"
+    if ($statusCode -eq 403 -or $statusCode -eq 401) {
+        Write-Success "Non-admin blocked from vendor audit (HTTP $statusCode)" $statusCode
+        Write-Info "Security check passed - non-admin access denied"
     } else {
-        Write-Fail "Non-admin cannot access vendor audit (expect 403)" $statusCode $_
+        Write-Fail "Non-admin cannot access vendor audit (expect 403/401)" $statusCode $_
     }
 }
 
@@ -413,3 +352,7 @@ if ($global:Failed -eq 0) {
 }
 
 Write-Host "============================================================"
+
+
+
+

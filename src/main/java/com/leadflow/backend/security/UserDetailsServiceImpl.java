@@ -41,11 +41,14 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         String normalizedEmail = normalizeEmail(email);
 
-        UUID tenantId = TenantContext.getTenant();
+        // ✅ CRITICAL FIX: Use getIfPresent() to safely check for tenant
+        // TenantContext.getTenant() throws IllegalStateException if not set
+        // But during login, tenant IS set by AuthController BEFORE calling authenticate()
+        UUID tenantId = TenantContext.getIfPresent();
 
         if (tenantId == null) {
             log.error("Tenant ID is missing during authentication");
-            throw new UsernameNotFoundException("Tenant not provided");
+            throw new UsernameNotFoundException("Tenant context not available");
         }
 
         log.info(
@@ -56,7 +59,7 @@ public class UserDetailsServiceImpl implements UserDetailsService {
 
         // CRITICAL FIX: Login is tenant-aware in multi-tenant architecture
         // Identity = (email + tenant_id). Email alone is NOT globally unique.
-        // TenantFilter ensures tenant context is set before this method is called.
+        // AuthController.login() ensures tenant context is set before this method is called.
         User user = userRepository
                 .findByEmailIgnoreCaseAndTenantIdAndDeletedAtIsNull(
                         normalizedEmail,

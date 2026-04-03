@@ -15,13 +15,18 @@ import jakarta.persistence.PersistenceContext;
 
 import java.util.Optional;
 
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.Locale;
 import java.util.UUID;
 
 @Service
 public class VendorService {
+
+    private static final Logger logger = LoggerFactory.getLogger(VendorService.class);
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -174,6 +179,59 @@ public class VendorService {
                 "Not on login, not on interceptor, not on refresh\n" +
                 "Use createVendor() during @RegisterFlow or through RegisterService"
         );
+    }
+
+    /**
+     * ✅ IDEMPOTENTE: Get or Create Vendor for Current Tenant
+     * 
+     * Este método é IDEMPOTENTE: pode ser chamado múltiplas vezes no mesmo tenant
+     * Retorna o vendor existente se já houver, cria novo apenas se não existir
+     * 
+     * CASO DE USO:
+     * - VendorLead creation endpoint que precisa de vendor
+     * - Testes que chamam múltiplas vezes sem saber estado atual
+     * - Qualquer operação que necessite garantir vendor existe
+     */
+    @Transactional
+    public Vendor getOrCreateVendor() {
+        UUID tenantId = TenantContext.getTenant();
+        if (tenantId == null) {
+            throw new IllegalStateException("Tenant context is required");
+        }
+
+        // 🔍 Procurar vendor existente para este tenant
+        // Vendor tem relação 1:1 com tenant (vendor.id = tenant.id)
+        Optional<Vendor> existingVendor = vendorRepository.findByIdAndTenantId(tenantId, tenantId);
+        if (existingVendor.isPresent()) {
+            return existingVendor.get();
+        }
+
+        // ✅ Criar novo vendor apenas se não existir
+        Vendor vendor = new Vendor();
+        vendor.setId(tenantId);
+        vendor.setTenantId(tenantId);
+        vendor.setName("Default Vendor - " + tenantId);
+        vendor.setNomeVendedor("Vendor");
+        vendor.setWhatsappVendedor("0000000000");
+        vendor.setSlug("default-vendor-" + UUID.randomUUID().toString().substring(0, 6));
+        vendor.setSubscriptionStatus(SubscriptionStatus.TRIAL);
+
+        // ⚠️ Obter email do user atual (segurança)
+        try {
+            Authentication auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+            if (auth != null && auth.isAuthenticated()) {
+                String userEmail = auth.getName();
+                if (userEmail != null && !userEmail.isBlank()) {
+                    vendor.setUserEmail(userEmail);
+                }
+            }
+        } catch (Exception e) {
+            logger.warn("Could not get authenticated user email: {}", e.getMessage());
+        }
+
+        Vendor savedVendor = vendorRepository.save(vendor);
+        logger.info("✅ Auto-created vendor for tenant: {}", tenantId);
+        return savedVendor;
     }
 
     /**

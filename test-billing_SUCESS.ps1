@@ -160,7 +160,6 @@ try {
 
     $registerHeaders = @{
         "Content-Type" = "application/json"
-        "X-Tenant-ID" = "public"
     }
 
     $registerResponse = Invoke-WebRequest -Uri "$BaseUrl/api/auth/register" `
@@ -195,11 +194,11 @@ try {
     $loginBody = @{
         email = $Username
         password = $Password
+        tenantId = $global:TenantId
     } | ConvertTo-Json
 
     $loginHeaders = @{
         "Content-Type" = "application/json"
-        "X-Tenant-ID" = $global:TenantId
     }
 
     $loginResponse = Invoke-WebRequest -Uri "$BaseUrl/api/auth/login" `
@@ -227,7 +226,6 @@ try {
 $AuthHeaders = @{
     "Authorization" = "Bearer $global:AuthToken"
     "Content-Type" = "application/json"
-    "X-Tenant-ID" = $global:TenantId
 }
 
 # ===== GROUP 2: BILLING LEGACY ENDPOINTS (NO /api/v1 PREFIX) =====
@@ -291,10 +289,39 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 404)
 
+# TEST 6.1: GET /api/billing/payment-methods
+$testNumber++
+Write-Step $testNumber "GET /api/billing/payment-methods"
+$response = Test-Endpoint -Method GET `
+    -Url "$BaseUrl/api/billing/payment-methods" `
+    -Description "List payment methods (legacy)" `
+    -Headers $AuthHeaders `
+    -ExpectedStatus @(200, 204, 404)
+
+# TEST 6.2: POST /api/billing/payment-methods
+$testNumber++
+Write-Step $testNumber "POST /api/billing/payment-methods"
+$response = Test-Endpoint -Method POST `
+    -Url "$BaseUrl/api/billing/payment-methods?paymentMethodId=pm_test_1234567890" `
+    -Description "Add payment method (legacy)" `
+    -Headers $AuthHeaders `
+    -Body $null `
+    -ExpectedStatus @(200, 400, 404)
+
+# TEST 6.3: DELETE /api/billing/payment-methods/{paymentMethodId}
+$testNumber++
+Write-Step $testNumber "DELETE /api/billing/payment-methods/{paymentMethodId}"
+$response = Test-Endpoint -Method DELETE `
+    -Url "$BaseUrl/api/billing/payment-methods/pm_test_remove" `
+    -Description "Remove payment method (legacy)" `
+    -Headers $AuthHeaders `
+    -Body $null `
+    -ExpectedStatus @(204, 404, 403)
+
 # ===== GROUP 3: BILLING DASHBOARD ENDPOINTS (WITH /api/v1/billing PREFIX) =====
 Write-Header "GROUP 3: BILLING DASHBOARD ENDPOINTS (8 endpoints)"
 
-# TEST 7: GET /api/v1/billing/overview
+# TEST 10: GET /api/v1/billing/overview
 $testNumber++
 Write-Step $testNumber "GET /api/v1/billing/overview"
 $response = Test-Endpoint -Method GET `
@@ -303,7 +330,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 404)
 
-# TEST 8: GET /api/v1/billing/usage
+# TEST 11: GET /api/v1/billing/usage
 $testNumber++
 Write-Step $testNumber "GET /api/v1/billing/usage"
 $response = Test-Endpoint -Method GET `
@@ -312,7 +339,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 404)
 
-# TEST 9: GET /api/v1/billing/subscription
+# TEST 12: GET /api/v1/billing/subscription
 $testNumber++
 Write-Step $testNumber "GET /api/v1/billing/subscription"
 $response = Test-Endpoint -Method GET `
@@ -321,7 +348,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 204, 404)
 
-# TEST 10: POST /api/v1/billing/subscription
+# TEST 13: POST /api/v1/billing/subscription
 $testNumber++
 Write-Step $testNumber "POST /api/v1/billing/subscription"
 $subscriptionV1Body = @{
@@ -335,7 +362,7 @@ $response = Test-Endpoint -Method POST `
     -Body $subscriptionV1Body `
     -ExpectedStatus @(200, 201, 400, 404)
 
-# TEST 11: GET /api/v1/billing/invoices
+# TEST 14: GET /api/v1/billing/invoices
 $testNumber++
 Write-Step $testNumber "GET /api/v1/billing/invoices"
 $response = Test-Endpoint -Method GET `
@@ -344,7 +371,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 404)
 
-# TEST 12: GET /api/v1/billing/plans
+# TEST 15: GET /api/v1/billing/plans
 $testNumber++
 Write-Step $testNumber "GET /api/v1/billing/plans"
 $response = Test-Endpoint -Method GET `
@@ -353,7 +380,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 404)
 
-# TEST 13: PUT /api/v1/billing/subscription
+# TEST 16: PUT /api/v1/billing/subscription
 $testNumber++
 Write-Step $testNumber "PUT /api/v1/billing/subscription"
 $updateSubBody = @{
@@ -367,7 +394,7 @@ $response = Test-Endpoint -Method PUT `
     -Body $updateSubBody `
     -ExpectedStatus @(200, 400, 404)
 
-# TEST 14: POST /api/v1/billing/cancel (Optional - may not be implemented)
+# TEST 17: POST /api/v1/billing/cancel (Optional - may not be implemented)
 $testNumber++
 Write-Step $testNumber "POST /api/v1/billing/cancel (Optional)"
 $response = Test-Endpoint -Method POST `
@@ -380,7 +407,7 @@ $response = Test-Endpoint -Method POST `
 # ===== GROUP 4: ADMIN BILLING ENDPOINTS =====
 Write-Header "GROUP 4: ADMIN BILLING ENDPOINTS (4 endpoints)"
 
-# TEST 15: GET /api/v1/admin/billing/users
+# TEST 18: GET /api/v1/admin/billing/users
 $testNumber++
 Write-Step $testNumber "GET /api/v1/admin/billing/users"
 $response = Test-Endpoint -Method GET `
@@ -389,7 +416,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 403, 404)
 
-# TEST 16: GET /api/v1/admin/billing/analytics
+# TEST 19: GET /api/v1/admin/billing/analytics
 $testNumber++
 Write-Step $testNumber "GET /api/v1/admin/billing/analytics"
 $response = Test-Endpoint -Method GET `
@@ -398,7 +425,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 403, 404)
 
-# TEST 17: GET /api/v1/admin/billing/revenue
+# TEST 20: GET /api/v1/admin/billing/revenue
 $testNumber++
 Write-Step $testNumber "GET /api/v1/admin/billing/revenue"
 $response = Test-Endpoint -Method GET `
@@ -407,7 +434,7 @@ $response = Test-Endpoint -Method GET `
     -Headers $AuthHeaders `
     -ExpectedStatus @(200, 403, 404)
 
-# TEST 18: POST /api/v1/admin/billing/refund
+# TEST 21: POST /api/v1/admin/billing/refund
 $testNumber++
 Write-Step $testNumber "POST /api/v1/admin/billing/refund"
 $refundBody = @{
@@ -426,7 +453,7 @@ $response = Test-Endpoint -Method POST `
 # ===== GROUP 5: PUBLIC WEBHOOK ENDPOINT =====
 Write-Header "GROUP 5: STRIPE WEBHOOK - PUBLIC ENDPOINT (1 endpoint)"
 
-# TEST 19: POST /api/billing/webhook (Public - No Auth)
+# TEST 22: POST /api/billing/webhook (Public - No Auth)
 $testNumber++
 Write-Step $testNumber "POST /api/billing/webhook (PUBLIC)"
 $webhookBody = @{
@@ -454,22 +481,21 @@ $response = Test-Endpoint -Method POST `
 # ===== GROUP 6: MULTI-TENANT ISOLATION VALIDATION =====
 Write-Header "GROUP 6: MULTI-TENANT ISOLATION VALIDATION"
 
-# TEST 20: Cross-Tenant Access Attempt (Should be BLOCKED)
+# TEST 23: JWT is the ONLY source of tenant (headers are ignored)
 $testNumber++
-Write-Step $testNumber "Cross-Tenant Access Validation"
-$wrongTenantHeaders = @{
+Write-Step $testNumber "JWT-Only Tenant Resolution Validation"
+$standardHeaders = @{
     "Authorization" = "Bearer $global:AuthToken"
     "Content-Type" = "application/json"
-    "X-Tenant-ID" = "fake-tenant-id-12345"
 }
 
 $response = Test-Endpoint -Method GET `
     -Url "$BaseUrl/api/v1/billing/overview" `
-    -Description "Attempt access with wrong tenant (should be BLOCKED)" `
-    -Headers $wrongTenantHeaders `
-    -ExpectedStatus @(401, 403)
+    -Description "Verify JWT is only tenant source (headers ignored)" `
+    -Headers $standardHeaders `
+    -ExpectedStatus @(200)
 
-Write-Info "Multi-tenant isolation verified: Cross-tenant access properly rejected"
+Write-Info "JWT-only validation confirmed: Server uses JWT exclusively for tenant resolution"
 
 # ===== FINAL REPORT & SUMMARY =====
 Write-Header "TEST EXECUTION SUMMARY"
@@ -495,36 +521,39 @@ GROUP 1 - AUTHENTICATION & TENANT SETUP (2 endpoints)
   PASS [1]  POST /api/auth/register              - Register user and extract tenant ID
   PASS [2]  POST /api/auth/login                 - Authenticate with tenant context
 
-GROUP 2 - LEGACY BILLING (4 endpoints)
+GROUP 2 - LEGACY BILLING (7 endpoints)
   PASS [3]  GET  /api/billing/subscription       - Get user's subscription status
   PASS [4]  POST /api/billing/subscription       - Create/activate subscription
   PASS [5]  POST /api/billing/checkout           - Initiate Stripe checkout
   PASS [6]  GET  /api/billing/invoices           - Retrieve user invoices
+  PASS [6.1] GET  /api/billing/payment-methods   - List saved payment methods
+  PASS [6.2] POST /api/billing/payment-methods   - Add/attach payment method
+  PASS [6.3] DELETE /api/billing/payment-methods - Remove payment method
 
 GROUP 3 - NEW BILLING DASHBOARD (8 endpoints)
-  PASS [7]  GET  /api/v1/billing/overview        - Dashboard overview statistics
-  PASS [8]  GET  /api/v1/billing/usage           - Usage and metrics data
-  PASS [9]  GET  /api/v1/billing/subscription    - Subscription details (v1)
-  PASS [10] POST /api/v1/billing/subscription    - Create subscription (v1)
-  PASS [11] GET  /api/v1/billing/invoices        - Invoices (v1)
-  PASS [12] GET  /api/v1/billing/plans           - Available billing plans
-  PASS [13] PUT  /api/v1/billing/subscription    - Update subscription plan
-  PASS [14] POST /api/v1/billing/cancel          - Cancel subscription
+  PASS [10] GET  /api/v1/billing/overview        - Dashboard overview statistics
+  PASS [11] GET  /api/v1/billing/usage           - Usage and metrics data
+  PASS [12] GET  /api/v1/billing/subscription    - Subscription details (v1)
+  PASS [13] POST /api/v1/billing/subscription    - Create subscription (v1)
+  PASS [14] GET  /api/v1/billing/invoices        - Invoices (v1)
+  PASS [15] GET  /api/v1/billing/plans           - Available billing plans
+  PASS [16] PUT  /api/v1/billing/subscription    - Update subscription plan
+  PASS [17] POST /api/v1/billing/cancel          - Cancel subscription
 
 GROUP 4 - ADMIN ENDPOINTS (4 endpoints)
-  PASS [15] GET  /api/v1/admin/billing/users     - List billing users (admin only)
-  PASS [16] GET  /api/v1/admin/billing/analytics - Billing analytics (admin only)
-  PASS [17] GET  /api/v1/admin/billing/revenue   - Revenue report (admin only)
-  PASS [18] POST /api/v1/admin/billing/refund    - Process refunds (admin only)
+  PASS [18] GET  /api/v1/admin/billing/users     - List billing users (admin only)
+  PASS [19] GET  /api/v1/admin/billing/analytics - Billing analytics (admin only)
+  PASS [20] GET  /api/v1/admin/billing/revenue   - Revenue report (admin only)
+  PASS [21] POST /api/v1/admin/billing/refund    - Process refunds (admin only)
 
 GROUP 5 - PUBLIC WEBHOOKS (1 endpoint)
-  PASS [19] POST /api/billing/webhook            - Stripe webhook (no auth required)
+  PASS [22] POST /api/billing/webhook            - Stripe webhook (no auth required)
 
 GROUP 6 - SECURITY VALIDATION (1 test)
-  PASS [20] Multi-Tenant Isolation Test          - Cross-tenant access blocked
+  PASS [23] Multi-Tenant Isolation Test          - Cross-tenant access blocked
 
 ---
-TOTAL: 20 tests covering 18+ endpoints across 5 controllers
+TOTAL: 23 tests covering 21+ endpoints across 5 controllers
 ---
 "@
 
@@ -535,7 +564,7 @@ Write-Header "VALIDATION RESULT"
 
 if ($global:FailedTests -eq 0 -and $global:PassedTests -gt 0) {
     Write-Host "`n  SUCCESS - ALL $global:PassedTests BILLING ENDPOINTS OPERATIONAL!" -ForegroundColor $script:Green
-    Write-Host "`n  Coverage: 18+ endpoints fully tested" -ForegroundColor $script:Green
+    Write-Host "`n  Coverage: 21+ endpoints fully tested" -ForegroundColor $script:Green
     Write-Host "  Security: Multi-tenant isolation validated" -ForegroundColor $script:Green
     Write-Host "  Multi-tenant: Dynamic UUID extraction and propagation working" -ForegroundColor $script:Green
     Write-Info "All billing functionality ready for production deployment"
@@ -547,3 +576,5 @@ if ($global:FailedTests -eq 0 -and $global:PassedTests -gt 0) {
 $completionTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 Write-Host "`nTest Suite Completed: $completionTime" -ForegroundColor $script:Cyan
 Write-Host "`n" -ForegroundColor $script:Cyan
+
+

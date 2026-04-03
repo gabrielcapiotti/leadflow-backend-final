@@ -32,6 +32,7 @@ import org.springframework.http.ResponseEntity;
 
 import org.springframework.security.core.Authentication;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 
 import org.springframework.web.bind.annotation.*;
@@ -105,13 +106,13 @@ public class AuthController {
         try {
             Tenant createdTenant = tenantService.createTenant(schemaName);
             tenantId = createdTenant.getId();
-            log.info("✓ Tenant record created in database: id={}, schema={}", tenantId, schemaName);
+            log.info("Tenant created: id={}, schema={}", tenantId, schemaName);
         } catch (IllegalArgumentException e) {
             // Schema validation failed - let it propagate as BAD_REQUEST (400)
-            log.error("❌ Schema validation failed during tenant creation: {}", e.getMessage());
+            log.error("Schema validation failed during tenant creation: {}", e.getMessage());
             throw e;
         } catch (Exception e) {
-            log.error("❌ CRITICAL: Tenant creation failed during registration: {}", e.getMessage(), e);
+            log.error("CRITICAL: Tenant creation failed during registration: {}", e.getMessage(), e);
             throw new IllegalStateException("Tenant creation failed - registration incomplete", e);
         }
 
@@ -130,10 +131,10 @@ public class AuthController {
             // 🔥 CREATE DEFAULT SUBSCRIPTION (novo)
             try {
                 subscriptionService.createDefaultSubscription(tenantId);
-                log.info("✓ Default subscription created successfully for tenant: {}", tenantId);
+                log.info("Default subscription created successfully for tenant: {}", tenantId);
             } catch (Exception e) {
-                log.warn("⚠️  Subscription creation failed (non-critical): {}", e.getMessage());
-                // Não interrompe o fluxo - vendor foi criado OK
+                log.warn("Subscription creation failed: {}", e.getMessage());
+                // Nao interrompe o fluxo
             }
 
             // ✅ Inicializar usage com plano padrão
@@ -144,7 +145,8 @@ public class AuthController {
                         .orElseThrow(() -> new IllegalStateException("No active plan found"));
                 
                 // 🔥 CRÍTICO: vendor.id = tenantId (alinhamento de identidade)
-                UUID vendorId = UUID.fromString(user.getTenantId().toString());
+                // Use UUID directly without String conversion to avoid corruption
+                UUID vendorId = user.getTenantId();
                 usageService.initializeUsage(vendorId, defaultPlan);
                 log.info("✓ Usage initialized successfully for vendor: {}", vendorId);
             } catch (Exception e) {
@@ -156,10 +158,9 @@ public class AuthController {
             throw new IllegalStateException("Vendor initialization failed - registration incomplete", e);
         }
 
-        // ✅ CRITICAL FIX: Pass tenantId (UUID), NOT schemaName, to generateToken
-        // JWT must contain the SAME tenant value that will be sent in X-Tenant-ID header
-        // Otherwise: JWT extraction returns schemaName, header has UUID → mismatch → 401
-        JwtToken accessToken = jwtService.generateToken(user, tenantId.toString());
+        // ✅ CRITICAL FIX: Pass tenantId (UUID) directly to generateToken
+        // This ensures type safety and prevents String manipulation
+        JwtToken accessToken = jwtService.generateToken(user, tenantId);
 
         try {
             createSession(user.getId(), tenantId, accessToken, httpRequest);
@@ -195,13 +196,24 @@ public class AuthController {
     ) {
         log.info("Login attempt for user: {}", maskEmail(request.email()));
 
-        // ✅ CRITICAL FIX: AuthenticationManager.authenticate() calls UserDetailsServiceImpl
-        // UserDetailsService will:
-        // 1. Find user by email (NO tenant filter)
-        // 2. Extract tenant from user record
-        // 3. Set TenantContext with user's tenant
-        // 4. Validate password
-        // Therefore: DO NOT pre-set TenantContext here
+        // ✅ CRITICAL FIX: Clear any residual tenant context from thread reuse
+        // Threads are reused in servlet containers and prior tenant may still be set in ThreadLocal
+        TenantContext.clear();
+
+        // ✅ CRITICAL FIX: Multi-tenant login REQUIRES tenant context BEFORE authenticate
+        // This is the ONLY place where tenant comes from client (not JWT, not user record)
+        // We set it explicitly before Spring Security attempts to load user details
+        UUID tenantId;
+        try {
+            tenantId = UUID.fromString(request.tenantId());
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid tenant ID format in login request: {}", request.tenantId());
+            throw new BadCredentialsException("Invalid tenant ID format");
+        }
+
+        // ✅ SET TENANT CONTEXT BEFORE authenticate() 
+        // UserDetailsService will use this to find user by (email + tenant)
+        TenantContext.setTenant(tenantId);
         
         try {
             Authentication authentication = authenticationManager.authenticate(
@@ -225,10 +237,10 @@ public class AuthController {
                 throw new IllegalStateException("User tenant association is null");
             }
             
-            String tenantIdString = tenantIdFromUser.toString();
-            log.debug("Tenant identity: userId={}, tenantId={}", user.getId(), tenantIdString);
+            UUID tenantUUID = tenantIdFromUser;
+            log.debug("Tenant identity: userId={}, tenantId={}", user.getId(), tenantUUID);
             
-            JwtToken accessToken = jwtService.generateToken(user, tenantIdString);
+            JwtToken accessToken = jwtService.generateToken(user, tenantUUID);
             
             log.info("🔐 Generated new accessToken with tokenId={} for user={}", 
                 accessToken.getTokenId(), user.getId());
@@ -243,7 +255,7 @@ public class AuthController {
                 }
                 
                 createSession(user.getId(), tenantIdFromUser, accessToken, httpRequest);
-                log.info("Session created for user: {} (tenantId={})", user.getId(), tenantIdString);
+                log.info("Session created for user: {} (tenantId={})", user.getId(), tenantIdFromUser);
             } catch (Exception e) {
                 log.error("❌ CRITICAL: Session creation failed for user={}. Error={}", user.getId(), e.getMessage(), e);
                 throw e;  // Re-throw to be handled by GlobalExceptionHandler
@@ -258,10 +270,11 @@ public class AuthController {
             log.info("User {} logged in successfully", user.getId());
 
             return ResponseEntity.ok(
-                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdString)
+                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdFromUser.toString())
             );
-        } finally {
-            TenantContext.clear();
+        } catch (Exception e) {
+            log.error("❌ Login failed for user {}: {}", maskEmail(request.email()), e.getMessage());
+            throw e;
         }
     }
 
@@ -384,7 +397,6 @@ public class AuthController {
         
         // ✅ NOW extract tenant from the user we got back (has tenant from DB)
         UUID tenantId = result.user().getTenantId();
-        String tenant = tenantId.toString();
         log.debug("✓ Tenant extracted from user: {}", tenantId);
         
         // ✅ CRITICAL FIX: Refresh is PUBLIC and just renews JWT
@@ -396,13 +408,30 @@ public class AuthController {
         // Generate NEW JWT with NEW tokenId (generates fresh identity)
         JwtToken newAccessToken = jwtService.generateTokenForRefresh(
                 result.user(), 
-                tenant  // Pass as String (already converted above)
+                tenantId  // Pass UUID directly
         );
         
         log.info("✓ New access token generated with fresh tokenId: {}", newAccessToken.getTokenId());
+        
+        // ✅ CRITICAL FIX: Create session for the NEW tokenId
+        // Refresh rotates JWT identity, so we must persist the new session
+        try {
+            userSessionService.createSession(
+                    result.user().getId(),
+                    tenantId,
+                    newAccessToken.getTokenId(),
+                    getClientIpAddress(httpRequest),
+                    httpRequest.getHeader("User-Agent")
+            );
+            log.info("✓ Session created for new tokenId: {}", newAccessToken.getTokenId());
+        } catch (Exception e) {
+            log.warn("Session creation failed during refresh (continuing anyway): {}", e.getMessage());
+            // Don't fail the refresh if session creation fails
+            // Client will retry on next request if needed
+        }
 
         return ResponseEntity.ok(
-                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenant)  // tenant is String
+                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenantId.toString())
         );
     }
 
@@ -478,9 +507,14 @@ public class AuthController {
         String tenant;
         if (isAuthenticatedAdmin && authentication != null) {
             // Use tenant from authenticated admin's context
-            tenant = TenantContext.getTenant().toString();  // getTenant() returns UUID, convert to String
+            // But TenantContext may not be set, so try header first
+            tenant = extractTenantFromRequest(httpRequest);
             if (tenant == null || tenant.isBlank()) {
-                tenant = extractTenantFromRequest(httpRequest);
+                // Only try TenantContext if header has no value
+                java.util.UUID ctxTenant = TenantContext.getIfPresent();
+                if (ctxTenant != null) {
+                    tenant = ctxTenant.toString();
+                }
             }
         } else {
             // Use tenant from header (internal secret flow)
@@ -505,24 +539,19 @@ public class AuthController {
         );
 
         // ✅ Generate JWT token for immediate use
-        TenantContext.setTenant(tenantId);
-        try {
-            JwtToken accessToken = jwtService.generateToken(user, tenantId.toString());
+        JwtToken accessToken = jwtService.generateToken(user, tenantId);
 
-            String refreshToken = refreshTokenService.generate(
-                    user,
-                    getClientIpAddress(httpRequest),
-                    httpRequest.getHeader("User-Agent")
-            );
+        String refreshToken = refreshTokenService.generate(
+                user,
+                getClientIpAddress(httpRequest),
+                httpRequest.getHeader("User-Agent")
+        );
 
-            log.info("✅ ADMIN user registered successfully: {} (tenant={})", user.getEmail(), tenant);
+        log.info("✅ ADMIN user registered successfully: {} (tenant={})", user.getEmail(), tenant);
 
-            return ResponseEntity.status(HttpStatus.CREATED).body(
-                    new AuthResponse(accessToken.getToken(), refreshToken, tenant)
-            );
-        } finally {
-            TenantContext.clear();
-        }
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+                new AuthResponse(accessToken.getToken(), refreshToken, tenant)
+        );
     }
 
     /* ======================================================

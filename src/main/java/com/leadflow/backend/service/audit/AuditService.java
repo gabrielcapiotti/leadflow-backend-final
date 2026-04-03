@@ -13,6 +13,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
@@ -37,6 +39,7 @@ public class AuditService {
        SYSTEM AUDIT
        ====================================================== */
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logSystem(String action,
                           String entityType,
                           String entityId,
@@ -64,6 +67,7 @@ public class AuditService {
        VENDOR AUDIT
        ====================================================== */
 
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void logVendor(String action,
                           String entityType,
                           UUID entityId,
@@ -85,7 +89,8 @@ public class AuditService {
             logEntry.setUserEmail(vendor.getUserEmail());
             logEntry.setAcao(action);
             logEntry.setEntityType(entityType);
-            logEntry.setEntidadeId(entityId);
+            // Use vendorId as fallback if entityId is null (e.g., for AI_EXECUTION operations)
+            logEntry.setEntidadeId(entityId != null ? entityId : vendor.getId());
             logEntry.setDetalhes(details);
 
             vendorRepository.save(logEntry);

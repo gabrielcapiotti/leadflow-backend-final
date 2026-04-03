@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # LEADFLOW COMPLETE TEST SUITE - LEADS + VENDORS
 # Patterns applied from test-all-Settings-Oficial.ps1
 # ============================================================================
@@ -13,9 +13,9 @@ $TenantHeader = "public"
 $ProgressPreference = 'SilentlyContinue'
 
 # Global variables
-$TestCount = 0
-$PassCount = 0
-$FailCount = 0
+$Script:TestCount = 0
+$Script:PassCount = 0
+$Script:FailCount = 0
 $LoginToken = $null
 $CurrentHeaders = @{}
 
@@ -27,11 +27,11 @@ $ColorStep = "Yellow"
 $ColorInfo = "White"
 
 function Write-Title {
-    Write-Host "`n════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
+    Write-Host "`n------------------------------------------------------------" -ForegroundColor $ColorTitle
     Write-Host "LEADFLOW COMPLETE LEADS + VENDORS TEST SUITE" -ForegroundColor $ColorTitle
     Write-Host "15 Endpoints (Auth + Leads + VendorLeads with Vendors)" -ForegroundColor $ColorTitle
     Write-Host "Patterns Applied from: test-all-Settings-Oficial.ps1" -ForegroundColor $ColorTitle
-    Write-Host "════════════════════════════════════════════════════════════`n" -ForegroundColor $ColorTitle
+    Write-Host "------------------------------------------------------------`n" -ForegroundColor $ColorTitle
 }
 
 function Write-Step {
@@ -41,37 +41,40 @@ function Write-Step {
 
 function Write-Success {
     param($Text, $Status)
-    Write-Host "    ✅ OK - $Text (HTTP $Status)" -ForegroundColor $ColorPass
-    $Global:PassCount++
+    Write-Host "    OK - $Text (HTTP $Status)" -ForegroundColor $ColorPass
+    $Script:PassCount++
+    $Script:TestCount++
 }
 
 function Write-Fail {
     param($Text, $Status, $Error)
-    Write-Host "    ❌ FAIL - $Text (HTTP $Status)" -ForegroundColor $ColorFail
+    Write-Host "    FAIL - $Text (HTTP $Status)" -ForegroundColor $ColorFail
     if ($Error) {
         Write-Host "       Error: $Error" -ForegroundColor $ColorFail
     }
-    $Global:FailCount++
+    $Script:FailCount++
+    $Script:TestCount++
 }
 
 function Write-Summary {
-    $Total = $PassCount + $FailCount
-    Write-Host "`n════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
+    $Total = $Script:PassCount + $Script:FailCount
+    Write-Host "`n------------------------------------------------------------" -ForegroundColor $ColorTitle
     Write-Host "TEST SUMMARY - LEADS + VENDORS TEST SUITE" -ForegroundColor $ColorTitle
-    Write-Host "════════════════════════════════════════════════════════════" -ForegroundColor $ColorTitle
+    Write-Host "------------------------------------------------------------" -ForegroundColor $ColorTitle
     Write-Host "Total Tests Run: $Total" -ForegroundColor $ColorInfo
-    Write-Host "Passed: $PassCount" -ForegroundColor $ColorPass
-    Write-Host "Failed: $FailCount" -ForegroundColor $(if ($FailCount -eq 0) { $ColorPass } else { $ColorFail })
+    Write-Host "Passed: $Script:PassCount" -ForegroundColor $ColorPass
+    Write-Host "Failed: $Script:FailCount" -ForegroundColor $(if ($Script:FailCount -eq 0) { $ColorPass } else { $ColorFail })
     if ($Total -gt 0) {
-        Write-Host "Pass Rate: $([math]::Round(($PassCount/$Total)*100, 2))%" -ForegroundColor $(if ($FailCount -eq 0) { $ColorPass } else { $ColorFail })
+        $Rate = [math]::Round(($Script:PassCount/$Total)*100, 2)
+        Write-Host "Pass Rate: $Rate%" -ForegroundColor $(if ($Script:FailCount -eq 0) { $ColorPass } else { $ColorFail })
     }
-    Write-Host "`n✍️  TESTS MAPPED FROM: test-all-Settings-Oficial.ps1" -ForegroundColor $ColorTitle
+    Write-Host "`n??  TESTS MAPPED FROM: test-all-Settings-Oficial.ps1" -ForegroundColor $ColorTitle
     Write-Host "   - Unified headers pattern (Bearer + X-Tenant-ID)" -ForegroundColor $ColorInfo
     Write-Host "   - Registration & Login setup" -ForegroundColor $ColorInfo
     Write-Host "   - ID storage for dependent tests" -ForegroundColor $ColorInfo
     Write-Host "   - State validation after operations" -ForegroundColor $ColorInfo
     Write-Host "   - Proper try-catch error handling" -ForegroundColor $ColorInfo
-    Write-Host "════════════════════════════════════════════════════════════`n" -ForegroundColor $ColorTitle
+    Write-Host "------------------------------------------------------------`n" -ForegroundColor $ColorTitle
 }
 
 Write-Title
@@ -96,7 +99,6 @@ try {
     $response = Invoke-WebRequest -Uri $RegisterUrl `
         -Method Post `
         -Headers @{ 
-            "X-Tenant-ID" = $TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body $registerBody `
@@ -112,7 +114,7 @@ try {
 } catch {
     Write-Fail "Register User" $_.Exception.Response.StatusCode $_.Exception.Message
     $Global:TestCount++
-    Write-Host "`n⚠️ Cannot continue without successful registration. Stopping tests.`n" -ForegroundColor Red
+    Write-Host "`n?? Cannot continue without successful registration. Stopping tests.`n" -ForegroundColor Red
     exit 1
 }
 
@@ -125,12 +127,12 @@ try {
     $loginBody = @{
         email = $newEmail
         password = $newPassword
+        tenantId = $TenantHeader
     } | ConvertTo-Json
 
     $response = Invoke-WebRequest -Uri $LoginUrl `
         -Method Post `
         -Headers @{ 
-            "X-Tenant-ID" = $TenantHeader
             "Content-Type" = "application/json"
         } `
         -Body $loginBody `
@@ -142,7 +144,6 @@ try {
     
     # Setup headers for subsequent requests (PATTERN from Settings)
     $Global:CurrentHeaders = @{
-        "X-Tenant-ID" = $TenantHeader
         "Authorization" = "Bearer $LoginToken"
         "Content-Type" = "application/json"
     }
@@ -153,7 +154,7 @@ try {
 } catch {
     Write-Fail "Login" $_.Exception.Response.StatusCode $_.Exception.Message
     $Global:TestCount++
-    Write-Host "`n⚠️ Cannot continue without login token. Stopping tests.`n" -ForegroundColor Red
+    Write-Host "`n?? Cannot continue without login token. Stopping tests.`n" -ForegroundColor Red
     exit 1
 }
 
@@ -234,7 +235,7 @@ if ($LeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -259,7 +260,7 @@ if ($LeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -305,7 +306,7 @@ if ($LeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -371,7 +372,7 @@ if ($VendorLeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -423,7 +424,7 @@ if ($VendorLeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -446,7 +447,7 @@ if ($VendorLeadId) {
         $Global:TestCount++
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -476,7 +477,7 @@ if ($VendorLeadId) {
         }
     }
 } else {
-    Write-Host "    ⚠️  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
+    Write-Host "    ??  Skipped - No Vendor Lead ID from previous test" -ForegroundColor Yellow
 }
 
 # ============================================================================
@@ -490,4 +491,5 @@ if ($FailCount -gt 0) {
 } else {
     exit 0
 }
+
 

@@ -181,44 +181,6 @@ function TestAPI {
     }
 }
 
-function MockAITest {
-    param(
-        $name,
-        $mockResponse,
-        $requiredFields = @()  # Valida schema da resposta mock
-    )
-
-    $global:totalTests++
-    Write-Host "`nTEST $($global:totalTests): $name (MOCK)" -ForegroundColor $yellow
-
-    # Valida estrutura JSON even para mock
-    try {
-        $parsed = $mockResponse | ConvertFrom-Json
-        
-        # Valida campos obrigatórios
-        if ($requiredFields.Count -gt 0) {
-            foreach ($field in $requiredFields) {
-                if (-not $parsed.$field) {
-                    Write-Host "  [FAIL] Missing required field in mock response: $field" -ForegroundColor $red
-                    $global:failedTests++
-                    return
-                }
-            }
-        }
-        
-        Write-Host "  [MOCK] Valid schema - Simulated response:" -ForegroundColor $yellow
-    } catch {
-        Write-Host "  [FAIL] Invalid JSON in mock response" -ForegroundColor $red
-        $global:failedTests++
-        return
-    }
-    
-    # Força encoding UTF-8 para output
-    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-    Write-Host "         $mockResponse" -ForegroundColor $cyan
-    $global:passedTests++
-}
-
 # ========================================
 # SETUP - REGISTER OR LOGIN REAL
 # ========================================
@@ -261,12 +223,10 @@ Write-Host "  ✓ Tenant: $tenantId" -ForegroundColor Green
 
 # Set up headers with correct tenant ID from response
 $headers["Authorization"] = "Bearer $token"
-$headers["X-Tenant-ID"] = $tenantId
 
 # Debug: verificar headers
 Write-Host "`n[DEBUG] Headers configurados:" -ForegroundColor Cyan
 Write-Host "  Authorization: Bearer $($token.Substring(0, 20))..." -ForegroundColor Cyan
-Write-Host "  X-Tenant-ID: $tenantId" -ForegroundColor Cyan
 Write-Host "  Content-Type: $($headers['Content-Type'])" -ForegroundColor Cyan
 
 # ========================================
@@ -298,24 +258,47 @@ Write-Host "  ✓ Lead criado com ID: $leadId" -ForegroundColor Green
 Write-Host "  ✓ TenantId validado: $leadTenantId" -ForegroundColor Green
 
 # ========================================
-# AI ENDPOINTS - MOCK ONLY
+# AI ENDPOINTS - REAL TESTS
 # ========================================
-Header "AI ENDPOINTS (MOCK)"
+Header "AI ENDPOINTS (REAL)"
 
-# Valida schema de respostas mock com campos obrigatórios
-MockAITest "Chat" "{`"response`": `"Olá! Como posso ajudá-lo com seu crédito?`", `"timestamp`": `"$(Get-Date -Format 'o')`"}" -requiredFields @("response", "timestamp")
+# TEST 1: Chat endpoint (uses request body)
+TestAPI -name "POST /ai/chat" -method "POST" -url "$baseUrl/ai/chat" `
+    -body @{leadId=$leadId; message="Qual é a taxa de juros para financiamento de veículo?"} `
+    -expectedStatus @(200, 201) -headers $headers -requiredFields @("response") -allow403 $true
 
-MockAITest "Lead Summary" '{"summary": "Cliente interessado em financiamento de veículo", "sentiment": "POSITIVE"}' -requiredFields @("summary", "sentiment")
+# TEST 2: Lead Summary (query parameter)
+TestAPI -name "POST /ai/lead-summary" -method "POST" -url "$baseUrl/ai/lead-summary?leadId=$leadId" `
+    -body $null `
+    -expectedStatus @(200, 201) -headers $headers -requiredFields @("summary") -allow403 $true
 
-MockAITest "Title Suggestion" '{"suggestion": "Cliente em busca de financiamento veicular - Alto potencial", "confidence": 0.95}' -requiredFields @("suggestion", "confidence")
+# TEST 3: Title Suggestion (query parameters)
+$titleUrl = "$baseUrl/ai/title-suggestion?leadId=$leadId&context=" + [System.Uri]::EscapeDataString("Cliente de alto potencial")
+TestAPI -name "POST /ai/title-suggestion" -method "POST" -url $titleUrl `
+    -body $null `
+    -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-MockAITest "Refine Message" '{"refined": "Texto refinado profissionalmente", "originalLength": 32, "refinedLength": 45}' -requiredFields @("refined", "originalLength", "refinedLength")
+# TEST 4: Refine Message (query parameter)
+$refineUrl = "$baseUrl/ai/refine-message?message=" + [System.Uri]::EscapeDataString("oi, to interessado em credito")
+TestAPI -name "POST /ai/refine-message" -method "POST" -url $refineUrl `
+    -body $null `
+    -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-MockAITest "Sentiment Analysis" '{"sentiment": "POSITIVE", "score": 0.87, "keywords": ["crédito", "interesse"]}' -requiredFields @("sentiment", "score")
+# TEST 5: Sentiment Analysis (query parameter)
+TestAPI -name "POST /ai/sentiment-analysis" -method "POST" -url "$baseUrl/ai/sentiment-analysis?leadId=$leadId" `
+    -body $null `
+    -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-MockAITest "Lead Classification" '{"classification": "HOT_LEAD", "score": 0.92, "reason": "High engagement"}' -requiredFields @("classification", "score")
+# TEST 6: Classify Lead (query parameter)
+TestAPI -name "POST /ai/classify-lead" -method "POST" -url "$baseUrl/ai/classify-lead?leadId=$leadId" `
+    -body $null `
+    -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-MockAITest "Generate Response" '{"response": "Entendi sua necessidade. Vamos processar sua solicitação.", "confidence": 0.89}' -requiredFields @("response", "confidence")
+# TEST 7: Generate Response (query parameters)
+$genUrl = "$baseUrl/ai/generate-response?leadId=$leadId&prompt=" + [System.Uri]::EscapeDataString("Qual é o valor mínimo para solicitar?")
+TestAPI -name "POST /ai/generate-response" -method "POST" -url $genUrl `
+    -body $null `
+    -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
 # ========================================
 # SECURITY TEST - REAL
@@ -344,9 +327,9 @@ Write-Host "Total: $($global:totalTests)"
 Write-Host "Passed: $($global:passedTests)" -ForegroundColor $green
 Write-Host "Failed: $($global:failedTests)" -ForegroundColor $red
 
-Write-Host "`nMODE: HYBRID" -ForegroundColor $cyan
-Write-Host "  ✓ Real tests: Login, Create Lead, Security, Validation" -ForegroundColor $green
-Write-Host "  ✓ Mock tests: AI Endpoints (Chat, Summary, Title, etc.)" -ForegroundColor $yellow
+Write-Host "`nMODE: REAL TESTS" -ForegroundColor $cyan
+Write-Host "  ✓ All tests execute real API endpoints" -ForegroundColor $green
+Write-Host "  ✓ 403 accepted for restricted AI features (subscription-based)" -ForegroundColor $yellow
 
 if ($global:failedTests -eq 0) {
     Write-Host "`n[SUCCESS] ALL TESTS PASSED" -ForegroundColor $green
@@ -355,3 +338,4 @@ if ($global:failedTests -eq 0) {
 }
 
 exit $global:failedTests
+

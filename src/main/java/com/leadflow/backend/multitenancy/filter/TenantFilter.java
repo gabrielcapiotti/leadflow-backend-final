@@ -45,13 +45,14 @@ public class TenantFilter extends OncePerRequestFilter {
             path = path.substring(4);
         }
 
-        // ✅ Only skip PUBLIC auth endpoints - protected endpoints MUST run TenantFilter
-        // 🔥 CRITICAL: /auth/login MUST NOT be ignored - it requires tenant context
-        //    Login is tenant-aware in multi-tenant architecture
+        // ✅ PUBLIC AUTH ENDPOINTS - no tenant needed yet
         boolean isPublicAuth = path.equals("/auth/register")
+                || path.equals("/auth/login")
+                || path.equals("/auth/refresh")
                 || path.equals("/auth/forgot-password")
                 || path.equals("/auth/reset-password");
         
+        // ✅ WEBHOOK ENDPOINTS - external, no JWT expected
         boolean isWebhook = path.startsWith("/stripe/webhook")
                 || path.startsWith("/webhooks/")
                 || path.startsWith("/webhook/")
@@ -60,15 +61,17 @@ public class TenantFilter extends OncePerRequestFilter {
                 || path.equals("/billing/test/get-tenant-id")
                 || path.equals("/billing/test/create-stripe-mappings");
         
+        // ✅ PUBLIC API endpoints
         boolean isPublicApi = path.startsWith("/public/");
-
-        return isPublicAuth
-                || isWebhook
-                || isPublicApi
-                || path.startsWith("/actuator")
+        
+        // ✅ INFRASTRUCTURE endpoints - internal only
+        boolean isInfra = path.startsWith("/actuator")
                 || path.startsWith("/health")
+                || path.startsWith("/error")  // Error handler (can be called without auth)
                 || path.startsWith("/swagger")
                 || path.startsWith("/v3/api-docs");
+
+        return isPublicAuth || isWebhook || isPublicApi || isInfra;
     }
 
     @Override
@@ -114,13 +117,12 @@ public class TenantFilter extends OncePerRequestFilter {
             tenant = tenantResolver.resolveTenant(request);
 
             if (tenant == null) {
-
-                logger.warn("Tenant not resolved for path: {}", request.getRequestURI());
-
-                response.sendError(
-                        HttpServletResponse.SC_BAD_REQUEST,
-                        "Header 'X-Tenant-Id' is required"
-                );
+                // ✅ No tenant found (and no JWT)
+                // Let Spring Security decide if request is authorized
+                // For public endpoints: continue
+                // For protected endpoints: Spring Security will bar with 401
+                logger.debug("No tenant resolved for path: {} (unauthenticated request - letting Spring Security handle)", request.getRequestURI());
+                filterChain.doFilter(request, response);
                 return;
             }
 

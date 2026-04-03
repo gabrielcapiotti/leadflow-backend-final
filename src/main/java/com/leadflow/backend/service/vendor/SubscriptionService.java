@@ -1,5 +1,6 @@
 package com.leadflow.backend.service.vendor;
 
+import com.leadflow.backend.config.converter.SafeUUIDDeserializer;
 import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.entities.SubscriptionAudit;
@@ -85,12 +86,12 @@ public class SubscriptionService {
     @Transactional
     public Subscription createDefaultSubscription(UUID tenantId) {
 
-        log.info("🔄 Creating default subscription for tenant: {}", tenantId);
-
-        // 🔥 IDEMPOTENCY: Avoid creating duplicate subscriptions
+        log.info("Creating default subscription for tenant: {}", tenantId);
+        
+        //  IDEMPOTENCY: Avoid creating duplicate subscriptions
         Optional<Subscription> existing = subscriptionRepository.findByTenantId(tenantId);
         if (existing.isPresent()) {
-            log.info("✅ Subscription already exists for tenant: {}", tenantId);
+            log.info("Subscription already exists for tenant: {}", tenantId);
             return existing.get();
         }
 
@@ -224,7 +225,8 @@ public class SubscriptionService {
             return;
         }
 
-        UUID tenantId = UUID.fromString(tenantIdString);
+        // Use safe UUID deserialization to detect corruption
+        UUID tenantId = SafeUUIDDeserializer.deserialize(tenantIdString);
 
         log.info("Checkout completed for tenant: {}", tenantId);
 
@@ -529,7 +531,9 @@ public class SubscriptionService {
         return subscriptionRepository.findByTenantId(tenantId)
             .orElseThrow(() -> {
                 log.warn("Subscription not found for tenant: {}", tenantId);
-                return new IllegalStateException("Subscription not found for tenant: " + tenantId);
+                return new IllegalStateException(
+                    String.format("Subscription not found for tenant: %s", tenantId)
+                );
             });
     }
 
@@ -537,22 +541,28 @@ public class SubscriptionService {
      * Cancels the subscription for a tenant by calling Stripe API.
      * Updates local subscription status to CANCELLED.
      * 
+     * If subscription is local-only (no Stripe ID), cancels locally only.
+     * 
      * @param tenantId the tenant ID
-     * @throws IllegalStateException if subscription not found
-     * @throws RuntimeException if Stripe API call fails
+     * @throws RuntimeException if Stripe API call fails (for Stripe-managed subscriptions)
      */
     @Transactional
     public void cancelSubscription(UUID tenantId) {
         Subscription subscription = getSubscriptionByTenant(tenantId);
 
         try {
-            // Call Stripe API to cancel subscription
+            // Check if subscription is managed by Stripe
             String stripeSubscriptionId = subscription.getStripeSubscriptionId();
             
             if (stripeSubscriptionId == null || stripeSubscriptionId.isBlank()) {
-                throw new IllegalStateException("Stripe subscription ID not set for tenant: " + tenantId);
+                // Local-only subscription: cancel locally without calling Stripe
+                log.warn("Subscription for tenant {} is local-only (no Stripe ID). Cancelling locally.", tenantId);
+                subscription.setStatus(Subscription.SubscriptionStatus.CANCELLED);
+                subscriptionRepository.save(subscription);
+                return;
             }
 
+            // Stripe-managed subscription: cancel on Stripe first
             com.stripe.model.Subscription stripeSubscription = 
                 com.stripe.model.Subscription.retrieve(stripeSubscriptionId);
 

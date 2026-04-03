@@ -53,12 +53,12 @@ Write-Host "`n[SETUP] Fazendo login..." -ForegroundColor Cyan
 $loginData = @{
     email = $testEmail
     password = $testPassword
+    tenantId = $tenantId
 } | ConvertTo-Json
 
 try {
     $loginHeaders = @{
         "Content-Type" = "application/json"
-        "X-Tenant-ID" = $tenantId
     }
     
     $loginResp = Invoke-WebRequest -Uri $loginUrl `
@@ -307,3 +307,4 @@ Write-Host "OK 7. POST /settings/reset - Reset to defaults" -ForegroundColor Gre
 Write-Host "OK 8. DELETE /settings/{id} - Delete by ID" -ForegroundColor Green
 Write-Host "OK 9. GET /settings/{id} after delete - Validation" -ForegroundColor Green
 Write-Host "`nSucesso! Todos os 9 endpoints funcionando!" -ForegroundColor Cyan
+

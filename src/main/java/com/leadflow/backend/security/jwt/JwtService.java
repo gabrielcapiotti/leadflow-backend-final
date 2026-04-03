@@ -1,5 +1,6 @@
 package com.leadflow.backend.security.jwt;
 
+import com.leadflow.backend.config.converter.SafeUUIDDeserializer;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.util.LogSanitizer;
 import io.jsonwebtoken.*;
@@ -88,20 +89,24 @@ public class JwtService implements InitializingBean {
 
     /* ====================================================== */
 
-    public JwtToken generateToken(User user, String tenantUUID) {
+    public JwtToken generateToken(User user, UUID tenantId) {
 
         validateUser(user);
-        validateTenant(tenantUUID);
+        if (tenantId == null) {
+            throw new IllegalArgumentException("Tenant ID cannot be null");
+        }
 
+        // ✅ CRITICAL: Store tenant as String in JWT
+        // Convert UUID to String AT THE BOUNDARY ONLY to prevent data mutations
+        String tenantIdString = tenantId.toString();
+        
         Instant now = Instant.now(clock);
         Instant expiresAt = now.plusMillis(expirationMillis);
         String tokenId = UUID.randomUUID().toString();
         
         logger.info("GENERATING NEW JWT TOKEN: user={}, tokenId={}, tenant={}", 
-            user.getEmail(), tokenId, tenantUUID);
+            user.getEmail(), tokenId, tenantIdString);
 
-        // ✅ CRITICAL FIX: Store tenant as String in JWT but validate it first
-        // Never manipulate UUID strings - serialize directly
         String token = Jwts.builder()
                 .setId(tokenId)
                 .setSubject(user.getEmail())
@@ -110,31 +115,57 @@ public class JwtService implements InitializingBean {
                 .setExpiration(Date.from(expiresAt))
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().getName())
-                .claim("tenant", tenantUUID)  // Store exactly as-is, no manipulation
+                .claim("tenant", tenantIdString)  // Store UUID as String representation
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
         logger.debug("✓ JWT generated successfully with JTI: {}", tokenId);
         return new JwtToken(token, tokenId, expiresAt);
     }
+    
+    /**
+     * Legacy method for backward compatibility (deprecated)
+     * @deprecated Use generateToken(User, UUID) instead
+     */
+    @Deprecated(forRemoval = true)
+    public JwtToken generateToken(User user, String tenantUUID) {
+        
+        if (tenantUUID == null || tenantUUID.isBlank()) {
+            throw new IllegalArgumentException("Tenant ID cannot be null or blank");
+        }
+        
+        // Convert String back to UUID to use the modern method
+        try {
+            UUID tenantId = UUID.fromString(tenantUUID);
+            return generateToken(user, tenantId);
+        } catch (IllegalArgumentException e) {
+            logger.error("CRITICAL: Failed to parse tenant UUID from String: {}", tenantUUID);
+            throw new IllegalArgumentException("Invalid tenant format", e);
+        }
+    }
 
     /**
      * Generate token for refresh - generates a NEW tokenId for each refresh
      * This prevents collisions and allows proper session rotation
      */
-    public JwtToken generateTokenForRefresh(User user, String tenantUUID) {
+    public JwtToken generateTokenForRefresh(User user, UUID tenantId) {
 
         validateUser(user);
-        validateTenant(tenantUUID);
+        if (tenantId == null) {
+            throw new IllegalArgumentException("Tenant ID cannot be null");
+        }
 
+        // ✅ CRITICAL: Store tenant as String in JWT
+        // Convert UUID to String AT THE BOUNDARY ONLY
+        String tenantIdString = tenantId.toString();
+        
         Instant now = Instant.now(clock);
         Instant expiresAt = now.plusMillis(expirationMillis);
         String newTokenId = UUID.randomUUID().toString();
         
         logger.info("REFRESHING JWT TOKEN: user={}, newTokenId={}, tenant={}", 
-            user.getEmail(), newTokenId, tenantUUID);
+            user.getEmail(), newTokenId, tenantIdString);
 
-        // ✅ CRITICAL FIX: Store tenant exactly as provided, no manipulation
         String token = Jwts.builder()
                 .setId(newTokenId)
                 .setSubject(user.getEmail())
@@ -143,12 +174,32 @@ public class JwtService implements InitializingBean {
                 .setExpiration(Date.from(expiresAt))
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().getName())
-                .claim("tenant", tenantUUID)  // No manipulation
+                .claim("tenant", tenantIdString)
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
         logger.debug("✓ JWT refreshed successfully with new tokenId: {}", newTokenId);
         return new JwtToken(token, newTokenId, expiresAt);
+    }
+    
+    /**
+     * Legacy method for backward compatibility (deprecated)
+     * @deprecated Use generateTokenForRefresh(User, UUID) instead
+     */
+    @Deprecated(forRemoval = true)
+    public JwtToken generateTokenForRefresh(User user, String tenantUUID) {
+        
+        if (tenantUUID == null || tenantUUID.isBlank()) {
+            throw new IllegalArgumentException("Tenant ID cannot be null or blank");
+        }
+        
+        try {
+            UUID tenantId = UUID.fromString(tenantUUID);
+            return generateTokenForRefresh(user, tenantId);
+        } catch (IllegalArgumentException e) {
+            logger.error("CRITICAL: Failed to parse tenant UUID from String during refresh: {}", tenantUUID);
+            throw new IllegalArgumentException("Invalid tenant format", e);
+        }
     }
 
     /* ====================================================== */
@@ -275,10 +326,15 @@ public class JwtService implements InitializingBean {
         String tenant = extractClaim(token,
                 claims -> claims.get("tenant", String.class));
         
-        // ✅ CRITICAL VALIDATION: Verify tenant extracted from JWT is valid UUID format
-        if (tenant != null && !tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
-            logger.error("CRITICAL: Invalid UUID format extracted from JWT tenant claim: {}", tenant);
-            throw new IllegalArgumentException("JWT contains malformed tenant UUID");
+        // ✅ CRITICAL VALIDATION: Use SafeUUIDDeserializer to detect corruption
+        if (tenant != null) {
+            try {
+                SafeUUIDDeserializer.deserialize(tenant);
+            } catch (IllegalArgumentException e) {
+                logger.error("CRITICAL: UUID corruption or invalid format in JWT tenant claim: {} | Error: {}", 
+                    tenant, e.getMessage());
+                throw new IllegalArgumentException("JWT contains malformed or corrupted tenant UUID", e);
+            }
         }
         
         return tenant;

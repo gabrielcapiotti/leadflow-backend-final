@@ -28,6 +28,9 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 @Configuration
 @EnableMethodSecurity
 @ConditionalOnWebApplication(type = ConditionalOnWebApplication.Type.SERVLET)
@@ -37,6 +40,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
         matchIfMissing = true
 )
 public class SecurityWebConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(SecurityWebConfig.class);
 
     /* =====================================================
        AUTHENTICATION MANAGER
@@ -103,8 +108,8 @@ public class SecurityWebConfig {
 
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint((request, response, authException) -> {
-                    System.out.println("🔴 AuthenticationEntryPoint triggered for: " + request.getRequestURI());
-                    System.out.println("🔴 Exception: " + authException.getMessage());
+                    log.error("🔴 AuthenticationEntryPoint triggered for: {}", request.getRequestURI());
+                    log.error("🔴 Exception: {}", authException.getMessage());
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
                 })
                 .accessDeniedHandler((request, response, accessDeniedException) ->

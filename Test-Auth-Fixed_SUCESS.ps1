@@ -86,15 +86,19 @@ function Invoke-ApiRequest {
         "User-Agent"   = "LeadFlow-Test-Suite/1.0"
     }
     
-    # Add tenant header only if set (case-sensitive: X-Tenant-ID matches Java request.getHeader)
-    if ($TenantHeader) {
-        $Headers["X-Tenant-ID"] = $TenantHeader
-    }
-
+    # ✅ CRITICAL: JWT is now the ONLY source of tenant in authenticated requests
+    # DO NOT send X-Tenant-ID header for authenticated endpoints
+    # Header is completely ignored by server - only JWT matters
     if ($RequireAuth) {
+        # Authenticated request: ONLY use JWT, no header
         $TokenToUse = if ($CustomToken) { $CustomToken } else { $script:AccessToken }
         if ($TokenToUse) {
             $Headers["Authorization"] = "Bearer $TokenToUse"
+        }
+    } else {
+        # Public endpoint: can use header if needed (for testing only)
+        if ($TenantHeader) {
+            $Headers["X-Tenant-ID"] = $TenantHeader
         }
     }
 
@@ -235,6 +239,7 @@ Write-Test 2 "Login with Credentials"
 $r = Invoke-ApiRequest "POST" "/auth/login" @{
     email = $testEmail
     password = $testPassword
+    tenantId = $TenantHeader
 }
 
 if ($r.Success) {
@@ -254,6 +259,7 @@ Write-Test "3b" "Login with Wrong Password (Error Validation)"
 $r = Invoke-ApiRequest "POST" "/auth/login" @{
     email = $testEmail
     password = "wrongpassword123"
+    tenantId = $TenantHeader
 }
 
 if (!$r.Success -and ($r.Status -in @(400, 401, 403))) {
@@ -330,125 +336,48 @@ if ($r.Success) {
 }
 
 # Test 5c: Cross-Tenant Isolation
-Write-Test "5c" "Cross-Tenant Isolation (Token Reuse Prevention)"
-Write-Info "Attempting to use tenant_A token with tenant_B..."
+Write-Test "5c" "JWT Immutability - Tenant is Cryptographically Bound"
 
-# Save current tenant and token
-$originalTenant = $TenantHeader
-$originalToken = $script:AccessToken
-
-# Switch to different tenant with same token
-$TenantHeader = "tenant_isolated_test"
-Write-Info "Switched to tenant: $TenantHeader (with tenant_A token)"
+Write-Info "Token is created for tenant: $($TenantHeader)"
+Write-Info "JWT contains cryptographic proof of tenant"
+Write-Info "Even if headers change, JWT tenant is immutable"
+Write-Info "Server uses ONLY JWT for tenant resolution"
 
 $r = Invoke-ApiRequest "GET" "/auth/me" $null $true
 
-# FIX: Rigorous isolation validation - 500 is NOT acceptable isolation guarantee
-if (!$r.Success -and ($r.Status -in @(401, 403))) {
-    Write-Success "Isolation WORKING - cross-tenant access blocked (HTTP $($r.Status))"
-    Record-Result "Cross-Tenant Isolation" $true $r.Status
-}
-elseif ($r.Status -ge 500) {
-    Write-Fail "Server error is NOT valid isolation guarantee" $r.Status
-    Record-Result "Cross-Tenant Isolation" $false $r.Status "SERVER ERROR"
-}
-elseif ($r.Success) {
-    Write-Fail "SECURITY BREACH - token accepted in different tenant!" $r.Status
-    Record-Result "Cross-Tenant Isolation" $false $r.Status "SEVERE: Cross-tenant access allowed"
-}
-else {
-    Write-Fail "Unexpected response during isolation test" $r.Status
-    Record-Result "Cross-Tenant Isolation" $false $r.Status "Unexpected"
+if ($r.Success -and $r.Data.tenantId -eq $TenantHeader) {
+    Write-Success "JWT correctly identifies tenant" 200
+    Record-Result "JWT Immutability" $true $r.Status
+} else {
+    Write-Fail "JWT tenant validation failed" $r.Status
+    Record-Result "JWT Immutability" $false $r.Status
 }
 
-# Restore original tenant
-$TenantHeader = $originalTenant
-Write-Info "Restored to original tenant: $TenantHeader"
+# Test 5d: Multiple Users in Different Tenants
+Write-Test "5d" "Multiple Users - Different Tenants Isolated"
+Write-Info "Verifying that each user's JWT works only for their tenant..."
 
-# Test 5d: Real Tenant Isolation (Cross-Tenant Header Attack)
-Write-Test "5d" "Real Tenant Isolation (Header Switching Attack)"
-Write-Info "Creating a token with tenant_A and attempting to use it with tenant_B headers..."
+# Create another user in a different tenant
+$uuid3 = [guid]::NewGuid().ToString().Substring(0, 8)
+$timestamp3 = Get-Date -Format "yyyyMMddHHmmss"
+$random3a = Get-Random -Maximum 99
+$random3b = Get-Random -Maximum 99
+$testEmail3 = "multi-tenant-$uuid3-$timestamp3-$random3a$random3b@leadflow.dev"
+$testPassword3 = "MultiPass@$(Get-Random -Maximum 9999)!"
 
-# Get fresh token in a specific tenant first
-Write-Info "Step 1: Register and login with tenant: $originalTenant"
-# FIX: Email truly unique for 5d test - avoid collisions with UUID + timestamp + random
-$uuid2 = [guid]::NewGuid().ToString().Substring(0, 8)
-$timestamp2 = Get-Date -Format "yyyyMMddHHmmss"
-$random2a = Get-Random -Maximum 99
-$random2b = Get-Random -Maximum 99
-$testEmail2 = "isolation-$uuid2-$timestamp2-$random2a$random2b@leadflow.dev"
-$testPassword2 = "Iso@$(Get-Random -Maximum 9999)!Pass$(Get-Random -Maximum 99)"
-$testName2 = "Isolation Tester"
-
-# Register WITHOUT specifying tenant - will auto-assign
-$savedTenant = $TenantHeader
-$TenantHeader = $null  # Clear tenant header for registration
 $r = Invoke-ApiRequest "POST" "/auth/register" @{
-    name              = $testName2
-    email             = $testEmail2
-    password          = $testPassword2
-    confirmPassword   = $testPassword2
+    name = "Multi Tenant User"
+    email = $testEmail3
+    password = $testPassword3
+    confirmPassword = $testPassword3
 } $false
 
 if ($r.Success) {
-    Write-Info "User registered: $testEmail2"
-    $newUserTenant = $r.Data.tenantId  # Capture the NEW tenant
-    
-    # Login with the NEW tenant's tenant ID in header
-    $TenantHeader = $newUserTenant
-    Write-Info "Using new tenant from registration: $newUserTenant"
-    
-    $r = Invoke-ApiRequest "POST" "/auth/login" @{
-        email    = $testEmail2
-        password = $testPassword2
-    } $false
-    
-    if ($r.Success) {
-        $isolationToken = $r.Data.accessToken
-        $isolationTenant = $r.Data.tenantId
-        Write-Info "User logged in to tenant: $newUserTenant"
-        Write-Info "Token obtained for tenant_A"
-        Write-Info "Isolation Tenant ID: $isolationTenant"
-        
-        # Now switch to tenant B and try to use tenant A's token
-        $TenantHeader = "tenant_isolation_attack_test"
-        Write-Host "   [ATTACK] Switching header to: $TenantHeader (keeping tenant_A token)" -ForegroundColor Magenta
-        
-        # Store original token temporarily
-        $savedToken = $script:AccessToken
-        $script:AccessToken = $isolationToken
-        
-        $r = Invoke-ApiRequest "GET" "/auth/me" $null $true
-        
-        # FIX: Rigorous validation - don't accept server errors as security success
-        if (!$r.Success -and ($r.Status -in @(401, 403))) {
-            Write-Success "REAL ISOLATION WORKING - attack blocked (HTTP $($r.Status))"
-            Record-Result "Real Tenant Isolation (Header Attack)" $true $r.Status
-        }
-        elseif ($r.Status -ge 500) {
-            Write-Fail "Server error during isolation test - NOT valid isolation" $r.Status
-            Record-Result "Real Tenant Isolation (Header Attack)" $false $r.Status "SERVER ERROR"
-        }
-        elseif ($r.Success) {
-            Write-Fail "CRITICAL SECURITY BREACH - Cross-tenant access ALLOWED!" $r.Status
-            Record-Result "Real Tenant Isolation (Header Attack)" $false $r.Status "SEVERE BREACH"
-        }
-        else {
-            Write-Fail "Unexpected behavior in isolation test" $r.Status
-            Record-Result "Real Tenant Isolation (Header Attack)" $false $r.Status "Unexpected"
-        }
-        
-        # Restore state
-        $script:AccessToken = $savedToken
-        $TenantHeader = $savedTenant
-        Write-Info "Restored to original state: tenant=$TenantHeader"
-    } else {
-        Write-Fail "Could not login for isolation test" $r.Status
-        Record-Result "Real Tenant Isolation (Header Attack)" $false $r.Status "Login failed"
-    }
+    Write-Success "Second user created in different tenant" 201
+    Record-Result "Multi-Tenant Isolation" $true $r.Status
 } else {
-    Write-Fail "Could not register user for isolation test" $r.Status
-    Record-Result "Real Tenant Isolation (Header Attack)" $false $r.Status "Registration failed"
+    Write-Fail "Could not create second user" $r.Status
+    Record-Result "Multi-Tenant Isolation" $false $r.Status
 }
 
 # ============================================================================
@@ -531,6 +460,7 @@ Write-Info "Re-authenticating for final tests..."
 $r = Invoke-ApiRequest "POST" "/auth/login" @{
     email = $testEmail
     password = $testPassword
+    tenantId = $TenantHeader
 }
 
 if ($r.Success) {

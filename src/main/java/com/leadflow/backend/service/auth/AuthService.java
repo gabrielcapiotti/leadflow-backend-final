@@ -370,7 +370,7 @@ public class AuthService {
         audit(SecurityAction.PASSWORD_CHANGED, user.getEmail(), true);
 
         // Revoga TODAS as sessoes
-        UUID tenantId = UUID.fromString(tenant.toString());
+        UUID tenantId = tenant;  // Use UUID directly without String conversion
         userSessionService.revokeAllUserSessions(userId, tenantId);
         logger.info("All sessions revoked for user after password change: {}", user.getEmail());
 

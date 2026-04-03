@@ -2,7 +2,7 @@
     <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="ch.qos.logback.classic.encoder.PatternLayoutEncoder">
             <charset>UTF-8</charset>
-            <pattern>%msg%n</pattern>
+            <pattern>%d{ISO8601} [%thread] %-5level %logger{36} - %X{correlationId} %X{tenant_id} - %msg%n</pattern>
         </encoder>
     </appender>
 
