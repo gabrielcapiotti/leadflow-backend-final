@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .alert { padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107; }
+        .footer { text-align: center; padding: 10px; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="alert">
+            <h2>⚠️ Alerta</h2>
+            <p th:text="${message}">Mensagem do alerta</p>
+            <p><strong>Data:</strong> <span th:text="${timestamp}">timestamp</span></p>
+        </div>
+        <div class="footer">
+            <p>© 2026 LeadFlow. Todos os direitos reservados.</p>
+        </div>
+    </div>
+</body>
+</html>

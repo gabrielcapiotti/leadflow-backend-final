@@ -1,0 +1,8 @@
+---
+# Kubernetes Namespace for LeadFlow
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: leadflow
+  labels:
+    name: leadflow

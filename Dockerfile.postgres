@@ -1,15 +1,24 @@
-FROM postgres:15
+FROM postgres:15-alpine
 
-RUN apt-get update && \
-    apt-get install -y openssh-server pgbackrest && \
-    mkdir /var/run/sshd
+# Instalar pgbackrest e utilidades
+RUN apk add --no-cache \
+    pgbackrest \
+    curl \
+    dumb-init
 
-RUN echo "PermitRootLogin no" >> /etc/ssh/sshd_config
-RUN echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
-RUN echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config
+# Criar diretórios necessários
+RUN mkdir -p /var/lib/pgbackrest && \
+    chown -R postgres:postgres /var/lib/pgbackrest && \
+    mkdir -p /etc/pgbackrest && \
+    chown -R postgres:postgres /etc/pgbackrest
 
-RUN mkdir -p /var/lib/postgresql/.ssh && \
-    chown -R postgres:postgres /var/lib/postgresql/.ssh && \
-    chmod 700 /var/lib/postgresql/.ssh
+# Health check para Kubernetes
+HEALTHCHECK --interval=10s --timeout=5s --start-period=10s --retries=3 \
+    CMD pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}
 
-EXPOSE 22
+# Expor porta PostgreSQL
+EXPOSE 5432
+
+# Usar dumb-init para manejo de sinais SIGTERM (graceful shutdown)
+ENTRYPOINT ["dumb-init", "--", "docker-entrypoint.sh"]
+CMD ["postgres"]

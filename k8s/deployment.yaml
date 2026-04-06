@@ -1,0 +1,146 @@
+---
+# Deployment for LeadFlow Backend Application
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leadflow-backend
+  namespace: leadflow
+  labels:
+    app: leadflow-backend
+    tier: application
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: leadflow-backend
+      tier: application
+  template:
+    metadata:
+      labels:
+        app: leadflow-backend
+        tier: application
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - leadflow-backend
+              topologyKey: kubernetes.io/hostname
+      containers:
+      - name: leadflow-backend
+        image: leadflow-backend:1.0.0
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        # Load all environment variables from ConfigMap and Secret
+        # NOTE (Etapa 5.8): All application-*.yml profiles removed - using single application.yml
+        # Configuration: application.yml defaults → ConfigMap/Secret env vars override
+        envFrom:
+        # Non-sensitive configuration from ConfigMap
+        - configMapRef:
+            name: leadflow-config
+        # Sensitive data from Secret
+        - secretRef:
+            name: leadflow-secrets
+        # Pod resources
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        # Health checks
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/live
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/ready
+            port: http
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /actuator/health
+            port: http
+          initialDelaySeconds: 0
+          periodSeconds: 5
+          timeoutSeconds: 5
+          failureThreshold: 30
+        # Security
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      # Pod-level security
+      securityContext:
+        fsGroup: 1000
+      # Termination grace period
+      terminationGracePeriodSeconds: 30
+      # Service account
+      serviceAccountName: leadflow-backend
+      # Volumes
+      volumes:
+      - name: tmp
+        emptyDir: {}
+
+---
+# Service for LeadFlow Backend
+apiVersion: v1
+kind: Service
+metadata:
+  name: leadflow-backend
+  namespace: leadflow
+  labels:
+    app: leadflow-backend
+    tier: application
+spec:
+  type: ClusterIP
+  selector:
+    app: leadflow-backend
+    tier: application
+  ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+    targetPort: 8080
+
+---
+# ServiceAccount for LeadFlow Backend
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: leadflow-backend
+  namespace: leadflow

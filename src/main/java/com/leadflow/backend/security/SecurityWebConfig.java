@@ -192,6 +192,12 @@ public class SecurityWebConfig {
                 .requestMatchers("/vendor-leads/**", "/api/vendor-leads/**").authenticated()
 
                 /* =========================================
+                   NOTIFICATIONS
+                   ========================================= */
+
+                .requestMatchers("/api/v1/notifications/**").authenticated()
+
+                /* =========================================
                    EVERYTHING ELSE
                    ========================================= */
 

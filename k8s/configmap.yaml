@@ -1,0 +1,65 @@
+---
+# ConfigMap for application configuration (non-sensitive)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leadflow-config
+  namespace: leadflow
+data:
+  # Application Configuration
+  SPRING_PROFILES_ACTIVE: "prod"
+  SPRING_APPLICATION_NAME: "leadflow-backend"
+  SERVER_PORT: "8080"
+  SERVER_SSL_ENABLED: "false"
+  SERVER_SERVLET_CONTEXT_PATH: "/api"
+  SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: "5MB"
+  SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: "5MB"
+  
+  # Database Configuration (host is service name)
+  SPRING_DATASOURCE_DRIVER_CLASS_NAME: "org.postgresql.Driver"
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "15"
+  SPRING_DATASOURCE_HIKARI_MINIMUM_IDLE: "5"
+  SPRING_DATASOURCE_HIKARI_CONNECTION_TIMEOUT: "20000"
+  
+  # JPA Configuration
+  SPRING_JPA_OPEN_IN_VIEW: "false"
+  SPRING_JPA_SHOW_SQL: "false"
+  SPRING_JPA_HIBERNATE_DDL_AUTO: "validate"
+  
+  # Flyway Configuration
+  SPRING_FLYWAY_ENABLED: "true"
+  SPRING_FLYWAY_BASELINE_ON_MIGRATE: "true"
+  SPRING_FLYWAY_VALIDATE_ON_MIGRATE: "false"
+  
+  # Actuator/Monitoring
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "health,info,metrics,prometheus"
+  MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: "always"
+  
+  # Logging
+  LOGGING_LEVEL_ROOT: "INFO"
+  
+  # Timezone
+  TZ: "UTC"
+  
+  # CORS Configuration
+  CORS_ALLOWED_ORIGINS: "https://yourdomain.com,https://app.yourdomain.com"
+  
+  # Email Configuration
+  SENDGRID_WEBHOOK_VERIFY_SIGNATURE: "false"
+  MAIL_HOST: "smtp.gmail.com"
+  MAIL_PORT: "587"
+  MAIL_FROM: "no-reply@leadflow.com"
+  MAIL_REPLY_TO: "support@leadflow.com"
+  
+  # OpenAI Configuration
+  OPENAI_MODEL: "gpt-4o-mini"
+  
+  # Stripe Configuration (non-sensitive)
+  STRIPE_WEBHOOK_ALERT_THRESHOLD: "5"
+  
+  # System Configuration
+  SYSTEM_ADMIN_EMAIL: "admin@leadflow.com"
+  
+  # Frontend Configuration
+  APP_FRONTEND_URL: "http://localhost:3000"
+  FRONTEND_URL: "http://localhost:3000"
