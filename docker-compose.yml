@@ -18,7 +18,6 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
       - ./database/official:/docker-entrypoint-initdb.d:ro
     networks:
       - leadflow_network
@@ -56,6 +55,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.postgresql.Driver
       SPRING_JPA_HIBERNATE_DDL_AUTO: validate
+      FLYWAY_ENABLED: false
       
       # Security
       JWT_SECRET: ${JWT_SECRET}

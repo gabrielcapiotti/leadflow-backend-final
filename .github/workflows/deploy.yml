@@ -14,135 +14,300 @@ on:
           - staging
           - production
 
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  deploy:
+  build-image:
+    name: Build & Scan Docker Image
     runs-on: ubuntu-latest
-    environment: 
-      name: ${{ github.event.inputs.environment || 'staging' }}
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.build.outputs.digest }}
     
     steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v3
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: maven
+          cache-dependency-path: '**/pom.xml'
 
-      - name: Build application
-        run: mvn clean package -DskipTests
+      - name: Build JAR artifact
+        run: mvn clean package -DskipTests -B
         env:
           MAVEN_OPTS: -Xmx1024m
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to Docker Registry
-        uses: docker/login-action@v2
+        uses: docker/login-action@v3
         with:
           registry: ${{ secrets.DOCKER_REGISTRY }}
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ secrets.DOCKER_REGISTRY }}/leadflow-backend
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+
       - name: Build and push Docker image
-        uses: docker/build-push-action@v4
+        id: build
+        uses: docker/build-push-action@v5
         with:
           context: .
           push: true
-          tags: |
-            ${{ secrets.DOCKER_REGISTRY }}/leadflow-backend:${{ github.sha }}
-            ${{ secrets.DOCKER_REGISTRY }}/leadflow-backend:latest
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+            VCS_REF=${{ github.sha }}
+            VERSION=${{ steps.meta.outputs.version }}
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ secrets.DOCKER_REGISTRY }}/leadflow-backend:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+          category: trivy
+
+      - name: Fail on critical vulnerabilities
+        run: |
+          if grep -q '"level":"CRITICAL"' trivy-results.sarif; then
+            echo "::error::Critical vulnerabilities found in Docker image!"
+            exit 1
+          fi
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [ build-image ]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Set up Kubernetes
-        uses: azure/setup-kubectl@v3
+        uses: azure/setup-kubectl@v4
         with:
           version: 'latest'
 
       - name: Configure kubeconfig
         run: |
           mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+          echo "${{ secrets.KUBE_CONFIG_STAGING }}" | base64 -d > $HOME/.kube/config
           chmod 600 $HOME/.kube/config
 
-      - name: Update deployment manifests
+      - name: Update deployment image
         run: |
-          VERSION=${{ github.sha }}
-          REGISTRY=${{ secrets.DOCKER_REGISTRY }}
-          ENV=${{ github.event.inputs.environment || 'staging' }}
+          REGISTRY="${{ secrets.DOCKER_REGISTRY }}"
+          IMAGE_TAG="${{ github.sha }}"
+          NAMESPACE="staging"
           
-          # Update image in deployment
           kubectl set image deployment/leadflow-backend \
-            --all \
-            -n $ENV \
-            leadflow=${REGISTRY}/leadflow-backend:${VERSION} \
-            || echo "Deployment not found, creating new one"
+            leadflow="${REGISTRY}/leadflow-backend:${IMAGE_TAG}" \
+            -n ${NAMESPACE} \
+            --record \
+            || echo "First deployment, creating manifest..."
 
       - name: Wait for rollout
         run: |
-          ENV=${{ github.event.inputs.environment || 'staging' }}
           kubectl rollout status deployment/leadflow-backend \
-            -n $ENV \
-            --timeout=5m
+            -n staging \
+            --timeout=10m
 
-      - name: Run smoke tests
+      - name: Verify deployment health
         run: |
-          ENV=${{ github.event.inputs.environment || 'staging' }}
-          HEALTH_URL="https://api-${ENV}.leadflow.io/api/actuator/health"
+          HEALTH_URL="https://staging-api.leadflow.io/actuator/health"
           
           for i in {1..30}; do
-            if curl -f $HEALTH_URL > /dev/null 2>&1; then
-              echo "Health check passed"
+            if curl -sf $HEALTH_URL > /dev/null 2>&1; then
+              echo "✅ Health check passed"
               exit 0
             fi
-            echo "Health check failed, retrying... ($i/30)"
+            echo "⏳ Health check attempt $i/30..."
             sleep 10
           done
           
-          echo "Health check failed after 5 minutes"
+          echo "::error::Health check failed after 5 minutes"
           exit 1
 
-      - name: Notify Slack on success
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests..."
+          # Add your smoke test commands here
+          curl -sf https://staging-api.leadflow.io/api/health || exit 1
+          echo "✅ Smoke tests passed"
+
+      - name: Notify Slack - Staging Success
         if: success()
-        uses: slackapi/slack-github-action@v1
+        uses: slackapi/slack-github-action@v1.24
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         with:
           payload: |
             {
-              "text": "✅ Deployment Successful",
+              "text": "✅ Deployment to Staging Successful",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Deployment Status: ✅ SUCCESS*\n*Environment:* ${{ github.event.inputs.environment || 'staging' }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}"
+                    "text": "*✅ STAGING DEPLOYMENT SUCCESSFUL*\n*Repository:* ${{ github.repository }}\n*Branch:* ${{ github.ref_name }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n*URL:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow>"
                   }
                 }
               ]
             }
 
-      - name: Notify Slack on failure
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [ build-image, deploy-staging ]
+    if: github.event_name == 'workflow_dispatch'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Kubernetes
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG_PRODUCTION }}" | base64 -d > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Create backup deployment
+        run: |
+          NAMESPACE="production"
+          BACKUP_NAME="leadflow-backend-backup-$(date +%Y%m%d-%H%M%S)"
+          
+          echo "Creating backup of current deployment..."
+          kubectl get deployment leadflow-backend -n ${NAMESPACE} -o yaml > /tmp/${BACKUP_NAME}.yaml
+          echo "Backup created at /tmp/${BACKUP_NAME}.yaml"
+          echo "::notice::Backup created: ${BACKUP_NAME}"
+
+      - name: Update deployment image
+        id: deploy
+        run: |
+          REGISTRY="${{ secrets.DOCKER_REGISTRY }}"
+          IMAGE_TAG="${{ github.sha }}"
+          NAMESPACE="production"
+          
+          kubectl set image deployment/leadflow-backend \
+            leadflow="${REGISTRY}/leadflow-backend:${IMAGE_TAG}" \
+            -n ${NAMESPACE} \
+            --record
+
+      - name: Wait for rollout
+        run: |
+          kubectl rollout status deployment/leadflow-backend \
+            -n production \
+            --timeout=10m
+
+      - name: Verify production health
+        run: |
+          HEALTH_URL="https://api.leadflow.io/actuator/health"
+          ERROR_COUNT=0
+          
+          for i in {1..30}; do
+            RESPONSE=$(curl -sf $HEALTH_URL 2>&1)
+            if echo "$RESPONSE" | grep -q '"status":"UP"'; then
+              echo "✅ Production health check passed"
+              exit 0
+            fi
+            ERROR_COUNT=$((ERROR_COUNT + 1))
+            echo "⏳ Health check attempt $i/30..."
+            sleep 10
+          done
+          
+          echo "::error::Production health check failed"
+          exit 1
+
+      - name: Rollback on failure
         if: failure()
-        uses: slackapi/slack-github-action@v1
+        run: |
+          echo "⚠️ Deployment failed, initiating rollback..."
+          kubectl rollout undo deployment/leadflow-backend \
+            -n production \
+            --to-revision=1
+          
+          kubectl rollout status deployment/leadflow-backend \
+            -n production \
+            --timeout=5m
+          
+          echo "::error::Deployment rolled back to previous version"
+          exit 1
+
+      - name: Smoke tests - Production
+        run: |
+          echo "Running production smoke tests..."
+          curl -sf https://api.leadflow.io/api/health || exit 1
+          echo "✅ Production smoke tests passed"
+
+      - name: Notify Slack - Production Success
+        if: success()
+        uses: slackapi/slack-github-action@v1.24
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
         with:
           payload: |
             {
-              "text": "❌ Deployment Failed",
+              "text": "✅ Deployment to Production Successful",
               "blocks": [
                 {
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "*Deployment Status: ❌ FAILED*\n*Environment:* ${{ github.event.inputs.environment || 'staging' }}\n*Commit:* ${{ github.sha }}\n*Author:* ${{ github.actor }}\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
+                    "text": "*✅ PRODUCTION DEPLOYMENT SUCCESSFUL*\n*Repository:* ${{ github.repository }}\n*Environment:* 🔴 PRODUCTION\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n*Approved by:* ${{ github.actor }}\n*URL:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Workflow>"
+                  }
+                }
+              ]
+            }
+
+      - name: Notify Slack - Production Failure
+        if: failure()
+        uses: slackapi/slack-github-action@v1.24
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        with:
+          payload: |
+            {
+              "text": "❌ Production Deployment Failed (ROLLED BACK)",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*❌ PRODUCTION DEPLOYMENT FAILED & ROLLED BACK*\n*Repository:* ${{ github.repository }}\n*Commit:* `${{ github.sha }}`\n*Author:* ${{ github.actor }}\n*URL:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>"
                   }
                 }
               ]

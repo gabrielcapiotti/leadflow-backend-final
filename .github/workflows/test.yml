@@ -2,17 +2,22 @@ name: Tests
 
 on:
   push:
-    branches: [ master, main, develop ]
+    branches: [ master, main, develop, 'feat/**' ]
   pull_request:
     branches: [ master, main, develop ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    name: Unit & Integration Tests
     runs-on: ubuntu-latest
     
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:16.13-alpine
         env:
           POSTGRES_DB: leadflow_test
           POSTGRES_USER: postgres
@@ -25,90 +30,89 @@ jobs:
         ports:
           - 5432:5432
 
-      redis:
-        image: redis:7-alpine
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 6379:6379
-
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Set up JDK 21
-        uses: actions/setup-java@v3
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
         with:
-          java-version: '21'
+          java-version: '17'
           distribution: 'temurin'
           cache: maven
+          cache-dependency-path: '**/pom.xml'
 
-      - name: Run unit tests
-        run: mvn test -DskipIntegrationTests
+      - name: Run all tests
+        run: mvn test -B
         env:
           MAVEN_OPTS: -Xmx1024m
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/leadflow_test
           SPRING_DATASOURCE_USERNAME: postgres
           SPRING_DATASOURCE_PASSWORD: postgres
-          SPRING_REDIS_HOST: localhost
-          SPRING_REDIS_PORT: 6379
+          # Testcontainers will manage additional services if needed
+          TESTCONTAINERS_ENABLED: "true"
 
-      - name: Run integration tests
-        run: mvn test -DincludeIntegrationTests
-        env:
-          MAVEN_OPTS: -Xmx1024m
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/leadflow_test
-          SPRING_DATASOURCE_USERNAME: postgres
-          SPRING_DATASOURCE_PASSWORD: postgres
-          SPRING_REDIS_HOST: localhost
-          SPRING_REDIS_PORT: 6379
-
-      - name: Generate test report
+      - name: Generate test reports
         if: always()
         run: |
-          mvn surefire-report:report
           mkdir -p test-reports
-          cp -r target/site/surefire-report.html test-reports/ || true
-          cp -r target/surefire-reports/*.txt test-reports/ || true
+          if [ -d "target/surefire-reports" ]; then
+            cp -r target/surefire-reports/* test-reports/ || true
+          fi
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-results
           path: test-reports/
           retention-days: 30
+          if-no-files-found: ignore
 
-      - name: Upload coverage reports
+      - name: Upload coverage reports to Codecov
         if: always()
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           files: ./target/site/jacoco/jacoco.xml
           flags: unittests
-          name: codecov-umbrella
+          name: codecov-coverage
           fail_ci_if_error: false
 
       - name: Comment PR with test results
         if: github.event_name == 'pull_request' && always()
-        uses: actions/github-script@v6
+        uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
-            const testResults = fs.readdirSync('./test-reports/')
+            const path = require('path');
+            const testReportsDir = './test-reports';
+            
+            if (!fs.existsSync(testReportsDir)) {
+              console.log('No test reports found');
+              return;
+            }
+            
+            const files = fs.readdirSync(testReportsDir)
               .filter(f => f.endsWith('.txt'))
-              .map(f => fs.readFileSync(`./test-reports/${f}`, 'utf8'))
-              .join('\n');
+              .slice(0, 3);  // Limit to 3 files
+            
+            if (files.length === 0) {
+              console.log('No test summary files found');
+              return;
+            }
+            
+            const testSummary = files
+              .map(f => fs.readFileSync(path.join(testReportsDir, f), 'utf8'))
+              .join('\n\n---\n\n');
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: '## Test Results\n\n```\n' + testResults.substring(0, 2000) + '\n```'
+              body: '## 🧪 Test Results\n\n```\n' + testSummary.substring(0, 2000) + '\n```'
             });
 
-      - name: Notify on test failure
+      - name: Fail if tests failed
         if: failure()
         run: |
-          echo "::error::Tests failed! Check the logs above."
+          echo "::error::❌ Tests failed! Check logs for details."
           exit 1

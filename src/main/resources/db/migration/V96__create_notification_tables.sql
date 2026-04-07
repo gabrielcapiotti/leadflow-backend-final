@@ -23,11 +23,11 @@ CREATE TABLE IF NOT EXISTS notification_history (
     CONSTRAINT check_notification_status CHECK (status IN ('SENT', 'PENDING', 'FAILED', 'DELIVERED'))
 );
 
-CREATE INDEX idx_notification_tenant_id ON notification_history(tenant_id);
-CREATE INDEX idx_notification_recipient_id ON notification_history(recipient_id);
-CREATE INDEX idx_notification_tenant_recipient ON notification_history(tenant_id, recipient_id);
-CREATE INDEX idx_notification_read_at ON notification_history(read_at);
-CREATE INDEX idx_notification_status ON notification_history(status);
+CREATE INDEX IF NOT EXISTS idx_notification_tenant_id ON notification_history(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notification_recipient_id ON notification_history(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_notification_tenant_recipient ON notification_history(tenant_id, recipient_id);
+CREATE INDEX IF NOT EXISTS idx_notification_read_at ON notification_history(read_at);
+CREATE INDEX IF NOT EXISTS idx_notification_status ON notification_history(status);
 
 CREATE TABLE IF NOT EXISTS notification_preferences (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -45,5 +45,5 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     CONSTRAINT check_alert_frequency CHECK (alert_frequency IN ('realtime', 'daily', 'weekly'))
 );
 
-CREATE INDEX idx_notification_prefs_tenant_id ON notification_preferences(tenant_id);
-CREATE INDEX idx_notification_prefs_user_id ON notification_preferences(user_id);
+CREATE INDEX IF NOT EXISTS idx_notification_prefs_tenant_id ON notification_preferences(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_notification_prefs_user_id ON notification_preferences(user_id);
