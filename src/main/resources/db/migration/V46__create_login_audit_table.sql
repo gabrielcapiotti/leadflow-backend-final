@@ -17,7 +17,14 @@ CREATE TABLE public.login_audit (
 
     success BOOLEAN NOT NULL,
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    -- ✅ CONSOLIDADO DE V59
+    failure_reason VARCHAR(255),
+
+    suspicious BOOLEAN NOT NULL DEFAULT FALSE,
+
+    tenant_id UUID
 );
 
 -- lookup por usuário
@@ -35,3 +42,7 @@ CREATE INDEX idx_login_audit_created
 -- sucesso/falha (útil pra segurança)
 CREATE INDEX idx_login_audit_success
     ON public.login_audit (success);
+
+-- ✅ CONSOLIDADO DE V59
+CREATE INDEX idx_login_audit_tenant
+    ON public.login_audit(tenant_id);

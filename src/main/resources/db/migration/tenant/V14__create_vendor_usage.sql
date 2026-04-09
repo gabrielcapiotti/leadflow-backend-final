@@ -49,5 +49,5 @@ CREATE INDEX idx_vendor_usage_period
     ON public.vendor_usage (period_start, period_end);
 
 -- lookup por vendor
-CREATE INDEX IF NOT EXISTS idx_vendor_usage_vendor
+CREATE INDEX idx_vendor_usage_vendor
     ON public.vendor_usage (vendor_id);

@@ -17,6 +17,23 @@ CREATE TABLE public.email_events (
 
     reason TEXT,
 
+    -- ✅ CONSOLIDADO DE V43
+    subject VARCHAR(255),
+
+    html_content TEXT,
+
+    status VARCHAR(30) NOT NULL DEFAULT 'RECEIVED',
+
+    attempt_count INTEGER NOT NULL DEFAULT 0,
+
+    max_attempts INTEGER NOT NULL DEFAULT 5,
+
+    next_retry_at TIMESTAMPTZ,
+
+    processed_at TIMESTAMPTZ,
+
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
     CONSTRAINT fk_email_events_tenant
         FOREIGN KEY (tenant_id)
         REFERENCES public.tenants(id)
@@ -44,3 +61,7 @@ CREATE INDEX idx_email_events_email_type
 
 CREATE INDEX idx_email_events_email_tenant
     ON public.email_events (email, tenant_id);
+
+-- ✅ CONSOLIDADO DE V43
+CREATE INDEX idx_email_events_status_retry
+    ON public.email_events (status, next_retry_at);

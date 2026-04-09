@@ -25,7 +25,7 @@ CREATE TABLE public.users (
     lock_until TIMESTAMPTZ,
     credentials_updated_at TIMESTAMPTZ,
 
-    CONSTRAINT uq_users_email UNIQUE (email),
+    CONSTRAINT uq_users_email_tenant UNIQUE (email, tenant_id),
     CONSTRAINT fk_users_tenant
         FOREIGN KEY (tenant_id)
         REFERENCES public.tenants(id)
@@ -44,3 +44,7 @@ CREATE INDEX idx_users_lock_until
 
 CREATE INDEX idx_users_tenant
     ON public.users (tenant_id);
+
+-- ✅ CONSOLIDADO DE V84
+CREATE INDEX idx_users_tenant_email
+    ON public.users (tenant_id, email);

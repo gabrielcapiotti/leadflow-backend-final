@@ -19,12 +19,12 @@ CREATE TABLE public.stripe_event_logs (
     retry_count INTEGER NOT NULL DEFAULT 0,
     max_retries INTEGER NOT NULL DEFAULT 3,
 
-    next_retry_at TIMESTAMP(6),
+    next_retry_at TIMESTAMPTZ,
     last_error TEXT,
-    processed_at TIMESTAMP(6),
+    processed_at TIMESTAMPTZ,
 
-    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP(6),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ,
 
     tenant_id UUID,
     customer_id VARCHAR(100) DEFAULT 'unknown',
@@ -44,6 +44,10 @@ CREATE INDEX idx_stripe_event_logs_tenant_status
 
 CREATE INDEX idx_stripe_event_logs_customer_id
     ON public.stripe_event_logs (customer_id);
+
+CREATE INDEX idx_stripe_event_logs_retry 
+    ON public.stripe_event_logs (status, next_retry_at)
+    WHERE status IN ('PENDING', 'RETRY_PENDING');
 
 CREATE INDEX idx_stripe_event_logs_tenant_retry
     ON public.stripe_event_logs (tenant_id, status, next_retry_at)

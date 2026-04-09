@@ -1,9 +1,9 @@
 /* ======================================================
-   V82__create_vendor_lead_messages.sql
+   V82__create_vendor_lead_messages.sql (DETERMINISTIC)
    GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.vendor_lead_messages (
+CREATE TABLE public.vendor_lead_messages (
 
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -33,11 +33,11 @@ CREATE TABLE IF NOT EXISTS public.vendor_lead_messages (
 
 -- INDEXES
 
-CREATE INDEX IF NOT EXISTS idx_vlm_lead_created
+CREATE INDEX idx_vlm_lead_created
     ON public.vendor_lead_messages (vendor_lead_id, created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_vlm_tenant_id
+CREATE INDEX idx_vlm_tenant_id
     ON public.vendor_lead_messages (tenant_id);
 
-CREATE INDEX IF NOT EXISTS idx_vlm_role
+CREATE INDEX idx_vlm_role
     ON public.vendor_lead_messages (role);

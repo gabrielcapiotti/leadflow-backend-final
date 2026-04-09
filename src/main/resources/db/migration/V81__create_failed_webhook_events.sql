@@ -1,9 +1,9 @@
 /* ======================================================
-   V81__create_failed_webhook_events.sql
+   V81__create_failed_webhook_events.sql (DETERMINISTIC)
    GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.failed_webhook_events (
+CREATE TABLE public.failed_webhook_events (
 
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -40,17 +40,17 @@ CREATE TABLE IF NOT EXISTS public.failed_webhook_events (
 -- INDEXES
 -- ======================================================
 
-CREATE INDEX IF NOT EXISTS idx_failed_webhook_status
+CREATE INDEX idx_failed_webhook_status
     ON public.failed_webhook_events (status);
 
-CREATE INDEX IF NOT EXISTS idx_failed_webhook_created
+CREATE INDEX idx_failed_webhook_created
     ON public.failed_webhook_events (created_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_failed_webhook_retry
+CREATE INDEX idx_failed_webhook_retry
     ON public.failed_webhook_events (status, next_retry_at);
 
-CREATE INDEX IF NOT EXISTS idx_failed_webhook_tenant_id
+CREATE INDEX idx_failed_webhook_tenant_id
     ON public.failed_webhook_events (tenant_id);
 
-CREATE INDEX IF NOT EXISTS idx_failed_webhook_status_tenant
+CREATE INDEX idx_failed_webhook_status_tenant
     ON public.failed_webhook_events (status, tenant_id);

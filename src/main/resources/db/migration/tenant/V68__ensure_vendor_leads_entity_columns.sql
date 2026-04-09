@@ -62,5 +62,5 @@ ALTER COLUMN created_date SET DEFAULT CURRENT_TIMESTAMP;
 -- INDEX
 -- =========================
 
-CREATE INDEX IF NOT EXISTS idx_vendor_leads_created_date
+CREATE INDEX idx_vendor_leads_created_date
 ON vendor_leads (created_date);
