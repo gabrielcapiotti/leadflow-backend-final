@@ -1,46 +1,17 @@
 /* ======================================================
-   FIX EMAIL UNIQUE CONSTRAINT FOR MULTI-TENANT
-   
-   PROBLEM: 
-   - Previous UNIQUE(email) was global (no tenant awareness)
-   - Prevents same email in different tenants
-   - Violates multi-tenant architecture
-   
-   SOLUTION:
-   - Drop old UNIQUE(email) constraint
-   - Add new UNIQUE(email, tenant_id) constraint
-   - Allows same email per tenant (multi-tenant compliant)
+   V84__fix_users_email_unique_multitenant.sql
+   GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
--- Drop old global UNIQUE constraint (if exists)
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'uq_users_email'
-        AND conrelid = 'public.users'::regclass
-    ) THEN
-        ALTER TABLE public.users
-        DROP CONSTRAINT uq_users_email;
-    END IF;
-END $$;
+-- 1. DROP constraint antiga (global)
+ALTER TABLE public.users
+DROP CONSTRAINT IF EXISTS uq_users_email;
 
--- Add new tenant-aware UNIQUE constraint
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'uq_users_email_tenant_id'
-        AND conrelid = 'public.users'::regclass
-    ) THEN
-        ALTER TABLE public.users
-        ADD CONSTRAINT uq_users_email_tenant_id UNIQUE (email, tenant_id);
-    END IF;
-END $$;
+-- 2. ADD constraint correta (tenant-aware)
+ALTER TABLE public.users
+ADD CONSTRAINT uq_users_email_tenant
+UNIQUE (email, tenant_id);
 
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_users_email_tenant_id 
-    ON public.users (email, tenant_id);
-
-CREATE INDEX IF NOT EXISTS idx_users_email 
-    ON public.users (email);
+-- 3. INDEX para performance (queries por tenant + email)
+CREATE INDEX IF NOT EXISTS idx_users_tenant_email
+    ON public.users (tenant_id, email);

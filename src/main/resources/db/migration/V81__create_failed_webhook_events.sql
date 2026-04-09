@@ -1,22 +1,56 @@
--- Create table for failed webhook events
+/* ======================================================
+   V81__create_failed_webhook_events.sql
+   GLOBAL (PUBLIC SCHEMA)
+   ====================================================== */
+
 CREATE TABLE IF NOT EXISTS public.failed_webhook_events (
-    id VARCHAR(36) PRIMARY KEY,
+
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
     stripe_event_id VARCHAR(255) NOT NULL UNIQUE,
+
     event_type VARCHAR(255) NOT NULL,
+
     event_data TEXT NOT NULL,
+
     failure_reason TEXT NOT NULL,
+
     retry_count INTEGER NOT NULL DEFAULT 0,
     max_retries INTEGER NOT NULL DEFAULT 3,
-    status VARCHAR(50) NOT NULL CHECK (status IN ('PENDING', 'IN_PROGRESS', 'SUCCEEDED', 'FAILED_PERMANENT')),
-    next_retry_at TIMESTAMP NOT NULL,
-    original_received_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    succeeded_at TIMESTAMP,
-    tenant_id VARCHAR(255)
+
+    status VARCHAR(50) NOT NULL,
+
+    next_retry_at TIMESTAMPTZ NOT NULL,
+    original_received_at TIMESTAMPTZ NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    succeeded_at TIMESTAMPTZ,
+
+    tenant_id UUID NOT NULL,
+
+    CONSTRAINT fk_failed_webhook_events_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
--- Indexes
-CREATE INDEX IF NOT EXISTS idx_status ON public.failed_webhook_events (status);
-CREATE INDEX IF NOT EXISTS idx_created_at ON public.failed_webhook_events (created_at);
-CREATE INDEX IF NOT EXISTS idx_next_retry ON public.failed_webhook_events (next_retry_at);
+-- ======================================================
+-- INDEXES
+-- ======================================================
+
+CREATE INDEX IF NOT EXISTS idx_failed_webhook_status
+    ON public.failed_webhook_events (status);
+
+CREATE INDEX IF NOT EXISTS idx_failed_webhook_created
+    ON public.failed_webhook_events (created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_failed_webhook_retry
+    ON public.failed_webhook_events (status, next_retry_at);
+
+CREATE INDEX IF NOT EXISTS idx_failed_webhook_tenant_id
+    ON public.failed_webhook_events (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_failed_webhook_status_tenant
+    ON public.failed_webhook_events (status, tenant_id);

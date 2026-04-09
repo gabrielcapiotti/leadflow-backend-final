@@ -9,7 +9,7 @@ spring:
         enabled: false
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:2411/leadflow_test}
+    url: ${DB_URL:jdbc:postgresql://localhost:2411/leadflowDB}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:venusia}
     driver-class-name: org.postgresql.Driver
@@ -205,6 +205,9 @@ app:
   billing:
     enabled: true
   frontend-url: ${APP_FRONTEND_URL:http://localhost:3000}
+  frontend:
+    success-url: ${APP_FRONTEND_SUCCESS_URL:http://localhost:3000/payment-success}
+    cancel-url: ${APP_FRONTEND_CANCEL_URL:http://localhost:3000/payment-cancel}
 
 subscription:
   trial-days: 7

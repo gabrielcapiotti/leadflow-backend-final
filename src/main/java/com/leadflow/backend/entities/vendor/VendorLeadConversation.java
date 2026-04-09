@@ -1,11 +1,27 @@
 package com.leadflow.backend.entities.vendor;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.ParamDef;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "vendor_lead_conversations")
+@Table(name = "vendor_lead_conversations", schema = "public", indexes = {
+    @Index(name = "idx_vendor_lead_conv_tenant_id", columnList = "tenant_id"),
+    @Index(name = "idx_vendor_lead_conv_vendor_tenant", columnList = "vendor_lead_id, tenant_id"),
+    @Index(name = "idx_vendor_lead_conv_lead_tenant", columnList = "lead_id, tenant_id")
+})
+@FilterDef(
+    name = "tenantFilter",
+    parameters = @ParamDef(name = "tenantId", type = UUID.class)
+)
+@Filter(
+    name = "tenantFilter",
+    condition = "tenant_id = :tenantId"
+)
 public class VendorLeadConversation {
 
     @Id
@@ -18,6 +34,9 @@ public class VendorLeadConversation {
     @Column(nullable = false)
     private UUID leadId;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @Column(length = 5000, nullable = false)
     private String content;
 
@@ -26,9 +45,6 @@ public class VendorLeadConversation {
 
     @Column(length = 50)
     private String sender;
-
-    @Column(length = 100)
-    private String tenant;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -39,6 +55,9 @@ public class VendorLeadConversation {
 
     @PrePersist
     public void prePersist() {
+        if (tenantId == null) {
+            tenantId = TenantContext.requireTenant();
+        }
         if (createdAt == null) {
             createdAt = Instant.now();
         }
@@ -60,6 +79,10 @@ public class VendorLeadConversation {
         return leadId;
     }
 
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
     public String getContent() {
         return content;
     }
@@ -70,10 +93,6 @@ public class VendorLeadConversation {
 
     public String getSender() {
         return sender;
-    }
-
-    public String getTenant() {
-        return tenant;
     }
 
     public Instant getCreatedAt() {
@@ -104,8 +123,8 @@ public class VendorLeadConversation {
         this.sender = sender;
     }
 
-    public void setTenant(String tenant) {
-        this.tenant = tenant;
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public void setCreatedAt(Instant createdAt) {

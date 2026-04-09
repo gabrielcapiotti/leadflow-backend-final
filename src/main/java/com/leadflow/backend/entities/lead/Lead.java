@@ -4,18 +4,12 @@ import com.leadflow.backend.entities.enums.LeadStatus;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
-@Filter(
-        name = "tenantFilter",
-        condition = "tenant_id = :tenantId"
-)
 @Entity
 @Table(
         name = "leads",

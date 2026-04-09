@@ -2,7 +2,12 @@ package com.leadflow.backend.webhook.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.ParamDef;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import java.time.Instant;
+import java.util.UUID;
 
 /**
  * Entity to store failed webhook events for later replay.
@@ -13,9 +18,10 @@ import java.time.Instant;
  */
 @Entity
 @Table(name = "failed_webhook_events", indexes = {
-    @Index(name = "idx_status", columnList = "status"),
-    @Index(name = "idx_created_at", columnList = "created_at"),
-    @Index(name = "idx_next_retry", columnList = "next_retry_at")
+    @Index(name = "idx_failed_webhook_tenant_id", columnList = "tenant_id"),
+    @Index(name = "idx_failed_webhook_status_tenant", columnList = "status, tenant_id"),
+    @Index(name = "idx_failed_webhook_created_at", columnList = "created_at"),
+    @Index(name = "idx_failed_webhook_next_retry", columnList = "next_retry_at")
 })
 @Getter
 @Setter
@@ -28,17 +34,20 @@ public class FailedWebhookEvent {
     @GeneratedValue(strategy = GenerationType.UUID)
     private String id;
 
-    /**
-     * Stripe event ID from webhook
-     */
-    @Column(nullable = false, unique = true)
-    private String stripeEventId;
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     /**
      * Webhook event type (charge.succeeded, invoice.payment_failed, etc.)
      */
     @Column(nullable = false)
     private String eventType;
+
+    /**
+     * Stripe event ID (unique identifier from Stripe)
+     */
+    @Column(name = "stripe_event_id", nullable = false, unique = true)
+    private String stripeEventId;
 
     /**
      * Raw webhook body
@@ -100,13 +109,11 @@ public class FailedWebhookEvent {
      */
     private Instant succeededAt;
 
-    /**
-     * Tenant ID (for multi-tenant support)
-     */
-    private String tenantId;
-
     @PrePersist
     protected void onCreate() {
+        if (tenantId == null) {
+            tenantId = TenantContext.requireTenant();
+        }
         createdAt = Instant.now();
         updatedAt = Instant.now();
         if (nextRetryAt == null) {

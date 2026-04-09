@@ -7,18 +7,38 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.ParamDef;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "vendor_usage")
+@Table(name = "vendor_usage", schema = "public", indexes = {
+    @Index(name = "idx_vendor_usage_tenant_id", columnList = "tenant_id"),
+    @Index(name = "idx_vendor_usage_vendor_tenant", columnList = "vendor_id, tenant_id")
+})
+@FilterDef(
+    name = "tenantFilter",
+    parameters = @ParamDef(name = "tenantId", type = UUID.class)
+)
+@Filter(
+    name = "tenantFilter",
+    condition = "tenant_id = :tenantId"
+)
 public class VendorUsage {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     @Column(name = "vendor_id", nullable = false)
     private UUID vendorId;
@@ -42,12 +62,27 @@ public class VendorUsage {
     @Column(name = "period_end", nullable = false)
     private Instant periodEnd;
 
+    @PrePersist
+    public void prePersist() {
+        if (tenantId == null) {
+            tenantId = TenantContext.requireTenant();
+        }
+    }
+
     public UUID getId() {
         return id;
     }
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public UUID getVendorId() {

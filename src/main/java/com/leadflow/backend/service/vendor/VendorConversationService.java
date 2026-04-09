@@ -40,7 +40,7 @@ public class VendorConversationService {
         conversation.setLeadId(leadId);
         conversation.setContent(message);
         conversation.setSender(sender);
-        conversation.setTenant(TenantContext.getTenant().toString());
+        conversation.setTenantId(TenantContext.getTenant());
         conversation.setCreatedAt(Instant.now());
 
         return repository.save(conversation);

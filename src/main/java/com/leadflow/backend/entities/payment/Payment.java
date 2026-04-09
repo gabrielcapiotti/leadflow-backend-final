@@ -1,19 +1,25 @@
 package com.leadflow.backend.entities.payment;
 
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
+
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "payments", indexes = {
         @Index(name = "idx_payment_event", columnList = "eventId", unique = true),
-        @Index(name = "idx_payment_email", columnList = "email")
+        @Index(name = "idx_payment_tenant_id", columnList = "tenant_id"),
+        @Index(name = "idx_payment_email_tenant", columnList = "email, tenant_id")
 })
 public class Payment {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     @Column(nullable = false, unique = true)
     private String eventId;
@@ -38,10 +44,16 @@ public class Payment {
     @PrePersist
     public void onCreate() {
         this.createdAt = Instant.now();
+        if (tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
     }
 
     // getters e setters
     public UUID getId() { return id; }
+
+    public UUID getTenantId() { return tenantId; }
+    public void setTenantId(UUID tenantId) { this.tenantId = tenantId; }
 
     public String getEventId() { return eventId; }
     public void setEventId(String eventId) { this.eventId = eventId; }

@@ -1,23 +1,41 @@
--- Create table for storing Stripe webhook events
-CREATE TABLE IF NOT EXISTS public.stripe_event_logs (
-    id BIGINT NOT NULL GENERATED ALWAYS AS IDENTITY,
-    event_id VARCHAR(100) NOT NULL UNIQUE,
-    event_type VARCHAR(100) NOT NULL,
-    payload TEXT NOT NULL,
-    status VARCHAR(50) NOT NULL CHECK (status IN ('PENDING', 'PROCESSING', 'SUCCESS', 'FAILED', 'RETRY_PENDING')),
-    retry_count INTEGER NOT NULL DEFAULT 0,
-    max_retries INTEGER NOT NULL DEFAULT 3,
-    next_retry_at TIMESTAMP(6),
-    last_error TEXT,
-    processed_at TIMESTAMP(6),
-    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP(6),
-    PRIMARY KEY (id)
-);
+/* ======================================================
+   V78__ensure_stripe_event_logs_structure.sql (DETERMINISTIC)
+   GLOBAL (PUBLIC SCHEMA)
+   ====================================================== */
 
--- Create indexes for better query performance
-CREATE INDEX IF NOT EXISTS idx_event_id ON public.stripe_event_logs (event_id);
-CREATE INDEX IF NOT EXISTS idx_event_type ON public.stripe_event_logs (event_type);
-CREATE INDEX IF NOT EXISTS idx_status ON public.stripe_event_logs (status);
-CREATE INDEX IF NOT EXISTS idx_created_at ON public.stripe_event_logs (created_at);
-CREATE INDEX IF NOT EXISTS idx_next_retry_at ON public.stripe_event_logs (next_retry_at) WHERE status IN ('PENDING', 'RETRY_PENDING');
+-- ======================================================
+-- ENSURE COLUMNS
+-- ======================================================
+
+ALTER TABLE public.stripe_event_logs
+    ADD COLUMN IF NOT EXISTS tenant_id UUID,
+    ADD COLUMN IF NOT EXISTS customer_id VARCHAR(100) DEFAULT 'unknown';
+
+-- ======================================================
+-- ENSURE INDEXES
+-- ======================================================
+
+CREATE INDEX IF NOT EXISTS idx_stripe_event_logs_tenant_id 
+    ON public.stripe_event_logs (tenant_id);
+
+CREATE INDEX IF NOT EXISTS idx_stripe_event_logs_tenant_status 
+    ON public.stripe_event_logs (tenant_id, status);
+
+CREATE INDEX IF NOT EXISTS idx_stripe_event_logs_customer_id 
+    ON public.stripe_event_logs (customer_id);
+
+CREATE INDEX IF NOT EXISTS idx_stripe_event_logs_retry 
+    ON public.stripe_event_logs (status, next_retry_at)
+    WHERE status IN ('PENDING', 'RETRY_PENDING');
+
+-- ======================================================
+-- CONVERT TIMESTAMP TYPES (Direct - will fail if not needed)
+-- ======================================================
+
+ALTER TABLE public.stripe_event_logs
+ALTER COLUMN next_retry_at TYPE TIMESTAMPTZ
+USING next_retry_at AT TIME ZONE 'UTC';
+
+ALTER TABLE public.stripe_event_logs
+ALTER COLUMN processed_at TYPE TIMESTAMPTZ
+USING processed_at AT TIME ZONE 'UTC';

@@ -1,44 +1,88 @@
 /* ======================================================
-   SECURITY AUDIT LOGS
-   Tracks authentication and security-related actions
+   V21__create_audit_logs.sql
+   GLOBAL (PUBLIC SCHEMA)
+   UNIFIED AUDIT SYSTEM
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.security_audit_logs (
+CREATE TABLE public.audit_logs (
 
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    action VARCHAR(50) NOT NULL,
+    /* ======================================================
+       CLASSIFICAÇÃO DO EVENTO
+       ====================================================== */
 
-    email VARCHAR(150) NOT NULL,
-    tenant VARCHAR(100) NOT NULL,
+    event_category VARCHAR(50) NOT NULL CHECK (
+        event_category IN ('SECURITY', 'SYSTEM', 'BUSINESS')
+    ),
 
-    success BOOLEAN NOT NULL,
+    action VARCHAR(100) NOT NULL,
 
+    /* ======================================================
+       CONTEXTO DO ATOR
+       ====================================================== */
+
+    actor_email VARCHAR(255),
+    tenant_id UUID,
+
+    /* ======================================================
+       CONTEXTO DA ENTIDADE
+       ====================================================== */
+
+    entity_type VARCHAR(100) DEFAULT 'UNKNOWN',
+    entity_id UUID,
+
+    /* ======================================================
+       SEGURANÇA (opcional)
+       ====================================================== */
+
+    success BOOLEAN,
     ip_address VARCHAR(100),
     user_agent VARCHAR(255),
 
+    /* ======================================================
+       OBSERVABILIDADE
+       ====================================================== */
+
     correlation_id VARCHAR(100),
 
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+    /* ======================================================
+       PAYLOAD / DETALHES
+       ====================================================== */
 
+    details JSONB,
+
+    /* ======================================================
+       AUDITORIA
+       ====================================================== */
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 
 /* ======================================================
    INDEXES
    ====================================================== */
 
--- Lookup by email
-CREATE INDEX IF NOT EXISTS idx_security_audit_email
-    ON public.security_audit_logs (email);
+CREATE INDEX idx_audit_logs_category
+    ON public.audit_logs (event_category);
 
--- Tenant filtering (multi-tenant analysis)
-CREATE INDEX IF NOT EXISTS idx_security_audit_tenant
-    ON public.security_audit_logs (tenant);
+CREATE INDEX idx_audit_logs_action
+    ON public.audit_logs (action);
 
--- Timeline queries
-CREATE INDEX IF NOT EXISTS idx_security_audit_created_at
-    ON public.security_audit_logs (created_at DESC);
+CREATE INDEX idx_audit_logs_actor_email
+    ON public.audit_logs (actor_email);
 
--- Correlation tracking (request tracing)
-CREATE INDEX IF NOT EXISTS idx_security_audit_correlation
-    ON public.security_audit_logs (correlation_id);
+CREATE INDEX idx_audit_logs_tenant
+    ON public.audit_logs (tenant_id);
+
+CREATE INDEX idx_audit_logs_entity_type
+    ON public.audit_logs (entity_type);
+
+CREATE INDEX idx_audit_logs_entity_id
+    ON public.audit_logs (entity_id);
+
+CREATE INDEX idx_audit_logs_created_at
+    ON public.audit_logs (created_at DESC);
+
+CREATE INDEX idx_audit_logs_correlation
+    ON public.audit_logs (correlation_id);

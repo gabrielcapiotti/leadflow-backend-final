@@ -1,53 +1,40 @@
+/* ======================================================
+   V73__create_usage_limits.sql
+   GLOBAL (PUBLIC SCHEMA)
+   ====================================================== */
 
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_name = 'usage_limits' AND table_schema = 'public'
-    ) THEN
-        CREATE TABLE public.usage_limits (
-            id BIGSERIAL PRIMARY KEY,
-            tenant_id UUID NOT NULL UNIQUE,
-            leads_used INTEGER NOT NULL DEFAULT 0,
-            users_used INTEGER NOT NULL DEFAULT 0,
-            ai_executions_used INTEGER NOT NULL DEFAULT 0,
-            plan_id BIGINT NOT NULL,
-            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP,
-            CONSTRAINT fk_usage_limit_tenant FOREIGN KEY (tenant_id) REFERENCES public.vendors(id) ON DELETE CASCADE,
-            CONSTRAINT fk_usage_limit_plan FOREIGN KEY (plan_id) REFERENCES public.plans(id) ON DELETE RESTRICT,
-            CONSTRAINT chk_leads_used_positive CHECK (leads_used >= 0),
-            CONSTRAINT chk_users_used_positive CHECK (users_used >= 0),
-            CONSTRAINT chk_ai_executions_used_positive CHECK (ai_executions_used >= 0)
-        );
-    END IF;
-END$$;
+CREATE TABLE public.usage_limits (
 
--- Índice para consultas por tenant
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_indexes 
-        WHERE tablename = 'usage_limits' AND indexname = 'idx_usage_limit_tenant_id'
-    ) THEN
-        CREATE INDEX idx_usage_limit_tenant_id ON public.usage_limits(tenant_id);
-    END IF;
-END$$;
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
--- Índice para consultas por plano
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_indexes 
-        WHERE tablename = 'usage_limits' AND indexname = 'idx_usage_limit_plan_id'
-    ) THEN
-        CREATE INDEX idx_usage_limit_plan_id ON public.usage_limits(plan_id);
-    END IF;
-END$$;
+    tenant_id UUID NOT NULL UNIQUE,
 
--- Comentários para documentação
-COMMENT ON TABLE public.usage_limits IS 'Controla consumo total consolidado de recursos por tenant, vinculado ao plano contratado';
-COMMENT ON COLUMN public.usage_limits.tenant_id IS 'Referência ao vendor (tenant)';
-COMMENT ON COLUMN public.usage_limits.leads_used IS 'Total de leads utilizados pelo tenant';
-COMMENT ON COLUMN public.usage_limits.users_used IS 'Total de usuários utilizados pelo tenant';
-COMMENT ON COLUMN public.usage_limits.ai_executions_used IS 'Total de execuções de IA utilizadas pelo tenant';
+    leads_used INTEGER NOT NULL DEFAULT 0,
+    users_used INTEGER NOT NULL DEFAULT 0,
+    ai_executions_used INTEGER NOT NULL DEFAULT 0,
+
+    plan_id UUID NOT NULL,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ,
+
+    CONSTRAINT fk_usage_limit_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_usage_limit_plan
+        FOREIGN KEY (plan_id)
+        REFERENCES public.plans(id)
+        ON DELETE RESTRICT,
+
+    CONSTRAINT chk_leads_used_positive CHECK (leads_used >= 0),
+    CONSTRAINT chk_users_used_positive CHECK (users_used >= 0),
+    CONSTRAINT chk_ai_exec_used_positive CHECK (ai_executions_used >= 0)
+);
+
+CREATE INDEX idx_usage_limit_tenant_id
+ON public.usage_limits(tenant_id);
+
+CREATE INDEX idx_usage_limit_plan_id
+ON public.usage_limits(plan_id);

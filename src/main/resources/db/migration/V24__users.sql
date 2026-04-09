@@ -1,55 +1,46 @@
 /* ======================================================
-   USERS TABLE (FINAL STRUCTURE - NO TEMPLATE)
+   V24__create_users.sql
+   GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.users (
+CREATE TABLE public.users (
 
-    id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
     name VARCHAR(255),
-    email VARCHAR(255),
-    password VARCHAR(255),
+
+    email VARCHAR(255) NOT NULL,
+
+    password_hash VARCHAR(255) NOT NULL,
+
+    tenant_id UUID NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000',
 
     role_id UUID,
 
-    created_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,
 
     failed_attempts INTEGER NOT NULL DEFAULT 0,
     lock_until TIMESTAMPTZ,
-    credentials_updated_at TIMESTAMPTZ
+    credentials_updated_at TIMESTAMPTZ,
+
+    CONSTRAINT uq_users_email UNIQUE (email),
+    CONSTRAINT fk_users_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
--- PRIMARY KEY (idempotente)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'pk_users'
-    ) THEN
-        ALTER TABLE public.users
-        ADD CONSTRAINT pk_users PRIMARY KEY (id);
-    END IF;
-END $$;
+/* ======================================================
+   INDEXES
+   ====================================================== */
 
--- UNIQUE EMAIL (recomendado)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'uq_users_email'
-    ) THEN
-        ALTER TABLE public.users
-        ADD CONSTRAINT uq_users_email UNIQUE (email);
-    END IF;
-END $$;
-
--- INDEXES
-CREATE INDEX IF NOT EXISTS idx_users_deleted_at
+CREATE INDEX idx_users_deleted_at
     ON public.users (deleted_at);
 
-CREATE INDEX IF NOT EXISTS idx_users_lock_until
+CREATE INDEX idx_users_lock_until
     ON public.users (lock_until);
 
-CREATE INDEX IF NOT EXISTS idx_users_email
-    ON public.users (email);
+CREATE INDEX idx_users_tenant
+    ON public.users (tenant_id);

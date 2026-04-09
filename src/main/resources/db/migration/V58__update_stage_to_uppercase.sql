@@ -1,22 +1,9 @@
 /* ======================================================
-   NORMALIZE LEAD STAGE VALUES
-   Converts existing stage values to uppercase
+   V58__normalize_vendor_leads_stage.sql
+   GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
-DO $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = 'public'
-        AND table_name = 'vendor_leads'
-        AND column_name = 'stage'
-    ) THEN
-
-        UPDATE public.vendor_leads
-        SET stage = UPPER(stage)
-        WHERE stage <> UPPER(stage);
-
-    END IF;
-END
-$$ LANGUAGE plpgsql;
+UPDATE public.vendor_leads
+SET stage = UPPER(stage)
+WHERE stage IS NOT NULL
+AND stage <> UPPER(stage);

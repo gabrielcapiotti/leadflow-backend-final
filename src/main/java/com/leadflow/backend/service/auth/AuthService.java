@@ -278,12 +278,28 @@ public class AuthService {
         try {
             HttpServletRequest request = currentRequest();
 
-            String auditTenant = tenant != null ? tenant : TenantContext.getIfPresent() != null ? TenantContext.getIfPresent().toString() : null;
+            // Get tenantId from tenant parameter or TenantContext
+            UUID tenantId = null;
+            if (tenant != null) {
+                try {
+                    tenantId = UUID.fromString(tenant);
+                } catch (IllegalArgumentException e) {
+                    // If not a valid UUID, try to get from context
+                    tenantId = TenantContext.getIfPresent();
+                }
+            } else {
+                tenantId = TenantContext.getIfPresent();
+            }
+
+            if (tenantId == null) {
+                logger.warn("Cannot audit: no tenant available");
+                return;
+            }
 
             auditService.log(
                     action,
                     email,
-                    auditTenant,
+                    tenantId,
                     success,
                     request != null ? request.getRemoteAddr() : null,
                     request != null ? request.getHeader("User-Agent") : null,

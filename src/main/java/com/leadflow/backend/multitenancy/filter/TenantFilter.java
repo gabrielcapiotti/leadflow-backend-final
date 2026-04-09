@@ -2,8 +2,6 @@ package com.leadflow.backend.multitenancy.filter;
 
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.resolver.TenantResolver;
-import com.leadflow.backend.util.LogSanitizer;
-
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;

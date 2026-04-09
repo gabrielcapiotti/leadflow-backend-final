@@ -155,7 +155,7 @@ public class AdminAuditController {
                 log.getId(),
                 log.getAction(),
                 log.getEmail(),
-                log.getTenant(),
+                log.getTenantId() != null ? log.getTenantId().toString() : null,
                 log.isSuccess(),
                 log.getIpAddress(),
                 log.getUserAgent(),

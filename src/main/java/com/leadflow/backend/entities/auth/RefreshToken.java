@@ -3,6 +3,10 @@ package com.leadflow.backend.entities.auth;
 import com.leadflow.backend.entities.user.User;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.ParamDef;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -11,7 +15,9 @@ import java.util.UUID;
 @Table(
         name = "refresh_tokens",
         indexes = {
+                @Index(name = "idx_refresh_tokens_tenant_id", columnList = "tenant_id"),
                 @Index(name = "idx_refresh_tokens_user", columnList = "user_id"),
+                @Index(name = "idx_refresh_tokens_user_tenant", columnList = "user_id, tenant_id"),
                 @Index(name = "idx_refresh_tokens_hash", columnList = "token_hash"),
                 @Index(name = "idx_refresh_tokens_fingerprint", columnList = "device_fingerprint"),
                 @Index(name = "idx_refresh_tokens_expires", columnList = "expires_at")
@@ -20,6 +26,8 @@ import java.util.UUID;
                 @UniqueConstraint(name = "uq_refresh_tokens_hash", columnNames = "token_hash")
         }
 )
+@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = UUID.class))
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class RefreshToken {
 
     /* ======================================================
@@ -29,6 +37,13 @@ public class RefreshToken {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    /* ======================================================
+       TENANT ISOLATION
+       ====================================================== */
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     /* ======================================================
        CORE FIELDS
@@ -61,6 +76,17 @@ public class RefreshToken {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    /* ======================================================
+       LIFECYCLE
+       ====================================================== */
+
+    @PrePersist
+    public void prePersist() {
+        if (tenantId == null && user != null) {
+            tenantId = user.getTenantId();
+        }
+    }
 
     /* ======================================================
        CONSTRUCTORS
@@ -120,6 +146,10 @@ public class RefreshToken {
         return id;
     }
 
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
     public String getTokenHash() {
         return tokenHash;
     }
@@ -147,6 +177,12 @@ public class RefreshToken {
     /* ======================================================
        SETTERS (controlled)
        ====================================================== */
+
+    public void setTenantId(UUID tenantId) {
+        if (tenantId == null)
+            throw new IllegalArgumentException("Tenant ID cannot be null");
+        this.tenantId = tenantId;
+    }
 
     public void setDeviceFingerprint(String deviceFingerprint) {
         if (deviceFingerprint == null || deviceFingerprint.isBlank())

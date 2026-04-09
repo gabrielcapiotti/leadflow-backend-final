@@ -1,6 +1,9 @@
 package com.leadflow.backend.entities.notification;
 
 import jakarta.persistence.*;
+import org.hibernate.annotations.FilterDef;
+import org.hibernate.annotations.Filter;
+import org.hibernate.annotations.ParamDef;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -10,7 +13,15 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "notification_preferences")
+@Table(name = "notification_preferences", schema = "public")
+@FilterDef(
+    name = "tenantFilter",
+    parameters = @ParamDef(name = "tenantId", type = UUID.class)
+)
+@Filter(
+    name = "tenantFilter",
+    condition = "tenant_id = :tenantId"
+)
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
