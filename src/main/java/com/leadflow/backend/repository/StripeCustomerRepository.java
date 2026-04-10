@@ -74,7 +74,7 @@ public interface StripeCustomerRepository extends JpaRepository<StripeCustomer, 
      * @param subscriptionId Local subscription ID (Long)
      * @return Optional containing mapping if found
      */
-    Optional<StripeCustomer> findBySubscriptionId(Long subscriptionId);
+    Optional<StripeCustomer> findBySubscriptionId(UUID subscriptionId);
 
     /**
      * Check if stripe customer is already mapped

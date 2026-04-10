@@ -9,8 +9,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 
 @Service
@@ -33,11 +31,10 @@ public class AuditCleanupService {
     @Transactional
     public void deleteOldLogs() {
 
-        Instant vendorThreshold = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
-        LocalDateTime securityThreshold = LocalDateTime.ofInstant(vendorThreshold, ZoneOffset.UTC);
+        Instant threshold = Instant.now().minus(retentionDays, ChronoUnit.DAYS);
 
-        long vendorDeleted = vendorAuditLogRepository.deleteByCreatedAtBefore(vendorThreshold);
-        long securityDeleted = securityAuditLogRepository.deleteByCreatedAtBefore(securityThreshold);
+        long vendorDeleted = vendorAuditLogRepository.deleteByCreatedAtBefore(threshold);
+        long securityDeleted = securityAuditLogRepository.deleteByCreatedAtBefore(threshold);
 
         log.info("event=audit_cleanup vendorDeleted={} securityDeleted={} retentionDays={}",
                 vendorDeleted, securityDeleted, retentionDays);

@@ -13,7 +13,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface SubscriptionRepository extends JpaRepository<Subscription, Long> {
+public interface SubscriptionRepository extends JpaRepository<Subscription, UUID> {
 
     Optional<Subscription> findByStripeCustomerId(String customerId);
 

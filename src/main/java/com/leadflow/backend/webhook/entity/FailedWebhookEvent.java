@@ -2,9 +2,7 @@ package com.leadflow.backend.webhook.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.ParamDef;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import java.time.Instant;
 import java.util.UUID;
@@ -23,6 +21,7 @@ import java.util.UUID;
     @Index(name = "idx_failed_webhook_created_at", columnList = "created_at"),
     @Index(name = "idx_failed_webhook_next_retry", columnList = "next_retry_at")
 })
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 @Getter
 @Setter
 @NoArgsConstructor

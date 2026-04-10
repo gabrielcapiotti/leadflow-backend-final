@@ -74,7 +74,7 @@ public class StripeService {
         return new CheckoutResponse(session.getUrl(), referenceId, "stripe");
     }
 
-    public Session createCheckoutSession(String email, Long tenantId) {
+    public Session createCheckoutSession(String email, UUID tenantId) {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Email is required to create checkout session");
         }

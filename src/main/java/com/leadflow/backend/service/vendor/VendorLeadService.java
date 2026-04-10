@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.regex.Pattern;
+import java.math.BigDecimal;
 import org.springframework.transaction.annotation.Transactional;
 import com.leadflow.backend.entities.vendor.Vendor;
 
@@ -85,7 +86,7 @@ public class VendorLeadService {
 
                 String nomeCompleto = sanitizeNomeCompleto(node.get("nomeCompleto").asText());
                 String whatsapp = sanitizeWhatsapp(node.get("whatsapp").asText());
-                String valorCredito = sanitizeValorCredito(node.path("valorCredito").asText(null));
+                BigDecimal valorCredito = sanitizeAndConvertValorCredito(node.path("valorCredito").asText(null));
 
                 if (nomeCompleto == null || whatsapp == null) {
                     return null;
@@ -152,7 +153,7 @@ public class VendorLeadService {
 
         String nomeCompleto = sanitizeNomeCompleto(request.getNomeCompleto());
         String whatsapp = sanitizeWhatsapp(request.getWhatsapp());
-        String valorCredito = sanitizeValorCredito(request.getValorCredito());
+        BigDecimal valorCredito = sanitizeAndConvertValorCredito(request.getValorCredito());
 
         if (nomeCompleto == null || whatsapp == null) {
             throw new IllegalArgumentException("Dados do lead inválidos");
@@ -224,6 +225,27 @@ public class VendorLeadService {
         String sanitized = value.trim();
         if (sanitized.isBlank()) return null;
         return VALOR_CREDITO_PATTERN.matcher(sanitized).matches() ? sanitized : null;
+    }
+
+    private BigDecimal sanitizeAndConvertValorCredito(Object value) {
+        if (value == null) return null;
+        
+        String strValue;
+        if (value instanceof BigDecimal) {
+            strValue = value.toString();
+        } else {
+            strValue = value.toString();
+        }
+        
+        String sanitized = sanitizeValorCredito(strValue);
+        if (sanitized == null) return null;
+        
+        try {
+            return new BigDecimal(sanitized.replaceAll("[^0-9.]", ""));
+        } catch (Exception e) {
+            log.warn("Failed to convert valor_credito: {}", sanitized);
+            return null;
+        }
     }
 
     private int calculateScore(VendorLead lead) {

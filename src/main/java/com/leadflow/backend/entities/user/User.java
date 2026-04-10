@@ -3,18 +3,12 @@ package com.leadflow.backend.entities.user;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.ParamDef;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
-@FilterDef(
-        name = "tenantFilter",
-        parameters = @ParamDef(name = "tenantId", type = String.class)
-)
 @Filter(
         name = "tenantFilter",
         condition = "tenant_id = :tenantId"
@@ -74,7 +68,7 @@ public class User {
     @Column(nullable = false, length = 150)
     private String name;
 
-    @Column(nullable = false, length = 255)
+    @Column(name = "password_hash", nullable = false, length = 255)
     private String password;
 
     /* ======================================================

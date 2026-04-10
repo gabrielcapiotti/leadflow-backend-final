@@ -3,6 +3,7 @@ package com.leadflow.backend.dto.vendor;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
+import java.math.BigDecimal;
 
 public class CreateLeadRequest {
 
@@ -17,8 +18,7 @@ public class CreateLeadRequest {
     @Size(max = 50)
     private String tipoConsorcio;
 
-    @Size(max = 50)
-    private String valorCredito;
+    private BigDecimal valorCredito;
 
     @Pattern(regexp = "quero_fechar|analisando|pesquisando")
     private String urgencia;
@@ -47,11 +47,11 @@ public class CreateLeadRequest {
         this.tipoConsorcio = tipoConsorcio;
     }
 
-    public String getValorCredito() {
+    public BigDecimal getValorCredito() {
         return valorCredito;
     }
 
-    public void setValorCredito(String valorCredito) {
+    public void setValorCredito(BigDecimal valorCredito) {
         this.valorCredito = valorCredito;
     }
 

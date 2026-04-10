@@ -60,7 +60,13 @@ public class Lead {
        ====================================================== */
 
     /**
-     * Apenas referência por ID.
+     * Referência para o Vendor (proprietário do lead)
+     */
+    @Column(name = "vendor_id", nullable = false)
+    private UUID vendorId;
+
+    /**
+     * Apenas referência por ID para User.
      * Não existe relacionamento JPA com User.
      * Isolamento ocorre via schema + userId.
      */
@@ -146,6 +152,7 @@ public class Lead {
     public String getPhone() { return phone; }
     public LeadStatus getStatus() { return status; }
     public UUID getTenantId() { return tenantId; }
+    public UUID getVendorId() { return vendorId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public LocalDateTime getDeletedAt() { return deletedAt; }
@@ -164,6 +171,24 @@ public class Lead {
             throw new IllegalArgumentException("Name cannot be blank");
 
         this.name = name.trim();
+    }
+
+    public void setVendorId(UUID vendorId) {
+        if (vendorId == null)
+            throw new IllegalArgumentException("VendorId cannot be null");
+        this.vendorId = vendorId;
+    }
+
+    public void setUserId(UUID userId) {
+        if (userId == null)
+            throw new IllegalArgumentException("UserId cannot be null");
+        this.userId = userId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        if (tenantId == null)
+            throw new IllegalArgumentException("TenantId cannot be null");
+        this.tenantId = tenantId;
     }
 
     private String normalizePhone(String phone) {

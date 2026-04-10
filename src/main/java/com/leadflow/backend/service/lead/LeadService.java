@@ -92,12 +92,19 @@ public class LeadService {
         if (exists) {
             throw new IllegalArgumentException("Email already in use for this user");
         }
+        
+        // Get vendor from context (required)
+        UUID vendorId = vendorContext.getCurrentVendor().getId();
+        UUID tenantId = TenantContext.requireTenant();
+        
         Lead lead = new Lead(
                 createdBy.getId(),
                 name,
                 normalizedEmail,
                 phone
         );
+        lead.setVendorId(vendorId);
+        lead.setTenantId(tenantId);
         lead = leadRepository.save(lead);
 
         historyRepository.save(

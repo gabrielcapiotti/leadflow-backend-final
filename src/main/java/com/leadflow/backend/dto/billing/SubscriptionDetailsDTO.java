@@ -9,6 +9,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
@@ -16,7 +17,7 @@ import java.time.LocalDateTime;
 @Builder
 public class SubscriptionDetailsDTO {
 
-    private Long subscriptionId;
+    private UUID subscriptionId;
     private String tenantId;
     private String stripeCustomerId;
     private String stripeSubscriptionId;

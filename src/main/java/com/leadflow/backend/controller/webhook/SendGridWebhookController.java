@@ -73,47 +73,9 @@ public class SendGridWebhookController {
             emailEvent.setReason(stringValue(event.get("reason")));
 
             repository.save(emailEvent);
-
-            if (shouldInvalidateEmail(eventType, event)) {
-                markEmailAsInvalid(email);
-            }
         }
 
         return ResponseEntity.ok().build();
-    }
-
-    private void markEmailAsInvalid(String email) {
-        vendorRepository.findByUserEmail(email)
-                .forEach(vendor -> {
-                    vendor.setEmailInvalid(true);
-                    vendorRepository.save(vendor);
-                });
-    }
-
-    private boolean shouldInvalidateEmail(String eventType, Map<String, Object> event) {
-        if ("spamreport".equalsIgnoreCase(eventType)) {
-            return true;
-        }
-
-        if (!"bounce".equalsIgnoreCase(eventType)) {
-            return false;
-        }
-
-        String bounceType = stringValue(event.get("type"));
-        String reason = stringValue(event.get("reason"));
-
-        if (bounceType != null && "blocked".equalsIgnoreCase(bounceType)) {
-            return false;
-        }
-
-        if (reason == null) {
-            return true;
-        }
-
-        String normalizedReason = reason.toLowerCase();
-        return !normalizedReason.contains("mailbox full")
-                && !normalizedReason.contains("temporarily")
-                && !normalizedReason.contains("try again later");
     }
 
     private Instant resolveOccurredAt(Map<String, Object> event) {

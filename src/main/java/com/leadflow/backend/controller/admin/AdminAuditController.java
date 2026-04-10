@@ -2,7 +2,6 @@ package com.leadflow.backend.controller.admin;
 
 import com.leadflow.backend.dto.audit.SecurityAuditResponse;
 import com.leadflow.backend.dto.audit.VendorAuditResponse;
-import com.leadflow.backend.entities.audit.SecurityAction;
 import com.leadflow.backend.entities.audit.SecurityAuditLog;
 import com.leadflow.backend.entities.vendor.VendorAuditLog;
 import com.leadflow.backend.repository.VendorAuditLogRepository;
@@ -23,7 +22,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -52,18 +50,18 @@ public class AdminAuditController {
 
     @GetMapping("/security")
     public ResponseEntity<Page<SecurityAuditResponse>> getAuditLogs(
-            @RequestParam(required = false) String email,
-            @RequestParam(required = false) String tenant,
-            @RequestParam(required = false) SecurityAction action,
+            @RequestParam(required = false) String actorEmail,
+            @RequestParam(required = false) UUID tenantId,
+            @RequestParam(required = false) String action,
             @RequestParam(required = false) Boolean success,
 
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime from,
+            Instant from,
 
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime to,
+            Instant to,
 
             @NonNull Pageable pageable
     ) {
@@ -75,8 +73,8 @@ public class AdminAuditController {
 
         Specification<SecurityAuditLog> specification =
                 SecurityAuditSpecification.filter(
-                        email,
-                        tenant,
+                        actorEmail,
+                        tenantId,
                         action,
                         success,
                         from,
@@ -89,8 +87,8 @@ public class AdminAuditController {
                         .map(this::mapSecurityAuditResponse);
 
         logger.info(
-                "Admin security audit query executed - email={}, tenant={}, action={}, success={}",
-                email, tenant, action, success
+                "Admin security audit query executed - actorEmail={}, tenantId={}, action={}, success={}",
+                actorEmail, tenantId, action, success
         );
 
         return ResponseEntity.ok(response);
@@ -153,13 +151,17 @@ public class AdminAuditController {
 
         return new SecurityAuditResponse(
                 log.getId(),
+                log.getEventCategory(),
                 log.getAction(),
-                log.getEmail(),
-                log.getTenantId() != null ? log.getTenantId().toString() : null,
-                log.isSuccess(),
+                log.getActorEmail(),
+                log.getTenantId(),
+                log.getEntityType(),
+                log.getEntityId(),
+                log.getSuccess(),
                 log.getIpAddress(),
                 log.getUserAgent(),
                 log.getCorrelationId(),
+                log.getDetails(),
                 log.getCreatedAt()
         );
     }
@@ -181,15 +183,6 @@ public class AdminAuditController {
     /* ======================================================
        VALIDATION
        ====================================================== */
-
-    private void validateDateRange(LocalDateTime from, LocalDateTime to) {
-
-        if (from != null && to != null && from.isAfter(to)) {
-            throw new IllegalArgumentException(
-                    "Invalid date range: 'from' must be before 'to'"
-            );
-        }
-    }
 
     private void validateDateRange(Instant from, Instant to) {
 

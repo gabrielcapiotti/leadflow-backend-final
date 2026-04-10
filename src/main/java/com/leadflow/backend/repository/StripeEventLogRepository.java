@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface StripeEventLogRepository extends JpaRepository<StripeEventLog, Long> {
+public interface StripeEventLogRepository extends JpaRepository<StripeEventLog, UUID> {
 
     Optional<StripeEventLog> findByEventId(String eventId);
 

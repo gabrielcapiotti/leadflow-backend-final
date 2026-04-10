@@ -3,9 +3,7 @@ package com.leadflow.backend.entities.auth;
 import com.leadflow.backend.entities.user.User;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.ParamDef;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.LocalDateTime;
@@ -26,7 +24,6 @@ import java.util.UUID;
                 @UniqueConstraint(name = "uq_refresh_tokens_hash", columnNames = "token_hash")
         }
 )
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = UUID.class))
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class RefreshToken {
 

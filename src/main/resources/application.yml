@@ -31,10 +31,10 @@ spring:
 
     properties:
       hibernate:
+        default_schema: public
         format_sql: false
         jdbc:
           time_zone: UTC
-        multiTenancy: SCHEMA
 
   flyway:
     enabled: true

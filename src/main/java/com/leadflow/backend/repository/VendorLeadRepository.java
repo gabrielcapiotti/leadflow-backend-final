@@ -57,4 +57,6 @@ public interface VendorLeadRepository extends JpaRepository<VendorLead, UUID> {
             UUID vendorId,
             String whatsapp
     );
+
+    Optional<VendorLead> findByIdAndVendorIdAndTenantId(UUID id, UUID vendorId, UUID tenantId);
 }

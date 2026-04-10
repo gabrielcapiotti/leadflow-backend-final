@@ -10,8 +10,6 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.FilterDef;
-import org.hibernate.annotations.ParamDef;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.Instant;
@@ -22,7 +20,6 @@ import java.util.UUID;
     @Index(name = "idx_email_events_tenant_id", columnList = "tenant_id"),
     @Index(name = "idx_email_events_email_tenant", columnList = "email, tenant_id")
 })
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = UUID.class))
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class EmailEvent {
 

@@ -26,8 +26,8 @@ import java.util.UUID;
 public class StripeEventLog {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(name = "event_id", nullable = false, unique = true, length = 100)
     private String eventId;

@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -14,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class PlanDTO {
     
     @JsonProperty("id")
-    private Long id;
+    private UUID id;
     
     @JsonProperty("code")
     private String code;

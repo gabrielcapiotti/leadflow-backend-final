@@ -267,10 +267,4 @@ public class VendorService {
         }
         return email.substring(0, email.indexOf('@'));
     }
-
-    @Transactional
-    public void assignSchema(Vendor vendor, String schema) {
-        vendor.setSchemaName(schema);
-        vendorRepository.save(vendor);
-    }
 }

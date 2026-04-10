@@ -141,7 +141,6 @@ public class VendorController {
         vendor.setLogoUrl(req.logoUrl());
         vendor.setCorDestaque(req.corDestaque());
         vendor.setMensagemBoasVindas(req.mensagemBoasVindas());
-        vendor.setEmailInvalid(false);
         vendor.setCreatedAt(Instant.now());
         
         // 🔥 Associar usuário autenticado

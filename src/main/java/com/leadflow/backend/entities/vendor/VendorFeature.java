@@ -11,9 +11,7 @@ import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.ParamDef;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.Instant;
@@ -24,7 +22,6 @@ import java.util.UUID;
     @Index(name = "idx_vendor_feature_tenant_id", columnList = "tenant_id"),
     @Index(name = "idx_vendor_feature_vendor_tenant", columnList = "vendor_id, tenant_id")
 })
-@FilterDef(name = "tenantFilter", parameters = @ParamDef(name = "tenantId", type = UUID.class))
 @Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class VendorFeature {
 

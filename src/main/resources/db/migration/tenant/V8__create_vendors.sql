@@ -2,7 +2,7 @@
    V8__create_vendors.sql
    VENDORS (TENANT = ROOT ENTITY)
 
-   Estrutura consolidada, declarativa e limpa
+   Estrutura consolidada, declarativa e alinhada com Entity
    ====================================================== */
 
 CREATE TABLE vendors (
@@ -10,11 +10,16 @@ CREATE TABLE vendors (
     /* ========== IDENTIDADE ========== */
 
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id UUID NOT NULL,
 
     /* ========== DADOS DO VENDOR ========== */
 
     name VARCHAR(255) NOT NULL,
     description TEXT,
+
+    -- 🔵 ADICIONADOS (ENTITY-DRIVEN)
+    nome_empresa VARCHAR(255),
+    nome_vendedor VARCHAR(255),
 
     /* ========== STATUS ========== */
 

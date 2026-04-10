@@ -643,8 +643,8 @@ public class AuthController {
         if (tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
             // If it's all zeros, it's definitely wrong
             if (tenant.equals("00000000-0000-0000-0000-000000000000")) {
-                log.error("❌ CRITICAL: {} returned empty UUID (00000000-0000-0000-0000-000000000000)", source);
-                throw new UnauthorizedException("Invalid tenant");
+                log.error("🔴 CRITICAL SECURITY: {} returned ZERO UUID - MULTI-TENANT BREACH RISK", source);
+                throw new UnauthorizedException("System tenant UUID cannot be used for authentication");
             }
             // Even if not all zeros, warn about UUID usage (should be String schema names)
             log.warn("⚠️  {} returned UUID format ({}), expected String schema name", source, tenant);

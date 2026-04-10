@@ -4,9 +4,7 @@ import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.ParamDef;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -21,10 +19,6 @@ import java.util.UUID;
         @Index(name = "idx_logs_created_at", columnList = "created_at"),
         @Index(name = "idx_logs_tenant_created", columnList = "tenant_id, created_at")
     }
-)
-@FilterDef(
-    name = "tenantFilter",
-    parameters = @ParamDef(name = "tenantId", type = UUID.class)
 )
 @Filter(
     name = "tenantFilter",

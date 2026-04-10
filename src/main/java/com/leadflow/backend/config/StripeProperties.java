@@ -31,7 +31,7 @@ public class StripeProperties {
     private Timeout timeout = new Timeout();
     private Events events = new Events();
     
-    // @PostConstruct // DESABILITADO: causava erro no boot quando Stripe não estava configurado
+    @jakarta.annotation.PostConstruct
     public void init() {
         log.info("=== Initializing Stripe Configuration ===");
         

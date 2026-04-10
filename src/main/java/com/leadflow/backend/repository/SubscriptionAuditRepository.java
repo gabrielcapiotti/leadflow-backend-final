@@ -8,9 +8,9 @@ import java.util.List;
 import java.util.UUID;
 
 @Repository
-public interface SubscriptionAuditRepository extends JpaRepository<SubscriptionAudit, Long> {
+public interface SubscriptionAuditRepository extends JpaRepository<SubscriptionAudit, UUID> {
 
-    List<SubscriptionAudit> findBySubscriptionIdOrderByCreatedAtDesc(Long subscriptionId);
+    List<SubscriptionAudit> findBySubscriptionIdOrderByCreatedAtDesc(UUID subscriptionId);
 
     List<SubscriptionAudit> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
 

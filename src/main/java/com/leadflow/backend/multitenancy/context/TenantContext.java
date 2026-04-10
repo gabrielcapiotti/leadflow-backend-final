@@ -153,15 +153,11 @@ public final class TenantContext {
         java.util.UUID tenant = CURRENT_TENANT.get();
 
         if (tenant == null) {
-
-            if (log.isDebugEnabled()) {
-                log.debug(
-                        "Tenant context empty. Using default schema: {}",
-                        DEFAULT_TENANT
-                );
-            }
-
-            return DEFAULT_TENANT;
+            // 🔥 SECURITY: Never use ZERO_UUID as fallback - it violates multi-tenant isolation
+            log.error(
+                    "🔴 CRITICAL: Tenant context is empty! Cannot use ZERO_UUID as fallback for multi-tenant operations"
+            );
+            throw new IllegalStateException("Tenant context MUST be set before any operation");
         }
 
         return tenant;

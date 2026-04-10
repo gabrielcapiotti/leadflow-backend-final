@@ -7,7 +7,7 @@ INSERT INTO public.users (
     id,
     name,
     email,
-    password,
+    password_hash,
     role_id,
     tenant_id,
     failed_attempts,

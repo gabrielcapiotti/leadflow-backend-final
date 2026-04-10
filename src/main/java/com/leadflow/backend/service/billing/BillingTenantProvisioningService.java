@@ -6,7 +6,7 @@ import com.leadflow.backend.entities.payment.Payment;
 import com.leadflow.backend.entities.vendor.SubscriptionStatus;
 import com.leadflow.backend.entities.vendor.Vendor;
 import com.leadflow.backend.entities.vendor.VendorFeatureKey;
-import com.leadflow.backend.multitenancy.provisioning.TenantSchemaProvisioner;
+
 import com.leadflow.backend.repository.PaymentCheckoutRequestRepository;
 import com.leadflow.backend.repository.PaymentRepository;
 import com.leadflow.backend.repository.SubscriptionRepository;
@@ -34,7 +34,6 @@ public class BillingTenantProvisioningService {
 
     private final VendorService vendorService;
     private final UserService userService;
-    private final TenantSchemaProvisioner schemaProvisioner;
     private final VendorRepository vendorRepository;
     private final PaymentRepository paymentRepository;
     private final PaymentEventService paymentEventService;
@@ -48,7 +47,6 @@ public class BillingTenantProvisioningService {
     public BillingTenantProvisioningService(
             VendorService vendorService,
             UserService userService,
-            TenantSchemaProvisioner schemaProvisioner,
             VendorRepository vendorRepository,
             PaymentRepository paymentRepository,
             PaymentEventService paymentEventService,
@@ -62,7 +60,6 @@ public class BillingTenantProvisioningService {
     ) {
         this.vendorService = Objects.requireNonNull(vendorService);
         this.userService = Objects.requireNonNull(userService);
-        this.schemaProvisioner = Objects.requireNonNull(schemaProvisioner);
         this.vendorRepository = Objects.requireNonNull(vendorRepository);
         this.paymentRepository = Objects.requireNonNull(paymentRepository);
         this.paymentEventService = Objects.requireNonNull(paymentEventService);
@@ -195,12 +192,8 @@ public class BillingTenantProvisioningService {
     }
 
     private void ensureSchema(Vendor vendor) {
-        if (vendor.getSchemaName() != null && !vendor.getSchemaName().isBlank()) {
-            return;
-        }
-
-        String schema = schemaProvisioner.provisionTenantSchema(vendor.getId());
-        vendorService.assignSchema(vendor, schema);
+        // Schema-based multi-tenancy disabled - using column-based tenant_id instead
+        // All vendors share the 'public' schema with isolation via tenant_id column
     }
 
     private void activateVendor(Vendor vendor, Session session, String eventId) {

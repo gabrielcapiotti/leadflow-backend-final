@@ -86,13 +86,14 @@ public class StripeWebhookController {
             // ============================================================
             idempotencyService.saveEvent(eventId, eventType, payload, tenantUuid, customerId);
 
-            // 🔥 Safe tenant for metrics (use UUID zero if null)
-            UUID safeTenant = tenantUuid != null
-                    ? tenantUuid
-                    : UUID.fromString("00000000-0000-0000-0000-000000000000");
+            // 🔥 SECURITY: Validar tenant UUID (REJECTING NULL)
+            if (tenantUuid == null) {
+                log.error("🔴 SECURITY ALERT: Webhook event {} received without tenantId - REJECTING", eventId);
+                throw new IllegalStateException("Webhook event must have valid tenantId");
+            }
 
             // Record metric: event received
-            metricsTracker.recordEventReceived(safeTenant, eventType, eventId);
+            metricsTracker.recordEventReceived(tenantUuid, eventType, eventId);
 
             long duration = System.currentTimeMillis() - startTime;
             webhookLoggingService.logWebhookReceived(event, true, customerId, duration);
@@ -117,7 +118,7 @@ public class StripeWebhookController {
                 idempotencyService.markProcessed(eventId);
 
                 // Record metric: event processed successfully
-                metricsTracker.recordEventProcessed(safeTenant, eventType, duration);
+                metricsTracker.recordEventProcessed(tenantUuid, eventType, duration);
 
                 webhookLoggingService.logWebhookProcessed(
                         event, false, LocalDateTime.now(), duration
@@ -130,7 +131,7 @@ public class StripeWebhookController {
                 idempotencyService.markFailed(eventId, e.getMessage());
 
                 // Record metric: event failed
-                metricsTracker.recordEventFailed(safeTenant, eventType, "processing_error", duration);
+                metricsTracker.recordEventFailed(tenantUuid, eventType, "processing_error", duration);
 
                 webhookLoggingService.logWebhookFailed(eventId, eventType, e.getMessage(), duration);
 
@@ -200,7 +201,9 @@ public class StripeWebhookController {
         } catch (IllegalArgumentException e) {
             log.warn("Invalid UUID format for tenantId: {}", tenantId);
         }
-        return UUID.fromString("00000000-0000-0000-0000-000000000000");
+        // 🔥 SECURITY: System tenant UUID is FORBIDDEN - never use as fallback
+        log.error("🔴 CRITICAL: parseTenantId() returning null tenant - check webhook payload!");
+        throw new IllegalStateException("Cannot parse valid tenantId from webhook event");
     }
 
     /**

@@ -1,9 +1,7 @@
 package com.leadflow.backend.entities.vendor;
 
 import jakarta.persistence.*;
-import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.Filter;
-import org.hibernate.annotations.ParamDef;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import java.time.Instant;
 import java.util.UUID;
@@ -14,10 +12,6 @@ import java.util.UUID;
     @Index(name = "idx_vendor_lead_conv_vendor_tenant", columnList = "vendor_lead_id, tenant_id"),
     @Index(name = "idx_vendor_lead_conv_lead_tenant", columnList = "lead_id, tenant_id")
 })
-@FilterDef(
-    name = "tenantFilter",
-    parameters = @ParamDef(name = "tenantId", type = UUID.class)
-)
 @Filter(
     name = "tenantFilter",
     condition = "tenant_id = :tenantId"

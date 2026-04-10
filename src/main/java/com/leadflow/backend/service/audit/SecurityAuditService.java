@@ -37,16 +37,18 @@ public class SecurityAuditService {
     ) {
 
         Objects.requireNonNull(action, "Security action cannot be null");
-        Objects.requireNonNull(tenantId, "TenantId cannot be null");
 
         SecurityAuditLog log = new SecurityAuditLog(
-                action,
+                action.name(),
                 safe(email),
                 tenantId,
+                "SECURITY",
+                null,
                 success,
                 safe(ipAddress),
                 safe(userAgent),
-                safe(correlationId)
+                safe(correlationId),
+                null
         );
 
         repository.save(log);
