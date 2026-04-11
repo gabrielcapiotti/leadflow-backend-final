@@ -7,22 +7,10 @@ import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 @Entity
-@Table(
-        name = "tenants",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_tenants_schema_name",
-                        columnNames = {"schema_name"}
-                )
-        }
-)
+@Table(name = "tenants")
 public class Tenant {
-
-    private static final Pattern VALID_SCHEMA =
-            Pattern.compile("^[a-z][a-z0-9_]{2,49}$");
 
     /* ======================================================
        ID
@@ -37,16 +25,8 @@ public class Tenant {
        FIELDS
        ====================================================== */
 
-    @Column(nullable = false, length = 100)
+    @Column(nullable = false, length = 100, unique = true)
     private String name;
-
-    @Column(
-            name = "schema_name",
-            nullable = false,
-            length = 50,
-            updatable = false
-    )
-    private String schemaName;
 
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
@@ -66,9 +46,8 @@ public class Tenant {
     protected Tenant() {
     }
 
-    public Tenant(String name, String schemaName) {
+    public Tenant(String name) {
         setName(name);
-        setSchemaName(schemaName);
     }
 
     /* ======================================================
@@ -78,8 +57,6 @@ public class Tenant {
     public UUID getId() { return id; }
 
     public String getName() { return name; }
-
-    public String getSchemaName() { return schemaName; }
 
     public LocalDateTime getCreatedAt() { return createdAt; }
 
@@ -122,29 +99,6 @@ public class Tenant {
         this.name = name.trim();
     }
 
-    private void setSchemaName(String schema) {
-
-        if (schema == null || schema.isBlank()) {
-            throw new IllegalArgumentException("Schema name cannot be blank");
-        }
-
-        String normalized = schema.trim().toLowerCase();
-
-        if (!VALID_SCHEMA.matcher(normalized).matches()) {
-            throw new IllegalArgumentException(
-                    "Invalid schema format"
-            );
-        }
-
-        if ("public".equals(normalized)) {
-            throw new IllegalArgumentException(
-                    "Schema 'public' is reserved"
-            );
-        }
-
-        this.schemaName = normalized;
-    }
-
     /* ======================================================
        EQUALS & HASHCODE
        ====================================================== */
@@ -170,7 +124,6 @@ public class Tenant {
         return "Tenant{" +
                 "id=" + id +
                 ", name='" + name + '\'' +
-                ", schemaName='" + schemaName + '\'' +
                 ", deletedAt=" + deletedAt +
                 '}';
     }

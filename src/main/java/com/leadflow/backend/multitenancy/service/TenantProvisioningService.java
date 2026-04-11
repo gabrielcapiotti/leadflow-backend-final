@@ -57,39 +57,8 @@ public class TenantProvisioningService {
      * 5. Registra tenant no schema public
      */
     public synchronized void provisionTenant(String tenantName) {
-
-        validateTenantName(tenantName);
-
-        String schemaName = normalizeSchema(tenantName);
-
-        validateSchemaFormat(schemaName);
-
-        if (tenantRepository.existsBySchemaNameIgnoreCaseAndDeletedAtIsNull(schemaName)) {
-            logger.info("Tenant already provisioned: {}", schemaName);
-            return;
-        }
-
-        try {
-
-            createSchema(schemaName);
-
-            runTenantMigrations(schemaName);
-
-            registerTenantTransactional(tenantName, schemaName);
-
-            logger.info("Tenant successfully provisioned: {}", schemaName);
-
-        } catch (Exception ex) {
-
-            logger.error("Tenant provisioning failed for schema {}", schemaName, ex);
-
-            cleanupSchema(schemaName);
-
-            throw new IllegalStateException(
-                    "Tenant provisioning failed for schema: " + schemaName,
-                    ex
-            );
-        }
+        // System is now UUID-based only - no schema provisioning needed
+        logger.info("Tenant provisioning skipped - UUID-based architecture");
     }
 
     /* ======================================================
@@ -155,10 +124,8 @@ public class TenantProvisioningService {
             String schemaName
     ) {
 
-        Tenant tenant = new Tenant(
-                tenantName.trim(),
-                schemaName
-        );
+        // System is now UUID-based only - this method should not be called
+        Tenant tenant = new Tenant(tenantName.trim());
 
         tenantRepository.save(tenant);
 

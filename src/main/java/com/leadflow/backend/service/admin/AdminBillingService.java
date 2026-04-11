@@ -282,8 +282,10 @@ public class AdminBillingService {
         long count = subscriptions.stream()
             .filter(s -> s.getPlan() != null)
             .count();
-        double totalRevenue = count * PLAN_PRICE;
-        return BigDecimal.valueOf(totalRevenue / subscriptions.size());
+        BigDecimal average = count > 0
+            ? BigDecimal.valueOf(count * PLAN_PRICE).divide(BigDecimal.valueOf(subscriptions.size()), java.math.RoundingMode.HALF_UP)
+            : BigDecimal.ZERO;
+        return average;
     }
 
     private BigDecimal calculateTotalRevenue(List<Subscription> subscriptions) {

@@ -92,44 +92,23 @@ public class AuthController {
             HttpServletRequest httpRequest
     ) {
 
-        // 🔧 FIX: Separate tenantId (UUID) from schemaName (schema identifier)
-        // - tenantId: UUID from Tenant table - primary identifier for user
-        // - schemaName: "t_" + UUID without hyphens - valid PostgreSQL schema name
-        String schemaName = "t_" + UUID.randomUUID().toString().replace("-", "");
-        
-        log.info("Generating new tenant for registration: schema={} | Email: {}", 
-                 schemaName, maskEmail(request.email()));
+        log.info("User registration attempt: {}", maskEmail(request.email()));
 
-        // ✅ CRITICAL FIX: Create Tenant record in database and GET its actual ID
-        // The Tenant.id from DB is the TRUE tenantId that must be stored in User.tenantId
+        // Create tenant with unique name based on UUID
+        String tenantName = "tenant-" + UUID.randomUUID().toString().substring(0, 8);
+        
         UUID tenantId;
         try {
-            Tenant createdTenant = tenantService.createTenant(schemaName);
+            Tenant createdTenant = tenantService.createTenant(tenantName);
             tenantId = createdTenant.getId();
-            log.info("Tenant created: id={}, schema={}", tenantId, schemaName);
-            
-            // ⚡ INITIALIZE TENANT SCHEMA IN POSTGRESQL
-            // Per architectural comment in BillingTenantProvisioningService:
-            // "Schema creation is no longer tied to Vendor.
-            //  Tenant schema should be initialized when Tenant is created"
-            // This call creates the actual PostgreSQL schema and runs Flyway migrations
-            try {
-                tenantService.initializeTenantSchema(schemaName);
-                log.info("Tenant schema initialized successfully: schema={}", schemaName);
-            } catch (Exception schemaEx) {
-                log.error("ERROR: Schema initialization failed for schema={}: {}", schemaName, schemaEx.getMessage(), schemaEx);
-                throw new IllegalStateException("Tenant schema initialization failed - registration incomplete", schemaEx);
-            }
+            log.info("Tenant created: id={}, name={}", tenantId, tenantName);
         } catch (IllegalArgumentException e) {
-            // Schema validation failed - let it propagate as BAD_REQUEST (400)
-            log.error("Schema validation failed during tenant creation: {}", e.getMessage());
+            log.error("Invalid tenant name during creation: {}", e.getMessage());
             throw e;
         } catch (Exception e) {
             log.error("CRITICAL: Tenant creation failed during registration: {}", e.getMessage(), e);
             throw new IllegalStateException("Tenant creation failed - registration incomplete", e);
         }
-
-        log.info("User registration attempt: {}", maskEmail(request.email()));
 
         User user = authService.registerUser(
                 request.name(),
@@ -190,9 +169,6 @@ public class AuthController {
                 httpRequest.getHeader("User-Agent")
         );
 
-        // ✅ CRITICAL: Return the TRUE tenantId (UUID), not schemaName
-        // schemaName is "t_...", but X-Tenant-ID header expects UUID
-        // Vendor.tenantId is stored as UUID string in database
         return ResponseEntity
                 .status(HttpStatus.CREATED)
                 .body(new AuthResponse(accessToken.getToken(), refreshToken, tenantId.toString()));
@@ -539,7 +515,7 @@ public class AuthController {
             throw new UnauthorizedException("Tenant ID is required");
         }
 
-        UUID tenantId = parseAndValidateTenantId(tenant); // Converts String (schemaName or UUID) to UUID
+        UUID tenantId = parseAndValidateTenantId(tenant);
 
         log.info("🔑 Registering ADMIN user for tenant: {} | Email: {}", tenant, maskEmail(request.email()));
 
@@ -751,15 +727,12 @@ public class AuthController {
     }
 
     /**
-     * Parse and validate tenant from String (header/param) to UUID
+     * Parse and validate tenant from String (header/param) to UUID.
+     * In pure UUID-based architecture, tenant must be a valid UUID.
      * 
-     * Input can be:
-     * - UUID format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" → returns as UUID
-     * - SchemaName format: "t_..." → queries DB to get actual tenant UUID
-     * 
-     * @param tenant String tenant identifier (UUID or schemaName)
-     * @return UUID tenant identifier from database
-     * @throws UnauthorizedException if tenant is invalid or not found
+     * @param tenant String tenant identifier (UUID format)
+     * @return UUID tenant identifier
+     * @throws UnauthorizedException if tenant is invalid
      */
     private UUID parseAndValidateTenantId(String tenant) {
         
@@ -767,29 +740,13 @@ public class AuthController {
             throw new UnauthorizedException("Tenant ID is required");
         }
         
-        // Case 1: Input is schemaName (starts with "t_")
-        if (tenant.startsWith("t_")) {
-            log.debug("🔍 [PARSE_TENANT] Tenant from header is schemaName (t_...). Querying DB...");
-            
-            var foundTenant = tenantRepository.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenant);
-            if (foundTenant.isPresent()) {
-                UUID tenantId = foundTenant.get().getId();
-                log.debug("✓ [PARSE_TENANT] Found ACTIVE Tenant in DB: id={}, schemaName={}", tenantId, tenant);
-                return tenantId;
-            } else {
-                log.error("❌ [PARSE_TENANT] ACTIVE Tenant NOT found in database for schemaName: {}", tenant);
-                throw new UnauthorizedException("Invalid tenant");
-            }
-        }
-        
-        // Case 2: Input is UUID format
         try {
             UUID tenantId = UUID.fromString(tenant);
-            log.debug("✓ [PARSE_TENANT] Tenant is UUID format: {}", tenantId);
+            log.debug("✓ Tenant validated as UUID: {}", tenantId);
             return tenantId;
         } catch (IllegalArgumentException e) {
-            log.error("❌ [PARSE_TENANT] Invalid tenant format (not UUID, not schemaName): {}", tenant);
-            throw new UnauthorizedException("Invalid tenant format");
+            log.error("❌ Invalid tenant format (expected UUID): {}", tenant);
+            throw new UnauthorizedException("Invalid tenant format - UUID required");
         }
     }
 }
