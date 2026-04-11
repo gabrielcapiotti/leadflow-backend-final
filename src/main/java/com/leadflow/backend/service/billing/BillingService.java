@@ -1,5 +1,6 @@
 package com.leadflow.backend.service.billing;
 
+import com.leadflow.backend.config.BillingConfigService;
 import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.repository.SubscriptionRepository;
@@ -40,9 +41,7 @@ public class BillingService {
     private final SubscriptionRepository subscriptionRepository;
     private final StripeClient stripeClient;
     private final UserRepository userRepository;
-
-    @Value("${app.billing.enabled:false}")
-    private boolean billingEnabled;
+    private final BillingConfigService billingConfigService;
 
     @Value("${app.frontend.url:http://localhost:3000}")
     private String frontendUrl;
@@ -71,7 +70,7 @@ public class BillingService {
     @Transactional
     public String initiateCheckout(UUID tenantId, UUID userId) throws StripeException {
 
-        if (!billingEnabled) {
+        if (billingConfigService.isDisabled()) {
             log.info("⚠️  Billing disabled - returning mock checkout URL");
             return frontendUrl + "/billing/disabled";
         }

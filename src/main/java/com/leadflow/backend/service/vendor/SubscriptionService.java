@@ -1,5 +1,6 @@
 package com.leadflow.backend.service.vendor;
 
+import com.leadflow.backend.config.BillingConfigService;
 import com.leadflow.backend.config.converter.SafeUUIDDeserializer;
 import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Subscription;
@@ -25,14 +26,10 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @Slf4j
 public class SubscriptionService {
-
-    @Value("${app.billing.enabled:false}")
-    private boolean billingEnabled;
 
     private final VendorRepository vendorRepository;
     private final SubscriptionAuditService auditService;
@@ -43,6 +40,7 @@ public class SubscriptionService {
     private final SubscriptionAuditRepository subscriptionAuditRepository;
     private final SubscriptionNotificationService notificationService;
     private final VendorFeatureService vendorFeatureService;
+    private final BillingConfigService billingConfigService;
 
     public SubscriptionService(VendorRepository vendorRepository,
                                SubscriptionAuditService auditService,
@@ -52,7 +50,8 @@ public class SubscriptionService {
                                SubscriptionRepository subscriptionRepository,
                                SubscriptionAuditRepository subscriptionAuditRepository,
                                SubscriptionNotificationService notificationService,
-                               VendorFeatureService vendorFeatureService) {
+                               VendorFeatureService vendorFeatureService,
+                               BillingConfigService billingConfigService) {
         this.vendorRepository = vendorRepository;
         this.auditService = auditService;
         this.vendorService = vendorService;
@@ -62,7 +61,8 @@ public class SubscriptionService {
         this.subscriptionAuditRepository = subscriptionAuditRepository;
         this.notificationService = notificationService;
         this.vendorFeatureService = vendorFeatureService;
-        log.info("✅ SubscriptionService initialized - billingEnabled={}", billingEnabled);
+        this.billingConfigService = billingConfigService;
+        log.info("✅ SubscriptionService initialized - billing configured");
     }
 
     /* ======================================================
@@ -568,7 +568,7 @@ public class SubscriptionService {
      */
     public void validateActiveSubscription(UUID tenantId) {
         // Skip validation in development mode
-        if (!billingEnabled) {
+        if (billingConfigService.isDisabled()) {
             log.debug("Billing validation skipped - development mode enabled");
             return;
         }

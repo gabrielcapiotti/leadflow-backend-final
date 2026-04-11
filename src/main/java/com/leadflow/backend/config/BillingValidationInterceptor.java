@@ -7,7 +7,6 @@ import com.leadflow.backend.service.vendor.VendorService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -30,9 +29,7 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
     private final SubscriptionService subscriptionService;
     private final VendorContext vendorContext;
     private final VendorService vendorService;
-
-    @Value("${app.billing.enabled:false}")
-    private boolean billingEnabled;
+    private final BillingConfigService billingConfigService;
 
     // Paths that are exempt from subscription validation
     private static final String[] PUBLIC_PATHS = {
@@ -49,11 +46,13 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
     public BillingValidationInterceptor(
             SubscriptionService subscriptionService,
             VendorContext vendorContext,
-            VendorService vendorService) {
+            VendorService vendorService,
+            BillingConfigService billingConfigService) {
         this.subscriptionService = subscriptionService;
         this.vendorContext = vendorContext;
         this.vendorService = vendorService;
-        log.info("🔧 BillingValidationInterceptor initialized - billingEnabled={}", billingEnabled);
+        this.billingConfigService = billingConfigService;
+        log.info("🔧 BillingValidationInterceptor initialized - billing configured");
     }
 
     @Override
@@ -65,7 +64,7 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
         String method = request.getMethod();
 
         // Skip ALL billing validation if billing is disabled
-        if (!billingEnabled) {
+        if (billingConfigService.isDisabled()) {
             log.debug("Billing validation globally disabled - skipping all checks");
             return true;
         }
