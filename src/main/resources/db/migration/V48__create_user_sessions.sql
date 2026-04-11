@@ -9,7 +9,7 @@ CREATE TABLE public.user_sessions (
 
     user_id UUID NOT NULL,
 
-    tenant_id UUID,
+    tenant_id UUID NOT NULL,
 
     token_id VARCHAR(255) NOT NULL UNIQUE,
 
@@ -33,6 +33,11 @@ CREATE TABLE public.user_sessions (
     CONSTRAINT fk_user_sessions_user
         FOREIGN KEY (user_id)
         REFERENCES public.users(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_user_sessions_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
         ON DELETE CASCADE
 );
 

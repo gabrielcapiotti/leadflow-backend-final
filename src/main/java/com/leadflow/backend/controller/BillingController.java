@@ -18,6 +18,7 @@ import com.leadflow.backend.service.billing.StripeWebhookAlertService;
 import com.leadflow.backend.service.billing.StripeCustomerMappingService;
 import com.leadflow.backend.service.billing.BillingDashboardService;
 import com.leadflow.backend.service.vendor.SubscriptionService;
+import com.leadflow.backend.webhook.service.WebhookReplayService;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Invoice;
 import com.stripe.model.InvoiceCollection;
@@ -69,6 +70,7 @@ public class BillingController {
     private final StripeCustomerMappingService stripeCustomerMappingService;
     private final TenantRepository tenantRepository;
     private final BillingDashboardService billingDashboardService;
+    private final WebhookReplayService webhookReplayService;
 
     /**
      * Creates a Stripe checkout session for subscription payment.
@@ -126,8 +128,16 @@ public class BillingController {
     ) {
         long startTime = System.currentTimeMillis();
         String eventType = "unknown";
+        String eventId = null;
         
         try {
+            // ============================================================
+            // 0️⃣ EXTRAIR EVENT ID E TYPE DO PAYLOAD (antes de validar)
+            // ============================================================
+            eventId = extractEventIdFromPayload(payload);
+            eventType = extractEventTypeFromPayload(payload);
+            log.info("[BILLING] Extracted from raw payload: eventId={}, eventType={}", eventId, eventType);
+            
             // Parse Stripe-Signature header format: "t=<timestamp>,v1=<signature>"
             if (stripeSignature == null || stripeSignature.isBlank()) {
                 log.warn("Missing Stripe-Signature header - webhooks must come from Stripe with proper signature");
@@ -135,6 +145,20 @@ public class BillingController {
                 webhookMetrics.recordEventType("invalid");
                 webhookMetrics.incrementFailureCounter("invalid", "missing_signature");
                 webhookAlertService.recordFailure("invalid", "Missing Stripe-Signature header", null);
+                
+                // 🔥 PERSIST webhook even with missing signature
+                try {
+                    webhookReplayService.storeFailedWebhook(
+                            eventId,
+                            eventType,
+                            payload,
+                            "MISSING_STRIPE_SIGNATURE_HEADER"
+                    );
+                    log.info("[BILLING] ✅ Webhook persisted (missing signature): {}", eventId);
+                } catch (Exception ex) {
+                    log.error("[BILLING] ⚠️  Failed to persist: {}", ex.getMessage());
+                }
+                
                 return ResponseEntity.badRequest()
                     .body("Missing Stripe-Signature header. Webhooks must be called by Stripe with HMAC signature.");
             }
@@ -158,6 +182,20 @@ public class BillingController {
                 webhookMetrics.recordEventType("invalid");
                 webhookMetrics.incrementFailureCounter("invalid", "malformed_signature");
                 webhookAlertService.recordFailure("invalid", "Invalid Stripe-Signature header format", null);
+                
+                // 🔥 PERSIST webhook with malformed signature
+                try {
+                    webhookReplayService.storeFailedWebhook(
+                            eventId,
+                            eventType,
+                            payload,
+                            "MALFORMED_STRIPE_SIGNATURE_HEADER"
+                    );
+                    log.info("[BILLING] ✅ Webhook persisted (malformed signature): {}", eventId);
+                } catch (Exception ex) {
+                    log.error("[BILLING] ⚠️  Failed to persist: {}", ex.getMessage());
+                }
+                
                 return ResponseEntity.badRequest().body("Invalid Stripe-Signature header format");
             }
 
@@ -170,6 +208,20 @@ public class BillingController {
                 webhookMetrics.incrementFailureCounter("all", "expired_timestamp");
                 webhookAlertService.recordFailure("all", "Webhook timestamp expired: " + e.getMessage(), e);
                 log.warn("Webhook timestamp expired: {}", e.getMessage());
+                
+                // 🔥 PERSIST webhook with expired timestamp
+                try {
+                    webhookReplayService.storeFailedWebhook(
+                            eventId,
+                            eventType,
+                            payload,
+                            "EXPIRED_TIMESTAMP: " + e.getMessage()
+                    );
+                    log.info("[BILLING] ✅ Webhook persisted (expired timestamp): {}", eventId);
+                } catch (Exception ex) {
+                    log.error("[BILLING] ⚠️  Failed to persist: {}", ex.getMessage());
+                }
+                
                 return ResponseEntity.badRequest().body("Webhook timestamp too old");
             }
 
@@ -177,25 +229,58 @@ public class BillingController {
             try {
                 webhookValidator.validateSignature(payload, signature, timestamp);
                 webhookMetrics.recordSignatureValidation(true);
+                log.info("[BILLING] ✅ Webhook signature validated: {}", eventId);
             } catch (StripeSignatureVerificationException e) {
                 webhookMetrics.recordSignatureValidation(false);
                 webhookMetrics.incrementFailureCounter("all", "invalid_signature");
                 webhookAlertService.recordFailure("all", "Webhook signature verification failed: " + e.getMessage(), e);
                 log.warn("Webhook signature verification failed: {}", e.getMessage());
+                
+                // 🔥 PERSIST webhook with invalid signature
+                try {
+                    webhookReplayService.storeFailedWebhook(
+                            eventId,
+                            eventType,
+                            payload,
+                            "INVALID_SIGNATURE: " + e.getMessage()
+                    );
+                    log.info("[BILLING] ✅ Webhook persisted (invalid signature): {}", eventId);
+                } catch (Exception ex) {
+                    log.error("[BILLING] ⚠️  Failed to persist: {}", ex.getMessage());
+                }
+                
                 return ResponseEntity.badRequest().body("Invalid webhook signature");
             }
 
             // Process webhook event and route to appropriate handler
-            eventType = stripeService.processWebhookEvent(payload);
-            webhookMetrics.recordEventType(eventType);
-            webhookMetrics.incrementSuccessCounter(eventType);
-            webhookAlertService.recordSuccess(eventType);
+            try {
+                eventType = stripeService.processWebhookEvent(payload);
+                webhookMetrics.recordEventType(eventType);
+                webhookMetrics.incrementSuccessCounter(eventType);
+                webhookAlertService.recordSuccess(eventType);
 
-            long duration = System.currentTimeMillis() - startTime;
-            webhookMetrics.recordProcessingDelay(duration);
+                long duration = System.currentTimeMillis() - startTime;
+                webhookMetrics.recordProcessingDelay(duration);
 
-            log.info("Webhook processed successfully: event_type={}, duration={}ms", eventType, duration);
-            return ResponseEntity.ok("Webhook processed");
+                log.info("Webhook processed successfully: event_type={}, duration={}ms", eventType, duration);
+                return ResponseEntity.ok("Webhook processed");
+                
+            } catch (Exception processEx) {
+                // 🔥 PERSIST webhook with processing error
+                try {
+                    webhookReplayService.storeFailedWebhook(
+                            eventId,
+                            eventType,
+                            payload,
+                            "PROCESSING_ERROR: " + processEx.getMessage()
+                    );
+                    log.info("[BILLING] ✅ Webhook persisted (processing error): {}", eventId);
+                } catch (Exception ex) {
+                    log.error("[BILLING] ⚠️  Failed to persist: {}", ex.getMessage());
+                }
+                
+                throw processEx;
+            }
 
         } catch (Exception e) {
             long duration = System.currentTimeMillis() - startTime;
@@ -666,5 +751,37 @@ public class BillingController {
             .createdAt(method.getCreated())
             .isDefault(false)  // Would need to compare with customer default
             .build();
+    }
+
+    /**
+     * Extract event ID from raw JSON payload
+     * Used to persist webhook BEFORE signature validation
+     */
+    private String extractEventIdFromPayload(String payload) {
+        try {
+            com.google.gson.JsonObject json = com.google.gson.JsonParser.parseString(payload).getAsJsonObject();
+            if (json.has("id")) {
+                return json.get("id").getAsString();
+            }
+        } catch (Exception e) {
+            log.debug("Failed to extract event ID from payload: {}", e.getMessage());
+        }
+        // Fallback: generate temporary ID if extraction fails
+        return "unknown_" + System.currentTimeMillis();
+    }
+
+    /**
+     * Extract event type from raw JSON payload
+     */
+    private String extractEventTypeFromPayload(String payload) {
+        try {
+            com.google.gson.JsonObject json = com.google.gson.JsonParser.parseString(payload).getAsJsonObject();
+            if (json.has("type")) {
+                return json.get("type").getAsString();
+            }
+        } catch (Exception e) {
+            log.debug("Failed to extract event type from payload: {}", e.getMessage());
+        }
+        return "unknown";
     }
 }

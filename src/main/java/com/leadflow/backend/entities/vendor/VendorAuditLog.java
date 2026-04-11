@@ -1,6 +1,7 @@
 package com.leadflow.backend.entities.vendor;
 
 import jakarta.persistence.*;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -12,6 +13,9 @@ public class VendorAuditLog {
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     @Column(nullable = false)
     private UUID vendorId;
@@ -48,10 +52,14 @@ public class VendorAuditLog {
 
     @PrePersist
     public void onCreate() {
+        if (this.tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
         this.createdAt = Instant.now();
     }
 
     public UUID getId() { return id; }
+    public UUID getTenantId() { return tenantId; }
     public UUID getVendorId() { return vendorId; }
     public String getUserEmail() { return userEmail; }
     public String getAcao() { return acao; }

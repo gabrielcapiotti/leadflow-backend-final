@@ -23,7 +23,7 @@ CREATE TABLE public.audit_logs (
        ====================================================== */
 
     actor_email VARCHAR(255),
-    tenant_id UUID,
+    tenant_id UUID NOT NULL,
 
     /* ======================================================
        CONTEXTO DA ENTIDADE
@@ -56,7 +56,12 @@ CREATE TABLE public.audit_logs (
        AUDITORIA
        ====================================================== */
 
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_audit_logs_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
 /* ======================================================

@@ -49,7 +49,7 @@ public class UserSessionService {
        DEVICE LIMIT ENFORCEMENT
        ====================================================== */
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.NESTED)
     private void enforceDeviceLimit(UUID userId, UUID tenantId) {
 
         long activeCount =

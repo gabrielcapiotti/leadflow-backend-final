@@ -21,7 +21,6 @@ public class ConversationService {
 
         VendorLeadConversation message = new VendorLeadConversation();
         message.setVendorLeadId(leadId);
-        message.setLeadId(leadId);
         message.setRole(role);
         message.setContent(content);
 

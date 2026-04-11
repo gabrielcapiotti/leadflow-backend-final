@@ -222,10 +222,10 @@ audit:
 
 stripe:
   api:
-    secret-key: ${STRIPE_SECRET_KEY:}
-    publishable-key: ${STRIPE_PUBLISHABLE_KEY:}
+    secret-key: ${STRIPE_SECRET_KEY:sk_test_51TEG1fFzdxPQXW4wPJZ44ulOz2mqrMaPGUpKSJd5toTddkfCTpjQTjOExwuph9uMJhYFFn3PErOLZesj5SSvRryc00ryq0MEU7}
+    publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_51TEG1fFzdxPQXW4werLnbwdxt1EGS22nG0PhmbqLGHRsWhaQrQUrNfuqu7bgeZ8rAKP3E0DPEyJX6M1FaXTpVj0c00NFzZaqG2}
   webhook:
-    secret: ${STRIPE_WEBHOOK_SECRET:}
+    secret: ${STRIPE_WEBHOOK_SECRET:whsec_test_xxxxx}
     path: /stripe/webhook
     enabled: true
     timestamp-tolerance-seconds: 300

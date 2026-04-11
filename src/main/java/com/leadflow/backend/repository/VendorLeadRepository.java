@@ -18,11 +18,11 @@ public interface VendorLeadRepository extends JpaRepository<VendorLead, UUID> {
     long countAllGlobal();
 
         @Query(value = """
-            SELECT DATE(l.created_date) AS day, COUNT(*) AS total
+            SELECT DATE(l.created_at) AS day, COUNT(*) AS total
             FROM public.vendor_leads l
-            WHERE l.created_date >= :since
-            GROUP BY DATE(l.created_date)
-            ORDER BY DATE(l.created_date)
+            WHERE l.created_at >= :since
+            GROUP BY DATE(l.created_at)
+            ORDER BY DATE(l.created_at)
             """, nativeQuery = true)
         List<Object[]> countLeadsPerDayGlobal(@Param("since") Instant since);
 
@@ -48,7 +48,7 @@ public interface VendorLeadRepository extends JpaRepository<VendorLead, UUID> {
             SELECT COUNT(*)
             FROM public.vendor_leads l
             WHERE l.vendor_id = :vendorId
-              AND l.created_date >= :since
+              AND l.created_at >= :since
             """, nativeQuery = true)
         long countLast30Days(@Param("vendorId") UUID vendorId,
                  @Param("since") Instant since);

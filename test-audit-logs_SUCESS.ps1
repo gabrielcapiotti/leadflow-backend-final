@@ -55,14 +55,56 @@ function Write-Info {
 }
 
 # ==========================================
-# STEP 1: REGISTER ADMIN USER
+# STEP 0: CREATE A REAL TENANT (via normal registration)
+# ==========================================
+
+Write-Header "Creating real tenant by registering a normal user first"
+
+$tenantCreatorEmail = "tenant-owner-$(Get-Date -Format 'yyyyMMddHHmmss')-$(Get-Random -Minimum 10000 -Maximum 99999)@leadflow.test"
+$tenantCreatorPassword = "TenantOwner@123"
+$realTenantId = $null
+
+try {
+    $tenantCreatorResp = Invoke-WebRequest -Uri "$BaseURL/auth/register" `
+        -Method Post `
+        -UseBasicParsing `
+        -Headers @{"Content-Type" = "application/json"} `
+        -Body (ConvertTo-Json @{
+            name = "Tenant Owner"
+            email = $tenantCreatorEmail
+            password = $tenantCreatorPassword
+            confirmPassword = $tenantCreatorPassword
+        }) `
+        -ErrorAction Stop
+
+    $tenantCreatorData = $tenantCreatorResp.Content | ConvertFrom-Json
+    $realTenantId = $tenantCreatorData.tenantId
+    
+    Write-Success "Tenant created via normal registration" 201
+    Write-Info "Real Tenant ID: $realTenantId"
+    Write-Info "Tenant Owner Email: $tenantCreatorEmail"
+    
+} catch {
+    $statusCode = if ($_.Exception.Response.StatusCode.value__) { $_.Exception.Response.StatusCode.value__ } else { 0 }
+    Write-Fail "Create real tenant" $statusCode "$($_.Exception.Message)"
+    exit 1
+}
+
+if (!$realTenantId) {
+    Write-Fail "Extract tenant ID" 0 "No tenantId in response"
+    exit 1
+}
+
+# ==========================================
+# STEP 1: REGISTER ADMIN USER (using real tenant)
 # ==========================================
 
 Write-Header "Register Admin User via /auth/register-admin"
 
 $internalSecret = "SUPER_SECRET_KEY_CHANGE_ME"
-$adminTenantId = "49c868d1-4da0-420e-8e0e-7b063dcc7390"
-$adminEmail = "audit-admin-$(Get-Random)@leadflow.test"
+$timestamp = Get-Date -Format "yyyyMMddHHmmss"
+$random = Get-Random -Minimum 10000 -Maximum 99999
+$adminEmail = "audit-admin-$timestamp-$random@leadflow.test"
 $adminPassword = "AdminTest@123"
 $adminToken = $null
 
@@ -72,7 +114,7 @@ try {
         -UseBasicParsing `
         -Headers @{
             "Content-Type" = "application/json"
-            "X-Tenant-ID" = $adminTenantId
+            "X-Tenant-ID" = $realTenantId
             "X-Internal-Secret" = $internalSecret
         } `
         -Body (ConvertTo-Json @{
@@ -91,7 +133,7 @@ try {
 
     Write-Success "Register admin user" 201
     Write-Info "Admin Email: $adminEmail"
-    Write-Info "Admin Tenant: $adminTenantId"
+    Write-Info "Admin Tenant: $realTenantId"
     if ($adminToken) {
         Write-Info "Admin Token: $($adminToken.Substring(0, 30))..."
     }
@@ -262,7 +304,9 @@ try {
 Write-Header "SECURITY: Non-admin user cannot access audit logs"
 
 # Create a non-admin user for testing
-$nonAdminEmail = "non-admin-audit-$(Get-Random)@leadflow.test"
+$timestamp2 = Get-Date -Format "yyyyMMddHHmmss"
+$random2 = Get-Random -Minimum 10000 -Maximum 99999
+$nonAdminEmail = "non-admin-audit-$timestamp2-$random2@leadflow.test"
 $nonAdminPassword = "TestPass123!"
 $nonAdminToken = $null
 

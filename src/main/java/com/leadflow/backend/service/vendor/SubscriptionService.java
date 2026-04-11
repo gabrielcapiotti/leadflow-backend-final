@@ -6,6 +6,7 @@ import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.entities.SubscriptionAudit;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
 import com.leadflow.backend.entities.vendor.Vendor;
+import com.leadflow.backend.entities.vendor.VendorFeatureKey;
 import com.leadflow.backend.exception.SubscriptionInactiveException;
 import com.leadflow.backend.repository.SubscriptionAuditRepository;
 import com.leadflow.backend.repository.SubscriptionRepository;
@@ -41,6 +42,7 @@ public class SubscriptionService {
     private final SubscriptionRepository subscriptionRepository;
     private final SubscriptionAuditRepository subscriptionAuditRepository;
     private final SubscriptionNotificationService notificationService;
+    private final VendorFeatureService vendorFeatureService;
 
     public SubscriptionService(VendorRepository vendorRepository,
                                SubscriptionAuditService auditService,
@@ -49,7 +51,8 @@ public class SubscriptionService {
                                UsageService usageService,
                                SubscriptionRepository subscriptionRepository,
                                SubscriptionAuditRepository subscriptionAuditRepository,
-                               SubscriptionNotificationService notificationService) {
+                               SubscriptionNotificationService notificationService,
+                               VendorFeatureService vendorFeatureService) {
         this.vendorRepository = vendorRepository;
         this.auditService = auditService;
         this.vendorService = vendorService;
@@ -58,6 +61,7 @@ public class SubscriptionService {
         this.subscriptionRepository = subscriptionRepository;
         this.subscriptionAuditRepository = subscriptionAuditRepository;
         this.notificationService = notificationService;
+        this.vendorFeatureService = vendorFeatureService;
         log.info("✅ SubscriptionService initialized - billingEnabled={}", billingEnabled);
     }
 
@@ -124,7 +128,77 @@ public class SubscriptionService {
         log.info("✅ Default subscription created: id={}, tenant={}, status={}, expires={}",
             saved.getId(), tenantId, saved.getStatus(), saved.getExpiresAt());
 
+        // 🔥 ENABLE DEFAULT FEATURES FOR PLAN (Solução 1: Auto-enable features based on plan)
+        enableDefaultFeaturesForPlan(tenantId, defaultPlan);
+
         return saved;
+    }
+
+    /**
+     * 🎯 ENABLE DEFAULT FEATURES FOR PLAN
+     * 
+     * When a subscription is created, automatically enable features
+     * that are included in the plan.
+     * 
+     * ✅ Uses EXPLICIT tenantId parameter (no TenantContext dependency)
+     * 
+     * Currently: All plans include all AI features by default
+     * 
+     * @param tenantId UUID of tenant (EXPLICIT - not from TenantContext)
+     * @param plan Plan entity with included features
+     */
+    @Transactional
+    private void enableDefaultFeaturesForPlan(UUID tenantId, Plan plan) {
+        try {
+            // Get vendor for this tenant
+            List<Vendor> vendors = vendorRepository.findAllByTenantId(tenantId);
+            
+            if (vendors.isEmpty()) {
+                log.warn("No vendors found for tenant {} - skipping feature enablement", tenantId);
+                return;
+            }
+            
+            // Get the primary vendor (first one)
+            Vendor vendor = vendors.get(0);
+            
+            // All plans include all AI features by default
+            // NOTE: Using SHORT names (AI_TITLE, AI_SENTIMENT, AI_GENERATE) 
+            // because AiController verifies these specific names
+            List<VendorFeatureKey> features = List.of(
+                VendorFeatureKey.AI_CHAT,
+                VendorFeatureKey.AI_SUMMARY,
+                VendorFeatureKey.AI_TITLE,
+                VendorFeatureKey.AI_REFINE,
+                VendorFeatureKey.AI_SENTIMENT,
+                VendorFeatureKey.AI_CLASSIFY,
+                VendorFeatureKey.AI_GENERATE
+            );
+            
+            log.info("🔧 Enabling {} features for vendor={}, tenant={}", 
+                features.size(), vendor.getId(), tenantId);
+            
+            for (VendorFeatureKey featureKey : features) {
+                try {
+                    // ✅ NUEVO: Pass tenantId EXPLICITLY (not from TenantContext)
+                    vendorFeatureService.upsertFeature(tenantId, vendor.getId(), featureKey, true);
+                    
+                    log.info("✅ Feature enabled: {} for vendor={}, tenant={}", 
+                        featureKey, vendor.getId(), tenantId);
+                    
+                } catch (Exception e) {
+                    log.warn("⚠️ Error enabling feature {} for vendor {} - {}", 
+                        featureKey, vendor.getId(), e.getMessage());
+                    // Continue with other features
+                }
+            }
+            
+            log.info("✅ All AI features enabled for subscription: plan={}, vendor={}, tenant={}",
+                plan.getName(), vendor.getId(), tenantId);
+                
+        } catch (Exception e) {
+            log.error("❌ Error enabling default features for plan: {}", plan.getName(), e);
+            // Do NOT rethrow - let subscription creation succeed even if feature enablement fails
+        }
     }
     
 

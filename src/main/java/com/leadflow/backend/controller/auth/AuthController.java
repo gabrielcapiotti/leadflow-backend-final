@@ -107,6 +107,19 @@ public class AuthController {
             Tenant createdTenant = tenantService.createTenant(schemaName);
             tenantId = createdTenant.getId();
             log.info("Tenant created: id={}, schema={}", tenantId, schemaName);
+            
+            // ⚡ INITIALIZE TENANT SCHEMA IN POSTGRESQL
+            // Per architectural comment in BillingTenantProvisioningService:
+            // "Schema creation is no longer tied to Vendor.
+            //  Tenant schema should be initialized when Tenant is created"
+            // This call creates the actual PostgreSQL schema and runs Flyway migrations
+            try {
+                tenantService.initializeTenantSchema(schemaName);
+                log.info("Tenant schema initialized successfully: schema={}", schemaName);
+            } catch (Exception schemaEx) {
+                log.error("ERROR: Schema initialization failed for schema={}: {}", schemaName, schemaEx.getMessage(), schemaEx);
+                throw new IllegalStateException("Tenant schema initialization failed - registration incomplete", schemaEx);
+            }
         } catch (IllegalArgumentException e) {
             // Schema validation failed - let it propagate as BAD_REQUEST (400)
             log.error("Schema validation failed during tenant creation: {}", e.getMessage());

@@ -528,7 +528,7 @@ Write-Step "17" "Update Vendor Lead Stage"
 if ($VendorLeadId) {
     try {
         $updateBody = @{
-            stage = "CONTATO"
+            stage = "CONTACT"
         } | ConvertTo-Json
 
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `
@@ -553,11 +553,11 @@ if ($VendorLeadId) {
 # ============================================================================
 # TEST 18: PATCH VENDOR LEAD AGAIN (Verify Stage Update)
 # ============================================================================
-Write-Step "18" "PATCH Vendor Lead - Update to PROPOSTA Stage"
+Write-Step "18" "PATCH Vendor Lead - Update to NEGOTIATION Stage"
 if ($VendorLeadId) {
     try {
         $patchBody = @{
-            stage = "PROPOSTA"
+            stage = "NEGOTIATION"
         } | ConvertTo-Json
 
         $response = Invoke-WebRequest -Uri "$VendorLeadsUrl/$VendorLeadId" `

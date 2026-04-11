@@ -26,10 +26,15 @@ CREATE TABLE public.stripe_event_logs (
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ,
 
-    tenant_id UUID,
+    tenant_id UUID NOT NULL,
     customer_id VARCHAR(100) DEFAULT 'unknown',
 
-    CONSTRAINT uq_stripe_event_logs_event_id UNIQUE (event_id)
+    CONSTRAINT uq_stripe_event_logs_event_id UNIQUE (event_id),
+
+    CONSTRAINT fk_stripe_event_logs_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
 /* ======================================================

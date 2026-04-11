@@ -25,12 +25,17 @@ CREATE TABLE public.payment_checkout_requests (
         status IN ('PENDING', 'CREATED', 'EXPIRED', 'COMPLETED', 'FAILED')
     ),
 
-    tenant_id UUID, -- recomendado para rastreabilidade
+    tenant_id UUID NOT NULL,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_payment_checkout_reference
-        UNIQUE (reference_id)
+        UNIQUE (reference_id),
+
+    CONSTRAINT fk_payment_checkout_requests_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
 /* ======================================================

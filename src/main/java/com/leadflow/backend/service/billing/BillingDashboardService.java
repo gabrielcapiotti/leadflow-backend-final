@@ -11,7 +11,6 @@ import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.SubscriptionRepository;
 import com.leadflow.backend.repository.UsageLimitRepository;
 import com.leadflow.backend.repository.PlanRepository;
-import com.leadflow.backend.service.PlanService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;

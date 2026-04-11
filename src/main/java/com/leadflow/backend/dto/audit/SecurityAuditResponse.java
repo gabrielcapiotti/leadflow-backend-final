@@ -19,6 +19,6 @@ public record SecurityAuditResponse(
         String userAgent,
         String correlationId,
         JsonNode details,
-        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'")
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss'Z'", timezone = "UTC")
         Instant createdAt
 ) {}

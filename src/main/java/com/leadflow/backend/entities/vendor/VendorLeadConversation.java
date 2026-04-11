@@ -9,8 +9,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "vendor_lead_conversations", schema = "public", indexes = {
     @Index(name = "idx_vendor_lead_conv_tenant_id", columnList = "tenant_id"),
-    @Index(name = "idx_vendor_lead_conv_vendor_tenant", columnList = "vendor_lead_id, tenant_id"),
-    @Index(name = "idx_vendor_lead_conv_lead_tenant", columnList = "lead_id, tenant_id")
+    @Index(name = "idx_vendor_lead_conv_vendor_tenant", columnList = "vendor_lead_id, tenant_id")
 })
 @Filter(
     name = "tenantFilter",
@@ -24,9 +23,6 @@ public class VendorLeadConversation {
 
     @Column(nullable = false)
     private UUID vendorLeadId;
-
-    @Column(nullable = false)
-    private UUID leadId;
 
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
@@ -69,10 +65,6 @@ public class VendorLeadConversation {
         return vendorLeadId;
     }
 
-    public UUID getLeadId() {
-        return leadId;
-    }
-
     public UUID getTenantId() {
         return tenantId;
     }
@@ -99,10 +91,6 @@ public class VendorLeadConversation {
 
     public void setVendorLeadId(UUID vendorLeadId) {
         this.vendorLeadId = vendorLeadId;
-    }
-
-    public void setLeadId(UUID leadId) {
-        this.leadId = leadId;
     }
 
     public void setContent(String content) {

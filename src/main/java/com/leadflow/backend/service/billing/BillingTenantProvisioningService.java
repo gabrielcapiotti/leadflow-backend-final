@@ -192,8 +192,9 @@ public class BillingTenantProvisioningService {
     }
 
     private void ensureSchema(Vendor vendor) {
-        // Schema-based multi-tenancy disabled - using column-based tenant_id instead
-        // All vendors share the 'public' schema with isolation via tenant_id column
+        // Schema creation is no longer tied to Vendor
+        // Tenant schema should be initialized when Tenant is created (AuthController)
+        // This method is kept for reference but not needed in current architecture
     }
 
     private void activateVendor(Vendor vendor, Session session, String eventId) {

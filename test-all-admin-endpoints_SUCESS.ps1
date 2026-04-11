@@ -78,16 +78,21 @@ try {
 # Step 1b: Promote user to ADMIN in database
 Write-Host "`n[STEP 1b] Promovendo usuário para ADMIN no banco..." -ForegroundColor Yellow
 $env:PGPASSWORD = "venusia"
-$adminRoleId = "f638a022-0c74-46e8-a9bd-48070330b765"
-try {
-    $psqlOutput = & psql -h localhost -p 2411 -U postgres -d leadflowDB -t -c "UPDATE public.users SET role_id = '$adminRoleId' WHERE email = '$adminEmail' AND tenant_id = '$tenantId' RETURNING id, role_id;" 2>&1
-    if ($psqlOutput -match "UPDATE|rows affected") {
+
+# Buscar dinamicamente o ID do role ROLE_ADMIN
+$adminRoleId = & psql -h localhost -p 2411 -U postgres -d leadflowDB -t -c "SELECT id FROM roles WHERE name = 'ROLE_ADMIN' LIMIT 1;" 2>&1
+$adminRoleId = ($adminRoleId | Out-String).Trim()
+
+if ($adminRoleId -and $adminRoleId -ne "") {
+    Write-Host "   Role ADMIN ID encontrado: $adminRoleId" -ForegroundColor Cyan
+    try {
+        $psqlOutput = & psql -h localhost -p 2411 -U postgres -d leadflowDB -t -c "UPDATE public.users SET role_id = '$adminRoleId' WHERE email = '$adminEmail' AND tenant_id = '$tenantId' RETURNING id, role_id;" 2>&1
         Write-Host "[OK] Usuário promovido para ADMIN" -ForegroundColor Green
-    } else {
-        Write-Host "[WARNING] Não conseguiu atualizar role_id" -ForegroundColor Yellow
+    } catch {
+        Write-Host "[WARNING] Erro ao atualizar role_id no banco - continuando..." -ForegroundColor Yellow
     }
-} catch {
-    Write-Host "[WARNING] Erro ao atualizar role_id no banco - continuando..." -ForegroundColor Yellow
+} else {
+    Write-Host "[ERROR] Não foi possível encontrar role ROLE_ADMIN no banco" -ForegroundColor Red
 }
 
 # Step 2: Validate token with GET /auth/me

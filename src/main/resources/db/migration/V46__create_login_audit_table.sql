@@ -24,7 +24,12 @@ CREATE TABLE public.login_audit (
 
     suspicious BOOLEAN NOT NULL DEFAULT FALSE,
 
-    tenant_id UUID
+    tenant_id UUID NOT NULL,
+
+    CONSTRAINT fk_login_audit_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
 -- lookup por usuário

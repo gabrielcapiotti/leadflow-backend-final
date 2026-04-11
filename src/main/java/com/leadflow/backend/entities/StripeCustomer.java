@@ -123,6 +123,16 @@ public class StripeCustomer {
     private String metadata;
 
     // Lifecycle hooks
+    @PrePersist
+    protected void onCreate() {
+        if (this.createdAt == null) {
+            this.createdAt = Instant.now();
+        }
+        if (this.updatedAt == null) {
+            this.updatedAt = Instant.now();
+        }
+    }
+
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = Instant.now();

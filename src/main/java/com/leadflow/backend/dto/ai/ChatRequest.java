@@ -8,19 +8,19 @@ import java.util.UUID;
 
 public class ChatRequest {
 
-    @NotNull(message = "leadId é obrigatório")
-    private UUID leadId;
+    @NotNull(message = "vendorLeadId é obrigatório")
+    private UUID vendorLeadId;
 
     @NotBlank(message = "message é obrigatória")
     @Size(max = 2000, message = "message deve ter no máximo 2000 caracteres")
     private String message;
 
-    public UUID getLeadId() {
-        return leadId;
+    public UUID getVendorLeadId() {
+        return vendorLeadId;
     }
 
-    public void setLeadId(UUID leadId) {
-        this.leadId = leadId;
+    public void setVendorLeadId(UUID vendorLeadId) {
+        this.vendorLeadId = vendorLeadId;
     }
 
     public String getMessage() {

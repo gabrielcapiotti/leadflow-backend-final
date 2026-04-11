@@ -37,7 +37,6 @@ public class VendorConversationService {
         VendorLeadConversation conversation = new VendorLeadConversation();
 
         conversation.setVendorLeadId(vendorLeadId);
-        conversation.setLeadId(leadId);
         conversation.setContent(message);
         conversation.setSender(sender);
         conversation.setTenantId(TenantContext.getTenant());

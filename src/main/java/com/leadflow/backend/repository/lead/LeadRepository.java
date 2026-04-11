@@ -52,4 +52,10 @@ public interface LeadRepository extends JpaRepository<Lead, UUID> {
             UUID userId,
             String email
     );
+
+    /* ======================================================
+       MULTI-TENANCY VALIDATION (AI ENDPOINTS)
+       ====================================================== */
+
+    Optional<Lead> findByIdAndTenantId(UUID id, UUID tenantId);
 }

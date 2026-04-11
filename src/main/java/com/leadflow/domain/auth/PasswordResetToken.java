@@ -6,6 +6,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 
 @Entity
 @Table(
@@ -41,6 +42,13 @@ public class PasswordResetToken {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
+
+    /* ======================================================
+       MULTI-TENANT ISOLATION
+       ====================================================== */
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     /* ======================================================
        EXPIRATION
@@ -92,6 +100,20 @@ public class PasswordResetToken {
     }
 
     /* ======================================================
+       JPA LIFECYCLE
+       ====================================================== */
+
+    @PrePersist
+    protected void prePersist() {
+        if (this.tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
+        if (this.createdAt == null) {
+            this.createdAt = LocalDateTime.now();
+        }
+    }
+
+    /* ======================================================
        BUSINESS METHODS
        ====================================================== */
 
@@ -132,6 +154,10 @@ public class PasswordResetToken {
 
     public LocalDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
     }
 
     /* ======================================================

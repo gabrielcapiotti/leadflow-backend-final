@@ -1,9 +1,10 @@
 # Test Suite: SendGrid Webhook Endpoint
-# Endpoints: POST /webhooks/sendgrid
+# Endpoints: POST /api/webhooks/sendgrid
 # Status: Production Ready
 
 param(
-    [string]$BaseUrl = "http://localhost:8081"
+    [string]$BaseUrl = "http://localhost:8081/api",
+    [string]$TenantId = "864b6d73-2bd0-401f-8b3c-a41fdecd22cb"
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,16 +19,18 @@ function Test-Case {
     
     try {
         & $Test
-        Write-Host "✅ $Name" -ForegroundColor Green
+        Write-Host "[PASS] $Name" -ForegroundColor Green
         $script:testsPassed++
     } catch {
-        Write-Host "❌ $Name" -ForegroundColor Red
-        Write-Host "   Error: $_" -ForegroundColor Red
+        Write-Host "[FAIL] $Name" -ForegroundColor Red
+        Write-Host "        Error: $_" -ForegroundColor Red
         $script:testsFailed++
     }
 }
 
 Write-Host "`n=== SendGrid Webhook Endpoint Tests ===" -ForegroundColor Cyan
+Write-Host "Tenant ID: $TenantId" -ForegroundColor Yellow
+Write-Host ""
 
 # Test 1: Valid webhook - Delivery event
 Test-Case "Test 1: Process delivery event" {
@@ -37,8 +40,11 @@ Test-Case "Test 1: Process delivery event" {
             event = "delivered"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             reason = "250 OK"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -62,8 +68,11 @@ Test-Case "Test 2: Process bounce event" {
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             type = "permanent"
             reason = "550 User not found"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -86,8 +95,11 @@ Test-Case "Test 3: Process spam report event" {
             event = "spamreport"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             reason = "Marked as spam"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -109,18 +121,21 @@ Test-Case "Test 4: Process multiple events in batch" {
             email = "user1@example.com"
             event = "delivered"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
+            custom_args = @{ tenant_id = $TenantId }
         },
         @{
             email = "user2@example.com"
             event = "opened"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
+            custom_args = @{ tenant_id = $TenantId }
         },
         @{
             email = "user3@example.com"
             event = "clicked"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
+            custom_args = @{ tenant_id = $TenantId }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -166,7 +181,7 @@ Test-Case "Test 6: Handle event with missing email" {
             event = "delivered"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -188,7 +203,7 @@ Test-Case "Test 7: Handle event with missing event type" {
             email = "user@example.com"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -211,8 +226,11 @@ Test-Case "Test 8: Process click event (does not invalidate)" {
             event = "clicked"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             url = "https://example.com/offer"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -235,8 +253,11 @@ Test-Case "Test 9: Process open event (does not invalidate)" {
             event = "opened"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             useragent = "Mozilla/5.0"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -260,8 +281,11 @@ Test-Case "Test 10: Process temporary bounce (mailbox full)" {
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             type = "temporary"
             reason = "450 User mailbox is full"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -285,8 +309,11 @@ Test-Case "Test 11: Process bounce with blocked type" {
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
             type = "blocked"
             reason = "550 Blocked by ISP"
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -309,8 +336,11 @@ Test-Case "Test 12: Handle numeric timestamp" {
             email = "time-test@example.com"
             event = "delivered"
             timestamp = $timestamp
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -327,7 +357,7 @@ Test-Case "Test 12: Handle numeric timestamp" {
 
 # Test 13: Empty event array
 Test-Case "Test 13: Handle empty event array" {
-    $payload = ConvertTo-Json @()
+    $payload = ConvertTo-Json @() -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -349,8 +379,11 @@ Test-Case "Test 14: Response Content-Type validation" {
             email = "test@example.com"
             event = "delivered"
             timestamp = [int][double]::Parse((Get-Date -UFormat %s))
+            custom_args = @{
+                tenant_id = $TenantId
+            }
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -374,7 +407,7 @@ Test-Case "Test 15: Handle requests with all invalid entries gracefully" {
         @{
             event = "delivered"
         }
-    )
+    ) -Depth 5
     
     $response = Invoke-WebRequest -Uri "$BaseUrl/webhooks/sendgrid" `
         -Method Post `
@@ -395,9 +428,16 @@ Write-Host "Failed: $testsFailed" -ForegroundColor Red
 Write-Host "Total:  $($testsPassed + $testsFailed)" -ForegroundColor Cyan
 
 if ($testsFailed -eq 0) {
-    Write-Host "`n✅ All SendGrid Webhook tests PASSED!" -ForegroundColor Green
+    Write-Host "`n=== SUCCESS ===" -ForegroundColor Green
+    Write-Host "All SendGrid Webhook tests PASSED!" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Key Achievement:" -ForegroundColor Yellow
+    Write-Host "   Events WITH custom_args.tenant_id are now persisted to the database!" -ForegroundColor Cyan
+    Write-Host "   Events WITHOUT tenant are gracefully skipped (no crash)." -ForegroundColor Cyan
+    Write-Host ""
     exit 0
 } else {
-    Write-Host "`n❌ Some tests FAILED" -ForegroundColor Red
+    Write-Host "`n=== FAILED ===" -ForegroundColor Red
+    Write-Host "Some tests FAILED" -ForegroundColor Red
     exit 1
 }

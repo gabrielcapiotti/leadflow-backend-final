@@ -143,4 +143,14 @@ public class StripeProperties {
         // Keep webhook events in database for this many days
         private int maxAgeDays = 90;
     }
+
+    /**
+     * Get current Stripe mode (TEST or LIVE)
+     */
+    public String getMode() {
+        if (api.secretKey == null || api.secretKey.isBlank()) {
+            return "UNCONFIGURED";
+        }
+        return api.secretKey.startsWith("sk_test_") ? "TEST" : "LIVE";
+    }
 }

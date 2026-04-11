@@ -160,16 +160,20 @@ public class TenantService {
         logger.info("Initializing schema for tenant: {}", normalized);
 
         // cria o schema
-        jdbcTemplate.execute("CREATE SCHEMA IF NOT EXISTS " + normalized);
+        jdbcTemplate.execute("CREATE SCHEMA IF NOT EXISTS \"" + normalized + "\"");
 
         // executa migrations no schema do tenant
         Flyway.configure()
                 .dataSource(dataSource)
                 .schemas(normalized)
+                .defaultSchema(normalized)
+                .locations("classpath:db/migration/tenant")
+                .baselineOnMigrate(true)
+                .validateOnMigrate(true)
                 .load()
                 .migrate();
 
-        logger.info("Tenant schema initialized: {}", normalized);
+        logger.info("Tenant schema initialized successfully: {}", normalized);
     }
 
     /* ======================================================

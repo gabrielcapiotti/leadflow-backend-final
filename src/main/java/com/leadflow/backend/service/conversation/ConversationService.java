@@ -35,27 +35,27 @@ public class ConversationService {
     }
 
     public String chat(ChatRequest request) {
-        if (request == null || request.getLeadId() == null) {
-            throw new IllegalArgumentException("leadId é obrigatório.");
+        if (request == null || request.getVendorLeadId() == null) {
+            throw new IllegalArgumentException("vendorLeadId é obrigatório.");
         }
 
         if (request.getMessage() == null || request.getMessage().isBlank()) {
             throw new IllegalArgumentException("Mensagem inválida.");
         }
 
-        UUID leadId = Objects.requireNonNull(request.getLeadId());
+        UUID vendorLeadId = Objects.requireNonNull(request.getVendorLeadId());
         String userMessage = request.getMessage().trim();
 
-        if (!leadRepository.existsById(leadId)) {
+        if (!leadRepository.existsById(vendorLeadId)) {
             throw new IllegalArgumentException("Lead não encontrado.");
         }
 
-        saveConversation(leadId, USER_ROLE, userMessage);
+        saveConversation(vendorLeadId, USER_ROLE, userMessage);
 
         List<VendorLeadConversation> history =
-            conversationRepository.findByVendorLeadIdOrderByCreatedAtAsc(leadId);
+            conversationRepository.findByVendorLeadIdOrderByCreatedAtAsc(vendorLeadId);
 
-        UUID tenantId = leadRepository.findById(leadId)
+        UUID tenantId = leadRepository.findById(vendorLeadId)
             .orElseThrow(() -> new IllegalArgumentException("Lead não encontrado."))
             .getVendorId();
 
@@ -64,7 +64,7 @@ public class ConversationService {
         String prompt = buildPromptWithContext(history);
         String aiResponse = aiService.generate(prompt);
 
-        saveConversation(leadId, AI_ROLE, aiResponse);
+        saveConversation(vendorLeadId, AI_ROLE, aiResponse);
 
         return aiResponse;
     }

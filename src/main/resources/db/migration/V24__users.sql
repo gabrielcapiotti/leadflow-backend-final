@@ -29,7 +29,11 @@ CREATE TABLE public.users (
     CONSTRAINT fk_users_tenant
         FOREIGN KEY (tenant_id)
         REFERENCES public.tenants(id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+    CONSTRAINT fk_users_role
+        FOREIGN KEY (role_id)
+        REFERENCES public.roles(id)
+        ON DELETE RESTRICT
 );
 
 /* ======================================================

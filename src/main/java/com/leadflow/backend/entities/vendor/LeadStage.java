@@ -4,29 +4,29 @@ import java.util.Set;
 
 public enum LeadStage {
 
-    NOVO,
-    CONTATO,
-    PROPOSTA,
-    FECHADO,
-    PERDIDO;
+    NEW,
+    CONTACT,
+    NEGOTIATION,
+    CLOSED,
+    LOST;
 
     public boolean canTransitionTo(LeadStage target) {
 
         return switch (this) {
 
-            case NOVO ->
-                    Set.of(CONTATO, PERDIDO).contains(target);
+            case NEW ->
+                    Set.of(CONTACT, LOST).contains(target);
 
-            case CONTATO ->
-                    Set.of(PROPOSTA, PERDIDO).contains(target);
+            case CONTACT ->
+                    Set.of(NEGOTIATION, LOST).contains(target);
 
-            case PROPOSTA ->
-                    Set.of(FECHADO, PERDIDO).contains(target);
+            case NEGOTIATION ->
+                    Set.of(CLOSED, LOST).contains(target);
 
-            case FECHADO ->
+            case CLOSED ->
                     false;
 
-            case PERDIDO ->
+            case LOST ->
                     false;
         };
     }

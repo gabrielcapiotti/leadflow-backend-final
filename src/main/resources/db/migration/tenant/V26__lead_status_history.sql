@@ -7,6 +7,8 @@ CREATE TABLE lead_status_history (
 
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
+    tenant_id UUID NOT NULL,
+
     lead_id UUID NOT NULL,
 
     status VARCHAR(30) NOT NULL
@@ -27,8 +29,14 @@ CREATE TABLE lead_status_history (
    INDEXES
    ====================================================== */
 
+CREATE INDEX idx_lsh_tenant_id
+    ON lead_status_history (tenant_id);
+
 CREATE INDEX idx_lsh_lead_id
     ON lead_status_history (lead_id);
+
+CREATE INDEX idx_lsh_lead_tenant
+    ON lead_status_history (lead_id, tenant_id);
 
 CREATE INDEX idx_lsh_lead_changed_at
     ON lead_status_history (lead_id, changed_at DESC);

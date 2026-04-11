@@ -2,6 +2,8 @@ package com.leadflow.backend.controller;
 
 import com.leadflow.backend.dto.ai.ChatRequest;
 import com.leadflow.backend.entities.vendor.*;
+import com.leadflow.backend.multitenancy.context.TenantContext;
+import com.leadflow.backend.repository.VendorLeadRepository;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.security.VendorContext;
 import com.leadflow.backend.service.ai.AiRateLimiter;
@@ -10,6 +12,8 @@ import com.leadflow.backend.service.monitoring.AiMetricsService;
 import com.leadflow.backend.service.vendor.ConversationService;
 import com.leadflow.backend.service.vendor.VendorFeatureService;
 import com.leadflow.backend.service.vendor.VendorLeadService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +33,8 @@ import java.util.stream.Collectors;
 @PreAuthorize("@subscriptionGuard.isActive()")
 public class AiController {
 
+    private static final Logger log = LoggerFactory.getLogger(AiController.class);
+
     private final AiService aiService;
     private final ConversationService conversationService;
     private final VendorLeadService vendorLeadService;
@@ -37,6 +43,7 @@ public class AiController {
     private final AiRateLimiter aiRateLimiter;
     private final AiMetricsService aiMetricsService;
     private final VendorFeatureService vendorFeatureService;
+    private final VendorLeadRepository vendorLeadRepository;
 
     public AiController(
             AiService aiService,
@@ -46,7 +53,8 @@ public class AiController {
             VendorContext vendorContext,
             AiRateLimiter aiRateLimiter,
             AiMetricsService aiMetricsService,
-            VendorFeatureService vendorFeatureService
+            VendorFeatureService vendorFeatureService,
+            VendorLeadRepository vendorLeadRepository
     ) {
         this.aiService = aiService;
         this.conversationService = conversationService;
@@ -56,6 +64,7 @@ public class AiController {
         this.aiRateLimiter = aiRateLimiter;
         this.aiMetricsService = aiMetricsService;
         this.vendorFeatureService = vendorFeatureService;
+        this.vendorLeadRepository = vendorLeadRepository;
     }
 
     // =========================================================
@@ -88,8 +97,31 @@ public class AiController {
         return vendor;
     }
 
-    private void validateVendorLeadAccess(UUID leadId) {
-        vendorLeadService.getLeadForCurrentVendor(leadId);
+    /**
+     * 🔥 CORREÇÃO CRÍTICA: Valida que o VendorLead pertence ao tenant autenticado
+     * Usa TenantContext (do JWT) e VendorLeadRepository
+     */
+    private void validateVendorLeadAccess(UUID vendorLeadId) {
+        UUID tenantId = TenantContext.getTenant();
+        
+        if (tenantId == null) {
+            log.error("❌ TenantContext vazio durante validação de VendorLead");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
+                    "Tenant não autenticado");
+        }
+
+        // Busca VendorLead com tenantId explícito (multi-tenancy safety)
+        boolean exists = vendorLeadRepository.findById(vendorLeadId)
+                .filter(vl -> vl.getTenantId() != null && vl.getTenantId().equals(tenantId))
+                .isPresent();
+
+        if (!exists) {
+            log.warn("🚫 VendorLead {} não encontrado ou acesso negado para tenant {}", vendorLeadId, tenantId);
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND,
+                    "VendorLead não encontrado ou acesso negado");
+        }
+        
+        log.debug("✅ VendorLead {} validado com sucesso para tenant {}", vendorLeadId, tenantId);
     }
 
     // =========================================================
@@ -108,17 +140,17 @@ public class AiController {
 
         Vendor vendor = validateAiAccess(VendorFeatureKey.AI_CHAT);
 
-        UUID leadId = request.getLeadId();
-        validateVendorLeadAccess(leadId);
+        UUID vendorLeadId = request.getVendorLeadId();
+        validateVendorLeadAccess(vendorLeadId);
 
         conversationService.saveMessage(
-                leadId,
+                vendorLeadId,
                 ConversationRole.USER.name(),
                 request.getMessage()
         );
 
         List<VendorLeadConversation> history =
-                conversationService.getConversation(leadId);
+                conversationService.getConversation(vendorLeadId);
 
         String context = history == null
                 ? ""
@@ -131,7 +163,7 @@ public class AiController {
         String aiResponse = aiService.generate(context);
 
         conversationService.saveMessage(
-                leadId,
+                vendorLeadId,
                 ConversationRole.ASSISTANT.name(),
                 aiResponse
         );
@@ -144,14 +176,15 @@ public class AiController {
     // =========================================================
     @PostMapping("/lead-summary")
     public ResponseEntity<?> summary(
-            @RequestParam UUID leadId
+            @Valid @RequestBody Map<String, Object> request
     ) {
+        UUID vendorLeadId = UUID.fromString(request.get("vendorLeadId").toString());
         validateAiAccess(VendorFeatureKey.AI_SUMMARY);
-        validateVendorLeadAccess(leadId);
+        validateVendorLeadAccess(vendorLeadId);
 
         aiMetricsService.increment();
         return ResponseEntity.ok(
-                Map.of("summary", aiService.generateSummary(leadId))
+                Map.of("summary", aiService.generateSummary(vendorLeadId))
         );
     }
 
@@ -160,16 +193,19 @@ public class AiController {
     // =========================================================
     @PostMapping("/title-suggestion")
     public ResponseEntity<?> title(
-            @RequestParam UUID leadId,
-            @RequestParam(required = false) String context
+            @Valid @RequestBody Map<String, Object> request
     ) {
+        UUID vendorLeadId = UUID.fromString(request.get("vendorLeadId").toString());
+        String context = request.containsKey("context") ? request.get("context").toString() : null;
+        
         validateAiAccess(VendorFeatureKey.AI_TITLE);
+        validateVendorLeadAccess(vendorLeadId);
 
         aiMetricsService.increment();
 
         String title = (context != null && !context.isBlank())
                 ? aiService.suggestTitle(context)
-                : aiService.suggestTitle(leadId);
+                : aiService.suggestTitle(vendorLeadId);
 
         return ResponseEntity.ok(Map.of("title", title));
     }
@@ -179,8 +215,10 @@ public class AiController {
     // =========================================================
     @PostMapping("/refine-message")
     public ResponseEntity<?> refine(
-            @RequestParam String message
+            @Valid @RequestBody Map<String, Object> request
     ) {
+        String message = request.get("message").toString();
+        
         if (message == null || message.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Mensagem não pode estar vazia");
@@ -199,14 +237,16 @@ public class AiController {
     // =========================================================
     @PostMapping("/sentiment-analysis")
     public ResponseEntity<?> sentiment(
-            @RequestParam UUID leadId
+            @Valid @RequestBody Map<String, Object> request
     ) {
+        UUID vendorLeadId = UUID.fromString(request.get("vendorLeadId").toString());
+        
         validateAiAccess(VendorFeatureKey.AI_SENTIMENT);
-        validateVendorLeadAccess(leadId);
+        validateVendorLeadAccess(vendorLeadId);
 
         aiMetricsService.increment();
         return ResponseEntity.ok(
-                aiService.analyzeSentiment(leadId)
+                aiService.analyzeSentiment(vendorLeadId)
         );
     }
 
@@ -215,14 +255,16 @@ public class AiController {
     // =========================================================
     @PostMapping("/classify-lead")
     public ResponseEntity<?> classify(
-            @RequestParam UUID leadId
+            @Valid @RequestBody Map<String, Object> request
     ) {
+        UUID vendorLeadId = UUID.fromString(request.get("vendorLeadId").toString());
+        
         validateAiAccess(VendorFeatureKey.AI_CLASSIFY);
-        validateVendorLeadAccess(leadId);
+        validateVendorLeadAccess(vendorLeadId);
 
         aiMetricsService.increment();
         return ResponseEntity.ok(
-                aiService.classifyLead(leadId)
+                aiService.classifyLead(vendorLeadId)
         );
     }
 
@@ -231,22 +273,24 @@ public class AiController {
     // =========================================================
     @PostMapping("/generate-response")
     public ResponseEntity<?> generate(
-            @RequestParam UUID leadId,
-            @RequestParam String prompt
+            @Valid @RequestBody Map<String, Object> request
     ) {
+        UUID vendorLeadId = UUID.fromString(request.get("vendorLeadId").toString());
+        String prompt = request.get("prompt").toString();
+        
         if (prompt == null || prompt.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "Prompt não pode estar vazio");
         }
 
         validateAiAccess(VendorFeatureKey.AI_GENERATE);
-        validateVendorLeadAccess(leadId);
+        validateVendorLeadAccess(vendorLeadId);
 
         aiMetricsService.increment();
 
         return ResponseEntity.ok(
                 Map.of("response",
-                        aiService.generateResponse(leadId, prompt))
+                        aiService.generateResponse(vendorLeadId, prompt))
         );
     }
 }
