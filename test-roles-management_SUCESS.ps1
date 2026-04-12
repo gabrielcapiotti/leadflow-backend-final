@@ -16,12 +16,15 @@
 
 param(
     [string]$BaseUrl = "http://localhost:8081",
-    [string]$Username = "roles_test@e2e.com",
+    [string]$Username = "roles_test_$(Get-Date -Format 'yyyyMMddHHmmss')_$(Get-Random -Minimum 1000 -Maximum 9999)@e2e.com",
     [string]$Password = "RolesTest123!@#"
 )
 
+# Fix UTF-8 encoding for proper console output
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
 # Configuration
-$ErrorActionPreference = "SilentlyContinue"
+$ErrorActionPreference = "Stop"
 $global:TotalTests = 0
 $global:PassedTests = 0
 $global:FailedTests = 0
@@ -51,7 +54,8 @@ Write-Host ""
 # ===== STEP 1: REGISTER USER =====
 Write-Header "STEP 1: USER REGISTRATION"
 
-Write-Step 1 "Register Regular User"
+Write-Step 1 "Register Regular User (Dynamic Email)"
+Write-Info "Email: $Username"
 try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/api/auth/register" -Method POST -Body (@{
         email = $Username; password = $Password; confirmPassword = $Password; name = "Test User"
@@ -62,14 +66,20 @@ try {
     Write-Success "User registered" $resp.StatusCode
     Write-Info "TenantId: $global:TenantId"
 } catch {
-    Write-Fail "Registration" $_.Exception.Response.StatusCode.value__
-    exit 1
+    $code = 0
+    if ($_.Exception.Response -ne $null) {
+        $code = $_.Exception.Response.StatusCode.value__
+    }
+    Write-Fail "Registration" $code
+    Write-Info "Error: $($_.Exception.Message)"
+    # Continue anyway - might be conflict, we'll try to login
 }
 
 # ===== STEP 2: LOGIN =====
 Write-Header "STEP 2: USER LOGIN"
 
 Write-Step 2 "Login User"
+Write-Info "Email: $Username, TenantId: $global:TenantId"
 try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/api/auth/login" -Method POST -Body (@{
         email = $Username; password = $Password; tenantId = $global:TenantId
@@ -79,8 +89,14 @@ try {
     Write-Success "User authenticated" $resp.StatusCode
     Write-Info "Token: $($global:UserToken.Substring(0,25))..."
 } catch {
-    Write-Fail "Login" $_.Exception.Response.StatusCode.value__
-    exit 1
+    $code = 0
+    if ($_.Exception.Response -ne $null) {
+        $code = $_.Exception.Response.StatusCode.value__
+    }
+    Write-Fail "Login" $code
+    Write-Info "Error: $($_.Exception.Message)"
+    Write-Info "Cannot proceed with role tests without valid token"
+    # Don't exit - let script show we couldn't authenticate
 }
 
 # ===== STEP 3: ROLES ENDPOINTS =====
@@ -96,8 +112,11 @@ try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/api/roles" -Method Get -Headers $headers -UseBasicParsing -ErrorAction Stop
     Write-Fail "Regular user should NOT access roles list" $resp.StatusCode
 } catch {
-    $code = $_.Exception.Response.StatusCode.value__
-    $statusDescription = $_.Exception.Response.StatusDescription
+    $code = 0
+    if ($_.Exception.Response -ne $null) {
+        $code = $_.Exception.Response.StatusCode.value__
+    }
+    $statusDescription = if ($_.Exception.Response -ne $null) { $_.Exception.Response.StatusDescription } else { "" }
     Write-Info "Response code: $code, Description: $statusDescription"
     
     # Log full response body
@@ -112,6 +131,8 @@ try {
         Write-Success "Regular user correctly blocked" 403
         Write-Info "@PreAuthorize('hasRole(ADMIN)') is working"
     } else {
+        Write-Info "Raw error:"
+        Write-Info ($_ | Out-String)
         Write-Fail "Unexpected response" $code
     }
 }
@@ -122,7 +143,10 @@ try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/api/roles/00000000-0000-0000-0000-000000000001" -Method Get -Headers $headers -UseBasicParsing -ErrorAction Stop
     Write-Fail "Regular user should NOT access role detail" $resp.StatusCode
 } catch {
-    $code = $_.Exception.Response.StatusCode.value__
+    $code = 0
+    if ($_.Exception.Response -ne $null) {
+        $code = $_.Exception.Response.StatusCode.value__
+    }
    if ($code -eq 403) {
         Write-Success "Regular user correctly blocked" 403
         Write-Info "Authorization checked before validation"
@@ -138,13 +162,24 @@ Write-Header "STEP 4: SECURITY VALIDATION"
 Write-Step 5 "Missing Authorization Header"
 try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/api/roles" -Method Get -Headers @{"Content-Type" = "application/json"} -UseBasicParsing -ErrorAction Stop
-    Write-Fail "Should reject missing auth" $resp.StatusCode
+    
+    if ($resp.StatusCode -eq 200) {
+        Write-Fail "Should reject missing auth" $resp.StatusCode
+    } else {
+        Write-Fail "Got status $($resp.StatusCode)" $resp.StatusCode
+    }
 } catch {
-    $code = $_.Exception.Response.StatusCode.value__
-    if ($code -eq 401) {
+    $statusCode = 0
+    if ($_.Exception.Response -ne $null) {
+        $statusCode = [int]$_.Exception.Response.StatusCode
+    }
+    
+    if ($statusCode -eq 401) {
         Write-Success "Correctly rejected (401)" 401
     } else {
-        Write-Fail "Unexpected" $code
+        Write-Info "Raw error:"
+        Write-Info ($_ | Out-String)
+        Write-Fail "Unexpected status $statusCode" $statusCode
     }
 }
 
@@ -152,13 +187,24 @@ try {
 Write-Step 6 "Invalid Authorization Token"
 try {
     $resp = Invoke-WebRequest -Uri "$BaseUrl/api/roles" -Method Get -Headers @{"Authorization" = "Bearer invalid.token"; "Content-Type" = "application/json"} -UseBasicParsing -ErrorAction Stop
-    Write-Fail "Should reject invalid token" $resp.StatusCode
+    
+    if ($resp.StatusCode -eq 200) {
+        Write-Fail "Should reject invalid token" $resp.StatusCode
+    } else {
+        Write-Fail "Got status $($resp.StatusCode)" $resp.StatusCode
+    }
 } catch {
-    $code = $_.Exception.Response.StatusCode.value__
-    if ($code -eq 401) {
+    $statusCode = 0
+    if ($_.Exception.Response -ne $null) {
+        $statusCode = [int]$_.Exception.Response.StatusCode
+    }
+    
+    if ($statusCode -eq 401) {
         Write-Success "Correctly rejected (401)" 401
     } else {
-        Write-Fail "Unexpected" $code
+        Write-Info "Raw error:"
+        Write-Info ($_ | Out-String)
+        Write-Fail "Unexpected status $statusCode" $statusCode
     }
 }
 
@@ -166,12 +212,13 @@ try {
 Write-Header "FINAL REPORT"
 
 $rate = if ($global:TotalTests -gt 0) { [Math]::Round(($global:PassedTests / $global:TotalTests) * 100, 1) } else { 0 }
+$rateColor = if ($rate -ge 80) { $Green } else { $Yellow }
 
 Write-Host ""
 Write-Host "  Total Tests: $global:TotalTests" -ForegroundColor $Cyan
 Write-Host "  Passed: $global:PassedTests" -ForegroundColor $Green
 Write-Host "  Failed: $global:FailedTests" -ForegroundColor $Red
-Write-Host "  Pass Rate: $rate%" -ForegroundColor (if ($rate -ge 80) { $Green } else { $Yellow })
+Write-Host "  Pass Rate: $rate%" -ForegroundColor $rateColor
 
 Write-Host ""
 Write-Host "FINAL REPORT" -ForegroundColor $Cyan
@@ -182,4 +229,4 @@ $rate = if ($global:TotalTests -gt 0) { [Math]::Round(($global:PassedTests / $gl
 Write-Host "Total Tests: $global:TotalTests" -ForegroundColor $Cyan
 Write-Host "Passed: $global:PassedTests" -ForegroundColor $Green
 Write-Host "Failed: $global:FailedTests" -ForegroundColor $Red
-Write-Host "Pass Rate: $rate%" -ForegroundColor (if ($rate -ge 80) { $Green } else { $Yellow })
+Write-Host "Pass Rate: $rate%" -ForegroundColor $rateColor

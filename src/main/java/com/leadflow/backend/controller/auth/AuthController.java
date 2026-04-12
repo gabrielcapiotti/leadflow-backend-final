@@ -2,9 +2,13 @@ package com.leadflow.backend.controller.auth;
 
 import com.leadflow.backend.dto.auth.*;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.entities.Subscription;
+import com.leadflow.backend.exception.DuplicateEmailException;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.repository.tenant.TenantRepository;
+import com.leadflow.backend.repository.SubscriptionRepository;
+import com.leadflow.backend.repository.user.UserRepository;
 import com.leadflow.backend.security.CustomUserDetails;
 import com.leadflow.backend.security.exception.UnauthorizedException;
 import com.leadflow.backend.security.jwt.JwtService;
@@ -12,11 +16,13 @@ import com.leadflow.backend.security.jwt.JwtToken;
 import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
+import com.leadflow.backend.service.billing.StripeService;
 import com.leadflow.backend.service.vendor.UsageService;
 import com.leadflow.backend.service.vendor.SubscriptionService;
 import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Tenant;
 import com.leadflow.backend.repository.PlanRepository;
+import com.stripe.model.Customer;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -52,11 +58,14 @@ public class AuthController {
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
     private final TenantRepository tenantRepository;
+    private final UserRepository userRepository;
 
     private final UsageService usageService;
     private final PlanRepository planRepository;
     private final AuthenticationManager authenticationManager;
     private final SubscriptionService subscriptionService;
+    private final StripeService stripeService;
+    private final SubscriptionRepository subscriptionRepository;
 
     public AuthController(
             AuthService authService,
@@ -65,10 +74,13 @@ public class AuthController {
             UserSessionService userSessionService,
             TenantService tenantService,
             TenantRepository tenantRepository,
+            UserRepository userRepository,
             UsageService usageService,
             PlanRepository planRepository,
             AuthenticationManager authenticationManager,
-            SubscriptionService subscriptionService
+            SubscriptionService subscriptionService,
+            StripeService stripeService,
+            SubscriptionRepository subscriptionRepository
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
@@ -76,10 +88,13 @@ public class AuthController {
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
         this.tenantRepository = tenantRepository;
+        this.userRepository = userRepository;
         this.usageService = usageService;
         this.planRepository = planRepository;
         this.authenticationManager = authenticationManager;
         this.subscriptionService = subscriptionService;
+        this.stripeService = stripeService;
+        this.subscriptionRepository = subscriptionRepository;
     }
 
     /* ======================================================
@@ -93,6 +108,12 @@ public class AuthController {
     ) {
 
         log.info("User registration attempt: {}", maskEmail(request.email()));
+
+        // ✅ VALIDATION 1: Check if email is already registered (globally, not per-tenant)
+        if (userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull(request.email())) {
+            log.warn("Registration rejected: email already exists (duplicate user prevention): {}", maskEmail(request.email()));
+            throw new DuplicateEmailException(request.email());
+        }
 
         // Create tenant with unique name based on UUID
         String tenantName = "tenant-" + UUID.randomUUID().toString().substring(0, 8);
@@ -127,6 +148,33 @@ public class AuthController {
             } catch (Exception e) {
                 log.warn("Subscription creation failed: {}", e.getMessage());
                 // Nao interrompe o fluxo
+            }
+
+            // 🔥 INTEGRATE WITH STRIPE (novo - Phase 5)
+            try {
+                // Create Stripe customer
+                Customer stripeCustomer = stripeService.createCustomer(request.email());
+                log.info("✓ Stripe customer created: id={}", stripeCustomer.getId());
+                
+                // Create Stripe subscription
+                String stripeSubscriptionId = stripeService.createSubscription(
+                        stripeCustomer.getId(),
+                        null, // Use default price from StripeService
+                        tenantId
+                );
+                log.info("✓ Stripe subscription created: id={}", stripeSubscriptionId);
+                
+                // Update local subscription with Stripe IDs
+                Subscription localSubscription = subscriptionRepository.findByTenantId(tenantId)
+                        .orElseThrow(() -> new IllegalStateException("Subscription not found for tenant"));
+                localSubscription.setStripeCustomerId(stripeCustomer.getId());
+                localSubscription.setStripeSubscriptionId(stripeSubscriptionId);
+                subscriptionRepository.save(localSubscription);
+                log.info("✓ Local subscription updated with Stripe IDs: customer={}, subscription={}", 
+                        stripeCustomer.getId(), stripeSubscriptionId);
+            } catch (Exception e) {
+                log.warn("⚠️  Stripe integration failed (non-critical): {}", e.getMessage());
+                // Não interrompe o fluxo - local subscription foi criado OK
             }
 
             // ✅ Inicializar usage com plano padrão
@@ -392,7 +440,8 @@ public class AuthController {
         // It should NOT modify the session in the database
         // Session persists independently - only login creates, logout destroys
         
-        log.debug("Generating new JWT token for user: {}", result.user().getEmail());
+        log.debug("Generating new JWT token - hash: {}", Integer.toHexString(result.user().getId().hashCode()));
+        // NOTE: Email and userId NOT logged - sensitive data
         
         // Generate NEW JWT with NEW tokenId (generates fresh identity)
         JwtToken newAccessToken = jwtService.generateTokenForRefresh(

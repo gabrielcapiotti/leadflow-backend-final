@@ -119,7 +119,7 @@ public class TenantService {
         Tenant tenant = getById(tenantId);
         tenant.rename(newName);
         tenantRepository.saveAndFlush(tenant);
-        logger.info("✅ Tenant renamed: id={}, new_name={}", tenantId, newName);
+        logger.info("✅ Tenant renamed successfully: new_name={}", newName);
     }
 
     /* ======================================================
@@ -136,6 +136,6 @@ public class TenantService {
         Tenant tenant = getById(tenantId);
         tenant.softDelete();
         tenantRepository.saveAndFlush(tenant);
-        logger.info("✅ Tenant soft-deleted: id={}", tenantId);
+        logger.info("✅ Tenant soft-deleted successfully");
     }
 }

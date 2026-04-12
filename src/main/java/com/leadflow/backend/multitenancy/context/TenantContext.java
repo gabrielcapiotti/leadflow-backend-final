@@ -3,6 +3,7 @@ package com.leadflow.backend.multitenancy.context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.security.access.AccessDeniedException;
 
 import java.util.regex.Pattern;
 
@@ -104,18 +105,22 @@ public final class TenantContext {
     /**
      * Get current tenant UUID (MANDATORY - throws if not set)
      * 
+     * 🔐 CRITICAL FIX #4: Throw AccessDeniedException (403) instead of IllegalStateException (500)
+     * This ensures tenant context errors return proper HTTP 403 (Forbidden)
+     * instead of 500 (Internal Server Error)
+     * 
      * @return Current tenant UUID
-     * @throws IllegalStateException if no tenant set in thread
+     * @throws AccessDeniedException if no tenant set in thread (HTTP 403)
      */
     public static java.util.UUID getTenant() {
 
         java.util.UUID tenant = CURRENT_TENANT.get();
 
         if (tenant == null) {
-            throw new IllegalStateException(
-                    "Tenant not set in current thread. " +
-                    "Possible causes: filter misconfiguration, " +
-                    "missing X-Tenant-Id header, or JWT missing tenant claim"
+            throw new AccessDeniedException(
+                    "Tenant context not available for authenticated user. " +
+                    "Possible causes: missing X-Tenant-Id header, or JWT missing tenant claim. " +
+                    "This is treated as authorization failure (403)"
             );
         }
 

@@ -105,7 +105,7 @@ public class AuthService {
         // 🔥 CRÍTICO: Criar Vendor associado ao usuário
         vendorService.createVendor(savedUser);
 
-        logger.info("User registered successfully: {} (tenant={})", normalizedEmail, tenantId);
+        logger.info("User registered successfully");
 
         audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenantId.toString(), true);
 
@@ -151,7 +151,7 @@ public class AuthService {
         // 🔥 CRÍTICO: Criar Vendor associado ao usuário admin
         vendorService.createVendor(savedUser);
 
-        logger.info("🔑 ADMIN user registered successfully: {} (tenant={})", normalizedEmail, tenantId);
+        logger.info("🔑 ADMIN user registered successfully");
 
         audit(SecurityAction.USER_REGISTERED, normalizedEmail, tenantId.toString(), true);
 
@@ -236,7 +236,7 @@ public class AuthService {
 
         recordSuccessAudit(user, tenantContext);
 
-        logger.info("User authenticated successfully: {} (tenant={})", normalizedEmail, tenantContext);
+        logger.info("User authenticated successfully");
 
         return user;
     }
@@ -382,13 +382,13 @@ public class AuthService {
         user.changePassword(passwordEncoder.encode(newPassword));
         userRepository.save(user);
 
-        logger.info("Password changed for user: {}", user.getEmail());
+        logger.info("Password changed successfully");
         audit(SecurityAction.PASSWORD_CHANGED, user.getEmail(), true);
 
         // Revoga TODAS as sessoes
         UUID tenantId = tenant;  // Use UUID directly without String conversion
         userSessionService.revokeAllUserSessions(userId, tenantId);
-        logger.info("All sessions revoked for user after password change: {}", user.getEmail());
+        logger.info("All sessions revoked after password change");
 
         // ✅ NÃO lança exception aqui
         // O cliente deve tratar isso e fazer login novamente

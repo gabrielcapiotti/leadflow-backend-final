@@ -230,7 +230,7 @@ public class VendorService {
         }
 
         Vendor savedVendor = vendorRepository.save(vendor);
-        logger.info("✅ Auto-created vendor for tenant: {}", tenantId);
+        logger.info("✅ Auto-created vendor successfully");
         return savedVendor;
     }
 

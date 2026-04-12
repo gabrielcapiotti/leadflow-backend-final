@@ -94,18 +94,30 @@ public class StripeWebhookController {
                 customerId = "unknown";
             }
 
+            // Extract ADDITIONAL sources for multi-source tenant resolution (production-grade fallbacks)
+            String subscriptionId = StripeEventJsonExtractor.getString(dataObject, "subscription");
+            String invoiceId = StripeEventJsonExtractor.getString(dataObject, "invoice");
+            String paymentIntentId = StripeEventJsonExtractor.getString(dataObject, "payment_intent");
+            
             // Extract metadata to get tenantId (PRIMARY source for tenant resolution)
             String metadataTenantId = extractTenantIdFromMetadata(payload);
 
-            log.info("[WEBHOOK] 🔍 Extracted: customerId={}, metadataTenantId={}", customerId, metadataTenantId);
+            log.info("[WEBHOOK] 🔍 Extracted sources: metadataTenantId={}, customerId={}, subscriptionId={}, invoiceId={}, paymentIntentId={}", 
+                metadataTenantId, customerId, subscriptionId, invoiceId, paymentIntentId);
 
             // ========================================================================
             // STEP 5: Resolve tenant using WebhookTenantResolver (priority order)
             // ========================================================================
-            Optional<UUID> resolvedTenant = webhookTenantResolver.resolveTenant(metadataTenantId, customerId);
+            Optional<UUID> resolvedTenant = webhookTenantResolver.resolveTenant(
+                metadataTenantId, 
+                customerId,
+                subscriptionId,
+                invoiceId,
+                paymentIntentId
+            );
 
             if (resolvedTenant.isEmpty()) {
-                log.warn("[WEBHOOK] ⚠️  Cannot resolve tenant - storing in global fallback");
+                log.warn("[WEBHOOK] ⚠️  Cannot resolve tenant from any source - storing in global fallback");
                 // Event will be stored in global fallback (not tenant-scoped)
                 webhookReplayService.storeFailedWebhook(
                     eventId,

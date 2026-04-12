@@ -6,8 +6,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 /**
@@ -16,8 +14,6 @@ import org.springframework.validation.annotation.Validated;
  * 
  * Example: stripe.api.secret-key -> ${STRIPE_SECRET_KEY}
  */
-@Configuration
-@EnableConfigurationProperties(StripeProperties.class)
 @ConfigurationProperties(prefix = "stripe")
 @Getter
 @Setter

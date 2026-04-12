@@ -72,6 +72,16 @@ public class StripeService {
         log.info("✅ StripeService initialized successfully (using StripeProperties)");
         log.info("   - Stripe Mode: {}", stripeProperties.getMode());
         log.info("   - Stripe Key: {}...", stripeSecretKey.substring(0, Math.min(15, stripeSecretKey.length())));
+        
+        // Warn if price ID is not configured
+        if (priceId == null || priceId.isBlank()) {
+            log.warn("⚠️  STRIPE PRICE ID NOT CONFIGURED!");
+            log.warn("   1. Go to https://dashboard.stripe.com/test/prices");
+            log.warn("   2. Create a product + price");
+            log.warn("   3. Copy the price ID");
+            log.warn("   4. Set environment variable: export STRIPE_PRICE_ID=price_xxx");
+            log.warn("   Subscriptions will fail until this is configured!");
+        }
     }
 
 

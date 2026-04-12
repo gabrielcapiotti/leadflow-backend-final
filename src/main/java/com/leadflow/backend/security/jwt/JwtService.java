@@ -104,8 +104,7 @@ public class JwtService implements InitializingBean {
         Instant expiresAt = now.plusMillis(expirationMillis);
         String tokenId = UUID.randomUUID().toString();
         
-        logger.info("GENERATING NEW JWT TOKEN: user={}, tokenId={}, tenant={}", 
-            user.getEmail(), tokenId, tenantIdString);
+        logger.info("JWT Token generated successfully");
 
         String token = Jwts.builder()
                 .setId(tokenId)
@@ -163,8 +162,7 @@ public class JwtService implements InitializingBean {
         Instant expiresAt = now.plusMillis(expirationMillis);
         String newTokenId = UUID.randomUUID().toString();
         
-        logger.info("REFRESHING JWT TOKEN: user={}, newTokenId={}, tenant={}", 
-            user.getEmail(), newTokenId, tenantIdString);
+        logger.info("JWT Token refreshed successfully");
 
         String token = Jwts.builder()
                 .setId(newTokenId)
@@ -178,7 +176,7 @@ public class JwtService implements InitializingBean {
                 .signWith(signingKey, SignatureAlgorithm.HS256)
                 .compact();
 
-        logger.debug("✓ JWT refreshed successfully with new tokenId: {}", newTokenId);
+        logger.debug("✅ JWT refreshed successfully with new token");
         return new JwtToken(token, newTokenId, expiresAt);
     }
     
@@ -244,8 +242,8 @@ public class JwtService implements InitializingBean {
             
             logger.debug("=== TOKEN VALIDATION ===");
             logger.debug("Email: {} == {} ? {}", LogSanitizer.sanitize(email), LogSanitizer.sanitize(userDetails.getUsername()), emailMatches);
-            logger.debug("UserId: {} == {} ? {}", tokenUserId, expectedUserId, userIdMatches);
-            logger.debug("Tenant: {} == {} ? (will check)", tokenTenant, expectedTenant);
+            logger.debug("UserId validation: {}", userIdMatches);
+            logger.debug("Tenant validation: (will check)", tokenTenant, expectedTenant);
             
             // Handle null cases for tenant comparison
             boolean tenantMatches = false;

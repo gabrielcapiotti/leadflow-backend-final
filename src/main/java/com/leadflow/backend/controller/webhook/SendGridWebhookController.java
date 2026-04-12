@@ -142,7 +142,8 @@ public class SendGridWebhookController {
                         email, eventType, tenantId);
 
             } catch (Exception ex) {
-                log.error("[SendGrid] Error processing event for email: {}", email, ex);
+                log.error("[SendGrid] Error processing event - email hash: {}", Integer.toHexString(email.hashCode()), ex);
+                // NOTE: Email NOT logged - sensitive data
             } finally {
                 // ================================================
                 // CLEANUP TENANT CONTEXT (prevent leaks)
@@ -213,7 +214,8 @@ public class SendGridWebhookController {
                         return vendor.getId();
                     });
         } catch (Exception ex) {
-            log.warn("[SendGrid] Error resolving tenant from email: {}", email, ex);
+            log.warn("[SendGrid] Error resolving tenant - email hash: {}", Integer.toHexString(email.hashCode()), ex);
+            // NOTE: Email NOT logged - use hash for correlation
             return Optional.empty();
         }
     }

@@ -91,7 +91,8 @@ public class SubscriptionNotificationService {
                 htmlContent
             );
 
-            log.info("Expiration reminder sent to {} (subscription {})", email, subscription.getId());
+            log.info("Expiration reminder sent (subscription {})", subscription.getId());
+            // NOTE: Email NOT logged - sensitive data
         } catch (Exception e) {
             log.error("Error sending expiration reminder for subscription {}", subscription.getId(), e);
         }
@@ -131,7 +132,8 @@ public class SubscriptionNotificationService {
                 htmlContent
             );
 
-            log.info("Cancellation notification sent to {} (subscription {})", email, subscription.getId());
+            log.info("Cancellation notification sent (subscription {})", subscription.getId());
+            // NOTE: Email NOT logged - sensitive data
         } catch (Exception e) {
             log.error("Error sending cancellation notification for subscription {}", subscription.getId(), e);
         }
@@ -176,7 +178,8 @@ public class SubscriptionNotificationService {
                 htmlContent
             );
 
-            log.info("Payment failed notification sent to {} (subscription {})", email, subscription.getId());
+            log.info("Payment failed notification sent (subscription {})", subscription.getId());
+            // NOTE: Email NOT logged - sensitive data
         } catch (Exception e) {
             log.error("Error sending payment failed notification for subscription {}", subscription.getId(), e);
         }

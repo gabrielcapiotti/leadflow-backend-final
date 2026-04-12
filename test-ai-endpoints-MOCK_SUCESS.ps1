@@ -34,6 +34,23 @@ function HandleError($status, $content, $expected, $name) {
     $global:failedTests++
 }
 
+# ✅ PROFISSIONAL: Builder de headers com isolamento total
+# Garante imutabilidade lógica e zero side-effects entre requests
+function New-Headers {
+    param([string]$token = $null)
+    $hdrs = @{"Content-Type" = "application/json"; "Accept" = "application/json"}
+    if ($token) { $hdrs["Authorization"] = "Bearer $token" }
+    return $hdrs
+}
+
+# ✅ Deep clone: Evitar qualquer compartilhamento de referência
+function Clone-Headers {
+    param([hashtable]$headers)
+    $cloned = @{}
+    foreach ($key in $headers.Keys) { $cloned[$key] = [string]$headers[$key] }
+    return $cloned
+}
+
 function TestAPI {
     param(
         $name,
@@ -51,10 +68,13 @@ function TestAPI {
     Write-Host "`nTEST $($global:totalTests): $name" -ForegroundColor $cyan
 
     try {
+        # ✅ Deep clone de headers por request (isolamento total)
+        $requestHeaders = Clone-Headers $headers
+        
         $params = @{
             Uri = $url
             Method = $method
-            Headers = $headers
+            Headers = $requestHeaders
             ErrorAction = "Stop"
         }
 

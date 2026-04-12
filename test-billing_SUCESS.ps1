@@ -17,7 +17,7 @@
 
 param(
     [string]$BaseUrl = "http://localhost:8081",
-    [string]$Username = "teste@e2e.com",
+    [string]$Username = "teste.billing.$(Get-Date -Format 'yyyyMMdd-HHmmss')@e2e.com",
     [string]$Password = "SenhaForte123!@#"
 )
 
@@ -179,8 +179,8 @@ try {
     }
 } catch {
     if ($_.Exception.Response.StatusCode.value__ -eq 409) {
-        Write-Info "User already exists, using existing account"
-        $global:TenantId = "public"  # Fallback
+        Write-Fail "User already exists - email collision detected (should not happen with unique email)"
+        exit 1
     } else {
         Write-Fail "Registration error" $_.Exception.Response.StatusCode.value__ $_.Exception.Message
         exit 1

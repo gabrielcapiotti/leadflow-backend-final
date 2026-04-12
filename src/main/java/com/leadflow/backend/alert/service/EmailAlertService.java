@@ -266,7 +266,9 @@ public class EmailAlertService {
         helper.setFrom("alerts@leadflow.com");
 
         mailSender.send(message);
-        log.info("Email alert sent to {}", alertEmailAddress);
+        if (alertEmailAddress != null) {
+            log.info("Email alert sent to {}", alertEmailAddress);
+        }
     }
 
     /**

@@ -59,7 +59,8 @@ public class LeadController {
         try {
             enforceWriteAccess();
             User user = resolveAuthenticatedUser(principal);
-            log.info("Creating lead for user: {} with email: {}", user.getId(), request.getEmail());
+            log.info("Creating lead for user: {}", user.getId());
+            // NOTE: Email NOT logged - sensitive data
             Lead lead = leadService.createLead(
                 request.getName(),
                 request.getEmail(),

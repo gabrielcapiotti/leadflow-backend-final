@@ -1,14 +1,21 @@
 package com.leadflow.backend.security;
 
 import com.leadflow.backend.multitenancy.filter.TenantFilter;
+import com.leadflow.backend.multitenancy.filter.TenantCleanupFilter;
 import com.leadflow.backend.security.jwt.JwtAuthenticationFilter;
 import com.leadflow.backend.security.jwt.JwtService;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.service.auth.UserSessionService;
 
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.Filter;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.core.Ordered;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +31,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.access.ExceptionTranslationFilter;
 import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWriter;
 import org.springframework.security.web.header.writers.XXssProtectionHeaderWriter;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -86,10 +94,11 @@ public class SecurityWebConfig {
     @Order(2)
     public SecurityFilterChain filterChain(
             HttpSecurity http,
-            ObjectProvider<JwtAuthenticationFilter> jwtFilterProvider,
+            JwtAuthenticationFilter jwtFilter,
             RateLimitFilter rateLimitFilter,
             CorsConfigurationSource corsConfigurationSource,
-            TenantFilter tenantFilter
+            TenantFilter tenantFilter,
+            TenantCleanupFilter tenantCleanupFilter
     ) throws Exception {
 
         http
@@ -108,13 +117,31 @@ public class SecurityWebConfig {
 
             .exceptionHandling(ex -> ex
                 .authenticationEntryPoint((request, response, authException) -> {
-                    log.error("🔴 AuthenticationEntryPoint triggered for: {}", request.getRequestURI());
-                    log.error("🔴 Exception: {}", authException.getMessage());
-                    response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+                    // ✅ CRITICAL FIX #5: Return 401 for all unauthorized requests
+                    // Do NOT check isAuthenticated() - AnonymousAuthenticationToken returns true!
+                    // This was causing 403 instead of 401 for invalid/missing tokens
+                    
+                    log.warn("🔐 Unauthorized request detected: {} | Reason: {}", 
+                        request.getRequestURI(), 
+                        authException != null ? authException.getMessage() : "No authentication");
+                    
+                    response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("""
+                        {"status":401,"error":"Unauthorized","message":"Authentication required"}
+                    """);
                 })
-                .accessDeniedHandler((request, response, accessDeniedException) ->
-                        response.sendError(HttpServletResponse.SC_FORBIDDEN)
-                )
+                .accessDeniedHandler((request, response, accessDeniedException) -> {
+                    log.warn("🚫 Access denied: {} | Reason: {}", 
+                        request.getRequestURI(), 
+                        accessDeniedException.getMessage());
+                    
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType("application/json;charset=UTF-8");
+                    response.getWriter().write("""
+                        {"status":403,"error":"Forbidden","message":"You do not have permission to access this resource"}
+                    """);
+                })
             )
 
             .authorizeHttpRequests(auth -> auth
@@ -179,6 +206,12 @@ public class SecurityWebConfig {
                 .requestMatchers("/actuator/prometheus", "/api/actuator/prometheus").permitAll()
 
                 /* =========================================
+                   ERROR HANDLING - FIX #7
+                   ========================================= */
+
+                .requestMatchers("/error", "/api/error").permitAll()
+
+                /* =========================================
                    PUBLIC API ENDPOINTS
                    ========================================= */
 
@@ -226,44 +259,44 @@ public class SecurityWebConfig {
                 )
             );
 
-        JwtAuthenticationFilter jwtFilter = jwtFilterProvider.getIfAvailable();
-
         /* =========================================
-           FILTER ORDER - CRITICAL!
+           FILTER ORDER - DETERMINISTIC (CORRECTED)
            ========================================= */
 
-        // IMPORTANT: Filter execution order is crucial!
-        // TenantFilter MUST run before JwtAuthenticationFilter
-        // 
-        // Execution order will be:
-        // 1. TenantFilter (extracts X-Tenant-ID header and sets TenantContext) 
-        // 2. JwtAuthenticationFilter (uses TenantContext that was already set by TenantFilter)
-        // 3. UsernamePasswordAuthenticationFilter
-        // 4. Rate limit filter (runs after authentication)
+        // 🔥 CRITICAL FIX: Explicit order to eliminate race condition
 
-        // Add TenantFilter FIRST before UsernamePasswordAuthenticationFilter
-        // This ensures TenantContext is available for JwtAuthenticationFilter
-        if (tenantFilter != null) {
-            http.addFilterBefore(
-                    tenantFilter,
-                    UsernamePasswordAuthenticationFilter.class
-            );
-        }
+        // Step 1: JWT Authentication RUNS FIRST
+        // Sets SecurityContext + TenantContext from JWT token
+        http.addFilterBefore(
+                jwtFilter,
+                UsernamePasswordAuthenticationFilter.class
+        );
 
-        // Add JwtAuthenticationFilter AFTER TenantFilter (not before)
-        // This ensures deterministic order: TenantFilter → JwtAuthenticationFilter
-        if (jwtFilter != null) {
-            http.addFilterAfter(
-                    jwtFilter,
-                    TenantFilter.class
-            );
-        }
+        // Step 2: Tenant validation AFTER JWT
+        // Validates that TenantContext is properly set and non-null
+        // (TenantContext is already set by JwtFilter in Step 1)
+        http.addFilterAfter(
+                tenantFilter,
+                JwtAuthenticationFilter.class
+        );
 
-        // Rate limit filter runs after authentication
+        // Step 3: Rate limit AFTER authentication complete
         http.addFilterAfter(
                 rateLimitFilter,
                 UsernamePasswordAuthenticationFilter.class
         );
+
+        // Step 4: TenantCleanupFilter RUNS LAST (after ExceptionTranslationFilter)
+        // Ensures ThreadLocal cleanup happens AFTER all auth/authz decisions made
+        http.addFilterAfter(
+                tenantCleanupFilter,
+                ExceptionTranslationFilter.class
+        );
+
+        // 🔥 CRITICAL FIX: ThreadLocal cleanup is now deterministic
+        // TenantCleanupFilter runs LAST in the chain (after all authorization)
+        // This eliminates race conditions and intermittent 401 errors
+        // No finally block in JwtFilter - cleanup is guaranteed by dedicated filter
 
         return http.build();
     }
