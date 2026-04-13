@@ -19,6 +19,8 @@ CREATE TABLE public.payments (
         gateway IN ('STRIPE', 'MERCADO_PAGO', 'PAYPAL', 'UNKNOWN')
     ),
 
+    amount NUMERIC(10, 2), -- Valor real do Stripe em USD (fonte de verdade para revenue)
+
     payload TEXT,
 
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -45,3 +47,6 @@ CREATE INDEX idx_payments_gateway
 
 CREATE INDEX idx_payments_created_at
     ON public.payments (created_at);
+
+CREATE INDEX idx_payments_status_date
+    ON public.payments (status, created_at);

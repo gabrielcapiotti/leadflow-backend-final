@@ -204,10 +204,10 @@ public class AuthController {
 
         try {
             createSession(user.getId(), tenantId, accessToken, httpRequest);
-            log.info("✓ Session created successfully for new user: {} (tenantId={})", user.getId(), tenantId);
+            log.info("✓ Session created successfully for new user (sanitized)");
         } catch (Exception e) {
-            log.error("❌ CRITICAL: Session creation failed during registration for user: {} - {}", 
-                user.getId(), e.getMessage(), e);
+            log.error("❌ CRITICAL: Session creation failed during registration - {}", 
+                e.getMessage(), e);
             throw new IllegalStateException("Session creation failed - registration incomplete", e);
         }
 
@@ -263,19 +263,19 @@ public class AuthController {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             User user = userDetails.getUser();
 
-            log.info("User authenticated successfully via Spring Security: {}", user.getId());
+            log.info("User authenticated successfully via Spring Security");
 
             // ✅ CRITICAL FIX: Use user.getTenantId() DIRECTLY (UUID from authenticated user record)
             // SINGLE SOURCE OF TRUTH - no header, no conversion
             UUID tenantIdFromUser = user.getTenantId();
             
             if (tenantIdFromUser == null) {
-                log.error("CRITICAL: User {} has NULL tenantId", user.getId());
+                log.error("CRITICAL: User has NULL tenantId");
                 throw new IllegalStateException("User tenant association is null");
             }
             
             UUID tenantUUID = tenantIdFromUser;
-            log.debug("Tenant identity: userId={}, tenantId={}", user.getId(), tenantUUID);
+            log.debug("Tenant identity resolved (sanitized)");
             
             JwtToken accessToken = jwtService.generateToken(user, tenantUUID);
             
@@ -287,14 +287,14 @@ public class AuthController {
                 // Re-fetch to validate consistency before session creation
                 UUID validateTenantId = user.getTenantId();
                 if (!validateTenantId.equals(tenantIdFromUser)) {
-                    log.error("CRITICAL: Tenant ID mismatch! {} vs {}", tenantIdFromUser, validateTenantId);
+                    log.error("CRITICAL: Tenant ID mismatch detected");
                     throw new IllegalStateException("Tenant validation failed");
                 }
                 
                 createSession(user.getId(), tenantIdFromUser, accessToken, httpRequest);
-                log.info("Session created for user: {} (tenantId={})", user.getId(), tenantIdFromUser);
+                log.info("Session created successfully (sanitized)");
             } catch (Exception e) {
-                log.error("❌ CRITICAL: Session creation failed for user={}. Error={}", user.getId(), e.getMessage(), e);
+                log.error("❌ CRITICAL: Session creation failed. Error={}", e.getMessage(), e);
                 throw e;  // Re-throw to be handled by GlobalExceptionHandler
             }
 

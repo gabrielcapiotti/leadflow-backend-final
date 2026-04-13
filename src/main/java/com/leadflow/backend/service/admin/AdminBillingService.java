@@ -266,11 +266,12 @@ public class AdminBillingService {
     }
 
     private BigDecimal calculateMRR(List<Subscription> subscriptions) {
-        long activeOrTrialing = subscriptions.stream()
-            .filter(s -> s.getStatus() == Subscription.SubscriptionStatus.ACTIVE ||
-                         s.getStatus() == Subscription.SubscriptionStatus.TRIALING)
+        // CRÍTICO: MRR conta APENAS subscriptions PAID (ACTIVE)
+        // Trial não gera receita, deve ser tratado separadamente
+        long activeOnly = subscriptions.stream()
+            .filter(s -> s.getStatus() == Subscription.SubscriptionStatus.ACTIVE)
             .count();
-        return BigDecimal.valueOf(activeOrTrialing * PLAN_PRICE);
+        return BigDecimal.valueOf(activeOnly * PLAN_PRICE);
     }
 
     private BigDecimal calculateARR(List<Subscription> subscriptions) {
@@ -278,24 +279,24 @@ public class AdminBillingService {
     }
 
     private BigDecimal calculateAMV(List<Subscription> subscriptions) {
+        // ✅ NOVA FONTE: AMV = SUM(stripe_invoices_paid) / número de subscriptions
         if (subscriptions.isEmpty()) return BigDecimal.ZERO;
-        long count = subscriptions.stream()
-            .filter(s -> s.getPlan() != null)
-            .count();
-        BigDecimal average = count > 0
-            ? BigDecimal.valueOf(count * PLAN_PRICE).divide(BigDecimal.valueOf(subscriptions.size()), java.math.RoundingMode.HALF_UP)
-            : BigDecimal.ZERO;
-        return average;
+        BigDecimal totalRevenuePaid = paymentRepository.sumAllPaidPayments();
+        if (totalRevenuePaid == null || totalRevenuePaid.compareTo(BigDecimal.ZERO) == 0) {
+            return BigDecimal.ZERO;
+        }
+        return totalRevenuePaid.divide(BigDecimal.valueOf(subscriptions.size()), 2, java.math.RoundingMode.HALF_UP);
     }
 
     private BigDecimal calculateTotalRevenue(List<Subscription> subscriptions) {
-        long count = subscriptions.stream()
-            .filter(s -> s.getPlan() != null)
-            .count();
-        return BigDecimal.valueOf(count * PLAN_PRICE);
+        // ✅ NOVA FONTE: Usar SUM(stripe_invoices_paid) em vez de subscriptions * PLAN_PRICE
+        BigDecimal stripeRevenue = paymentRepository.sumAllPaidPayments();
+        return stripeRevenue != null ? stripeRevenue : BigDecimal.ZERO;
     }
 
     private BigDecimal calculateMonthlyRevenue(List<Subscription> subscriptions, YearMonth month) {
+        // ✅ NOVA FONTE: Usar dados reais - SUM(stripe_invoices_paid) no mês específico
+        // (Por enquanto, usar aproximação com subscriptions ACTIVE no período)
         long count = subscriptions.stream()
             .filter(s -> s.getStatus() == Subscription.SubscriptionStatus.ACTIVE &&
                         s.getPlan() != null &&
@@ -303,15 +304,19 @@ public class AdminBillingService {
                         YearMonth.from(s.getCreatedAt()).compareTo(month) <= 0 &&
                         (s.getExpiresAt() == null || s.getExpiresAt().isAfter(month.atDay(1).atStartOfDay())))
             .count();
+        // FUTURO: Implementar query JPQL para payments por data para ser 100% acurado
         return BigDecimal.valueOf(count * PLAN_PRICE);
     }
 
     private BigDecimal calculateYearlyRevenue(List<Subscription> subscriptions, int year) {
+        // ✅ NOVA FONTE: Usar dados reais - SUM(stripe_invoices_paid) no ano específico
+        // (Por enquanto, usar aproximação com subscriptions criadas no ano)
         long count = subscriptions.stream()
             .filter(s -> s.getPlan() != null &&
                         s.getCreatedAt() != null &&
                         s.getCreatedAt().getYear() == year)
             .count();
+        // FUTURO: Implementar query JPQL para payments por data para ser 100% acurado
         return BigDecimal.valueOf(count * PLAN_PRICE);
     }
 }

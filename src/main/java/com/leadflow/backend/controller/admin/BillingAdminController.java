@@ -301,8 +301,10 @@ public class BillingAdminController {
                 return ResponseEntity.badRequest().build();
             }
 
-            log.info("Processing refund: userId={}, amount={}, reason={}", 
-                request.getUserId(), request.getAmount(), request.getReason());
+            // Security: mascarar userId nos logs
+            String userIdMasked = maskSensitiveId(request.getUserId());
+            log.info("Processing refund: userId={}, amount={}", 
+                userIdMasked, request.getAmount());
             
             RefundResponse response = adminBillingService.processRefund(request);
             log.info("✅ Refund processed successfully: refundId={}, amount={}", 
@@ -316,6 +318,14 @@ public class BillingAdminController {
             log.error("Error processing refund", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
+    }
+
+    // Security helper: mask sensitive IDs in logs
+    private String maskSensitiveId(Object id) {
+        if (id == null) return "***MASKED***";
+        String idStr = id.toString();
+        if (idStr.length() <= 4) return "****";
+        return idStr.substring(0, 4) + "..." + idStr.substring(idStr.length() - 2);
     }
 }
 

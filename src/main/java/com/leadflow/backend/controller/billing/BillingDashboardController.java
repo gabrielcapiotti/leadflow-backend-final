@@ -35,19 +35,19 @@ public class BillingDashboardController {
     @GetMapping("/dashboard/{tenantId}")
     @PreAuthorize("@securityService.isTenantOwner(#tenantId)")
     public ResponseEntity<BillingDashboardDTO> getDashboard(@PathVariable UUID tenantId) {
-        log.info("Fetching billing dashboard for tenant: {}", tenantId);
+        log.info("Fetching billing dashboard (sanitized)");
         return ResponseEntity.ok(billingDashboardService.getBillingDashboard(tenantId));
     }
 
     @GetMapping("/subscription/{tenantId}")
     @PreAuthorize("@securityService.isTenantOwner(#tenantId)")
     public ResponseEntity<SubscriptionDetailsDTO> getSubscriptionDetails(@PathVariable UUID tenantId) {
-        log.info("Fetching subscription details for tenant: {}", tenantId);
+        log.info("Fetching subscription details (sanitized)");
 
         SubscriptionDetailsDTO details = billingDashboardService.getSubscriptionDetails(tenantId);
 
         if (details == null) {
-            log.warn("Subscription not found for tenant: {}", tenantId);
+            log.warn("Subscription not found (sanitized)");
             return ResponseEntity.ok(SubscriptionDetailsDTO.createEmptySubscription());
         }
 
@@ -73,7 +73,7 @@ public class BillingDashboardController {
                 billingDashboardService.getUsageStatistics(tenantId);
 
         if (usage == null) {
-            log.warn("Usage not found for tenant: {}", tenantId);
+            log.warn("Usage not found (sanitized)");
             return ResponseEntity.ok(new BillingDashboardDTO.UsageStatisticsDTO());
         }
 

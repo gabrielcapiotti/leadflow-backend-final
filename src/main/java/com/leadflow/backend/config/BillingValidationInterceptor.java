@@ -121,10 +121,10 @@ public class BillingValidationInterceptor implements HandlerInterceptor {
             }
 
             // Validate subscription is active
-            log.debug("Validating subscription for vendor: {} on path: {}", tenantId, requestPath);
+            log.debug("Validating subscription (sanitized) on path: {}", requestPath);
             subscriptionService.validateActiveSubscription(tenantId);
 
-            log.debug("Subscription validation passed for vendor: {} on path: {}", tenantId, requestPath);
+            log.debug("Subscription validation passed (sanitized) on path: {}", requestPath);
             return true;
 
         } catch (SubscriptionInactiveException e) {
