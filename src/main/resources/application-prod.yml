@@ -1,84 +1,243 @@
-#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# application-prod.yml — PRODUCTION ENVIRONMENT CONFIGURATION
-#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 spring:
-  profiles:
-    active: prod
 
   application:
     name: leadflow-backend
 
-  # ══════════════════════════════════════════════════════════
-  # DATABASE (Production PostgreSQL)
-  # ══════════════════════════════════════════════════════════
+  data:
+    redis:
+      repositories:
+        enabled: false
+
   datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/leadflowDB}
-    username: ${DATABASE_USER:postgres}
-    password: ${DATABASE_PASSWORD:venusia}
+    url: ${DB_URL:jdbc:postgresql://localhost:2411/leadflowDB}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:venusia}
+    driver-class-name: org.postgresql.Driver
+
     hikari:
-      maximum-pool-size: 20
+      maximum-pool-size: 15
       minimum-idle: 5
-      connection-timeout: 20000
+      auto-commit: false
 
-  jpa:
-    hibernate:
-      ddl-auto: validate
-    properties:
-      hibernate:
-        dialect: org.hibernate.dialect.PostgreSQL10Dialect
-        format_sql: true
-        use_sql_comments: true
-
-  # ══════════════════════════════════════════════════════════
-  # LOGGING (Production Level)
-  # ══════════════════════════════════════════════════════════
   jackson:
     serialization:
       write-dates-as-timestamps: false
+    default-property-inclusion: non_null
+
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+
+    properties:
+      hibernate:
+        default_schema: public
+        format_sql: false
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    validate-on-migrate: false
+    locations: classpath:db/migration
+
+  task:
+    scheduling:
+      pool:
+        size: 5
+
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+
+  mail:
+    host: ${MAIL_HOST:smtp.gmail.com}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    protocol: smtp
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+            required: true
+          connectiontimeout: 5000
+          timeout: 5000
+          writetimeout: 5000
+
+email:
+  from: ${MAIL_FROM:no-reply@leadflow.com}
+  from-name: LeadFlow
+  reply-to: ${MAIL_REPLY_TO:support@leadflow.com}
+  notification:
+    enabled: true
+    async: true
+    max-retries: 3
+
+server:
+  port: ${PORT:8080}
+  servlet:
+    context-path: /api
+    encoding:
+      charset: UTF-8
+      enabled: true
+      force: true
 
 logging:
   level:
-    root: WARN
-    com.leadflow.backend: INFO
-    org.springframework.web: WARN
-    org.springframework.security: WARN
-    org.hibernate.SQL: WARN
+    root: INFO
+  charset:
+    console: UTF-8
+    file: UTF-8
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} | %logger{0} | %msg%n"
 
-# ══════════════════════════════════════════════════════════
-# APPLICATION CONFIGURATION
-# ══════════════════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      base-path: /actuator
+      exposure:
+        include: health,info,metrics,prometheus
+
+  endpoint:
+    health:
+      show-details: always
+
+  health:
+    redis:
+      enabled: false
+    circuitbreakers:
+      enabled: false
+    ratelimiters:
+      enabled: false
+    retries:
+      enabled: false
+    timelimiters:
+      enabled: false
+
+  metrics:
+    tags:
+      application: leadflow-backend
+      environment: production
+      service: leadflow-api 
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        resilience4j.circuitbreaker.calls: true
+    enable:
+      logback: true
+      process: true
+      system: true
+      jvm: true
+
+system:
+  admin:
+    email: ${SYSTEM_ADMIN_EMAIL:}
+
+security:
+  jwt:
+    secret: ${JWT_SECRET:01234567890123456789012345678901}
+    expiration: ${JWT_EXPIRATION:3600000}
+
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:https://seusite.com}
+
+  rate-limit:
+    global:
+      per-minute: 100
+    ai:
+      per-minute: 30
+    auth:
+      per-minute: 20
+    admin:
+      per-minute: 60
+    webhook:
+      per-minute: 120
+
+  session:
+    max-devices: 10
+    cleanup-days: 30
+
+  brute-force:
+    max-attempts: 5
+    window-minutes: 5
+
+openai:
+  api:
+    key: ${OPENAI_API_KEY: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}
+  model: ${OPENAI_MODEL:gpt-4o-mini}
+  endpoint: https://api.openai.com/v1/chat/completions
+  retry:
+    max-attempts: 3
+    initial-backoff-ms: 1500
+    multiplier: 2.0
+
+sendgrid:
+  api-key: ${SENDGRID_API_KEY:}
+  from-email: no-reply@seudominio.com
+  webhook:
+    verify-signature: ${SENDGRID_WEBHOOK_VERIFY_SIGNATURE:false}
+    public-key: ${SENDGRID_WEBHOOK_PUBLIC_KEY:}
+  retry:
+    max-attempts: 3
+    initial-backoff-ms: 300
+    multiplier: 2.0
+    worker:
+      max-attempts: 8
+      delay-seconds: 60
+      fixed-delay-ms: 60000
+
+cakto:
+  webhook:
+    secret: ${CAKTO_WEBHOOK_SECRET:}
+
+billing:
+  checkout:
+    base-url: ${BILLING_CHECKOUT_BASE_URL:https://seusite.com/checkout}
+
 app:
   billing:
-    enabled: ${APP_BILLING_ENABLED:true}  # ✅ BILLING ENABLED IN PRODUCTION
-
+    enabled: true
+  frontend-url: ${APP_FRONTEND_URL:http://localhost:3000}
   frontend:
-    url: ${APP_FRONTEND_URL:https://app.leadflow.com}
-    success-url: ${APP_FRONTEND_URL:https://app.leadflow.com}/payment-success
-    cancel-url: ${APP_FRONTEND_URL:https://app.leadflow.com}/payment-cancel
+    success-url: ${APP_FRONTEND_SUCCESS_URL:http://localhost:3000/payment-success}
+    cancel-url: ${APP_FRONTEND_CANCEL_URL:http://localhost:3000/payment-cancel}
 
-  jwt:
-    secret: ${JWT_SECRET:change-me-in-production}
-    expiration: 86400000  # 24 hours
+subscription:
+  trial-days: 7
+  limits:
+    max-leads: 500
+    max-users: 10
+    max-ai-executions: 1000
 
-  admin-tenant-id: 00000000-0000-0000-0000-000000000000
+audit:
+  cleanup:
+    retention-days: 90
 
-# ══════════════════════════════════════════════════════════
-# STRIPE CONFIGURATION (Production Keys)
-# ══════════════════════════════════════════════════════════
 stripe:
   api:
-    secret-key: ${STRIPE_SECRET_KEY:sk_live_xxxxx}  # Live key required
-    publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_live_xxxxx}
+    secret-key: ${STRIPE_SECRET_KEY:sk_test_51TEG1fFzdxPQXW4wPJZ44ulOz2mqrMaPGUpKSJd5toTddkfCTpjQTjOExwuph9uMJhYFFn3PErOLZesj5SSvRryc00ryq0MEU7}
+    publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_51TEG1fFzdxPQXW4werLnbwdxt1EGS22nG0PhmbqLGHRsWhaQrQUrNfuqu7bgeZ8rAKP3E0DPEyJX6M1FaXTpVj0c00NFzZaqG2}
+  # Stripe Product and Price IDs for billing integration
+  product-id: ${STRIPE_PRODUCT_ID:prod_UNEkkapYiKhRQ1}
+  price-id: ${STRIPE_PRICE_ID:price_1TOUGrFzdxPQXW4wpPIt0FV7}
+  test-mode: false
+  price:
+    default: ${STRIPE_PRICE_DEFAULT:price_1TOUGrFzdxPQXW4wpPIt0FV7}
+    pro: ${STRIPE_PRICE_PRO:price_1TOUGrFzdxPQXW4wpPIt0FV7}
   webhook:
-    secret: ${STRIPE_WEBHOOK_SECRET:whsec_xxxxx}  # Live webhook secret required
+    secret: ${STRIPE_WEBHOOK_SECRET:whsec_test_xxxxx}
     path: /stripe/webhook
     enabled: true
     timestamp-tolerance-seconds: 300
-    alert-threshold: 5
-    alert-email: ${STRIPE_WEBHOOK_ALERT_EMAIL:ops@leadflow.com}
+    alert-threshold: ${STRIPE_WEBHOOK_ALERT_THRESHOLD:5}
+    alert-email: ${STRIPE_WEBHOOK_ALERT_EMAIL:}
   retry:
     max-attempts: 3
     initial-delay-ms: 1000
@@ -90,25 +249,6 @@ stripe:
     enabled: true
     max-age-days: 90
 
-# ══════════════════════════════════════════════════════════
-# ACTUATOR (Health Checks)
-# ══════════════════════════════════════════════════════════
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: when-authorized
-  metrics:
-    export:
-      prometheus:
-        enabled: true
-
-# ══════════════════════════════════════════════════════════
-# RESILIENCE4J (Circuit Breaker)
-# ══════════════════════════════════════════════════════════
 resilience4j:
   circuitbreaker:
     configs:
@@ -122,28 +262,20 @@ resilience4j:
         failureRateThreshold: 50.0
         slowCallRateThreshold: 50.0
         slowCallDurationThreshold: 2000
+        recordExceptions:
+          - java.lang.Exception
     instances:
       stripe:
         baseConfig: default
         failureRateThreshold: 50
         waitDurationInOpenState: 30000
-  retry:
-    configs:
-      default:
-        maxAttempts: 3
-        waitDuration: 1000
-    instances:
-      stripe:
+        permittedNumberOfCallsInHalfOpenState: 3
+        minimumNumberOfCalls: 5
+        slowCallDurationThreshold: 2000
+      email:
         baseConfig: default
-        maxAttempts: 3
-
-# ══════════════════════════════════════════════════════════
-# SERVER CONFIGURATION
-# ══════════════════════════════════════════════════════════
-server:
-  port: 8081
-  servlet:
-    context-path: /api
-  compression:
-    enabled: true
-    min-response-size: 1024
+        failureRateThreshold: 60
+        waitDurationInOpenState: 60000
+        slowCallDurationThreshold: 3000
+      database:
+        baseConfig: default
