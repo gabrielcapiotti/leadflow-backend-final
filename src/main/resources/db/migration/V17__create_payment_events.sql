@@ -1,25 +1,44 @@
 /* ======================================================
-   PAYMENT EVENTS
-   Stores processed payment/webhook events to ensure
-   idempotent processing of external billing providers
+   V17__create_payment_events.sql
+   GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.payment_events (
-    id UUID PRIMARY KEY,
+CREATE TABLE public.payment_events (
+
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    tenant_id UUID NOT NULL,
 
     provider_event_id VARCHAR(255) NOT NULL,
     provider VARCHAR(100) NOT NULL,
 
-    processed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    processed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT uq_payment_events_provider_event
-        UNIQUE (provider_event_id)
+        UNIQUE (provider, provider_event_id),
+
+    CONSTRAINT fk_payment_events_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE
 );
 
--- Index for chronological queries and cleanup jobs
-CREATE INDEX IF NOT EXISTS idx_payment_events_processed_at
+/* ======================================================
+   INDEXES
+   ====================================================== */
+
+-- tenant isolation
+CREATE INDEX idx_payment_events_tenant_id
+    ON public.payment_events (tenant_id);
+
+-- consultas por tempo (cleanup / auditoria)
+CREATE INDEX idx_payment_events_processed_at
     ON public.payment_events (processed_at);
 
--- Index for fast provider lookups
-CREATE INDEX IF NOT EXISTS idx_payment_events_provider
+-- lookup por provider
+CREATE INDEX idx_payment_events_provider
     ON public.payment_events (provider);
+
+-- provider + tenant
+CREATE INDEX idx_payment_events_provider_tenant
+    ON public.payment_events (provider, tenant_id);

@@ -93,6 +93,41 @@ public class WebhookReplayService {
     }
 
     /**
+     * Update the status of a stored webhook event.
+     * 
+     * @param eventId Stripe event ID
+     * @param status New status (PENDING, FAILED_VALIDATION, FAILED_PERMANENT, etc.)
+     * @param reason Reason for status change
+     */
+    @Transactional
+    public void updateWebhookStatus(String eventId, String status, String reason) {
+        try {
+            java.util.Optional<FailedWebhookEvent> optionalEvent = failedWebhookRepository.findByStripeEventId(eventId);
+            if (optionalEvent.isPresent()) {
+                FailedWebhookEvent event = optionalEvent.get();
+                
+                // Map string status to WebhookStatus enum
+                try {
+                    FailedWebhookEvent.WebhookStatus webhookStatus = FailedWebhookEvent.WebhookStatus.valueOf(status);
+                    event.setStatus(webhookStatus);
+                } catch (IllegalArgumentException e) {
+                    log.warn("[WEBHOOK] Unknown status: {}, keeping current status", status);
+                }
+                
+                event.setFailureReason(reason);
+                event.setUpdatedAt(Instant.now());
+                failedWebhookRepository.save(event);
+                
+                log.info("[WEBHOOK] Updated webhook {} status to {}: {}", eventId, status, reason);
+            } else {
+                log.warn("[WEBHOOK] Webhook not found for update: {}", eventId);
+            }
+        } catch (Exception e) {
+            log.error("[WEBHOOK] Error updating webhook status: {}", e.getMessage(), e);
+        }
+    }
+
+    /**
      * Scheduled task to replay failed webhooks.
      * Runs every 30 seconds and processes up to batch-size pending webhooks.
      */

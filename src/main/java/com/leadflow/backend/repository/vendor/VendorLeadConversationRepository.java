@@ -19,14 +19,14 @@ public interface VendorLeadConversationRepository
      * Recupera todo o histórico de conversa de um lead
      * ordenado cronologicamente.
      */
-    List<VendorLeadConversation> findByLeadIdOrderByCreatedAtAsc(UUID leadId);
+    List<VendorLeadConversation> findByVendorLeadIdOrderByCreatedAtAsc(UUID vendorLeadId);
 
     /**
      * Recupera histórico paginado de conversa de um lead
      * ordenado cronologicamente.
      */
-    Page<VendorLeadConversation> findByLeadIdOrderByCreatedAtAsc(
-            UUID leadId,
+    Page<VendorLeadConversation> findByVendorLeadIdOrderByCreatedAtAsc(
+            UUID vendorLeadId,
             Pageable pageable
     );
 
@@ -40,34 +40,18 @@ public interface VendorLeadConversationRepository
     );
 
     /**
-     * Conta quantas mensagens existem para um lead.
+     * Conta quantas mensagens existem para um vendor lead.
      * Útil para limitar contexto enviado para LLM.
      */
-    long countByLeadId(UUID leadId);
+    long countByVendorLeadId(UUID vendorLeadId);
 
     /**
-     * Recupera mensagens de um lead dentro de um intervalo de tempo
+     * Recupera mensagens de um vendor lead dentro de um intervalo de tempo
      * ordenadas cronologicamente.
      */
-    List<VendorLeadConversation> findByLeadIdAndCreatedAtBetweenOrderByCreatedAtAsc(
-            UUID leadId,
+    List<VendorLeadConversation> findByVendorLeadIdAndCreatedAtBetweenOrderByCreatedAtAsc(
+            UUID vendorLeadId,
             Instant start,
             Instant end
-    );
-
-    /**
-     * Recupera conversas vinculadas a um VendorLead
-     * ordenadas cronologicamente.
-     */
-    List<VendorLeadConversation> findByVendorLeadIdOrderByCreatedAtAsc(
-            UUID vendorLeadId
-    );
-
-    /**
-     * Recupera histórico paginado de conversas de um VendorLead.
-     */
-    Page<VendorLeadConversation> findByVendorLeadIdOrderByCreatedAtAsc(
-            UUID vendorLeadId,
-            Pageable pageable
     );
 }

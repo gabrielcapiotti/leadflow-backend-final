@@ -2,9 +2,7 @@ package com.leadflow.backend.controller.billing;
 
 import com.leadflow.backend.dto.metrics.WebhookEventMetrics;
 import com.leadflow.backend.repository.StripeEventLogRepository;
-import com.leadflow.backend.service.billing.WebhookMetricsTracker;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;

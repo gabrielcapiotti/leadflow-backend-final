@@ -7,6 +7,8 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
+
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
@@ -14,7 +16,7 @@ import lombok.NoArgsConstructor;
 public class PlanDTO {
     
     @JsonProperty("id")
-    private Long id;
+    private UUID id;
     
     @JsonProperty("code")
     private String code;
@@ -34,6 +36,12 @@ public class PlanDTO {
     @JsonProperty("active")
     private Boolean active;
 
+    @JsonProperty("stripe_product_id")
+    private String stripeProductId;
+
+    @JsonProperty("stripe_price_id")
+    private String stripePriceId;
+
     /**
      * Convert Plan entity to DTO
      */
@@ -50,6 +58,8 @@ public class PlanDTO {
             .maxUsers(plan.getMaxUsers())
             .maxAiExecutions(plan.getMaxAiExecutions())
             .active(plan.getActive())
+            .stripeProductId(plan.getStripeProductId())
+            .stripePriceId(plan.getStripePriceId())
             .build();
     }
 }

@@ -1,15 +1,15 @@
 package com.leadflow.backend.specification;
 
 import com.leadflow.backend.entities.audit.SecurityAuditLog;
-import com.leadflow.backend.entities.audit.SecurityAction;
 
 import org.springframework.data.jpa.domain.Specification;
 
 import jakarta.persistence.criteria.Predicate;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 public final class SecurityAuditSpecification {
 
@@ -18,37 +18,37 @@ public final class SecurityAuditSpecification {
     }
 
     public static Specification<SecurityAuditLog> filter(
-            String email,
-            String tenant,
-            SecurityAction action,
+            String actorEmail,
+            UUID tenantId,
+            String action,
             Boolean success,
-            LocalDateTime from,
-            LocalDateTime to
+            Instant from,
+            Instant to
     ) {
 
         return (root, query, cb) -> {
 
             List<Predicate> predicates = new ArrayList<>();
 
-            if (email != null && !email.isBlank()) {
+            if (actorEmail != null && !actorEmail.isBlank()) {
                 predicates.add(
                         cb.like(
-                                cb.lower(root.get("email")),
-                                "%" + email.trim().toLowerCase() + "%"
+                                cb.lower(root.get("actorEmail")),
+                                "%" + actorEmail.trim().toLowerCase() + "%"
                         )
                 );
             }
 
-            if (tenant != null && !tenant.isBlank()) {
+            if (tenantId != null) {
                 predicates.add(
                         cb.equal(
-                                root.get("tenant"),
-                                tenant
+                                root.get("tenantId"),
+                                tenantId
                         )
                 );
             }
 
-            if (action != null) {
+            if (action != null && !action.isBlank()) {
                 predicates.add(
                         cb.equal(root.get("action"), action)
                 );

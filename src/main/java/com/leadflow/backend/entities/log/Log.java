@@ -1,8 +1,10 @@
 package com.leadflow.backend.entities.log;
 
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Filter;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -10,10 +12,17 @@ import java.util.UUID;
 @Entity
 @Table(
     name = "logs",
+    schema = "public",
     indexes = {
+        @Index(name = "idx_logs_tenant_id", columnList = "tenant_id"),
         @Index(name = "idx_logs_user_id", columnList = "user_id"),
-        @Index(name = "idx_logs_created_at", columnList = "created_at")
+        @Index(name = "idx_logs_created_at", columnList = "created_at"),
+        @Index(name = "idx_logs_tenant_created", columnList = "tenant_id, created_at")
     }
+)
+@Filter(
+    name = "tenantFilter",
+    condition = "tenant_id = :tenantId"
 )
 public class Log {
 
@@ -21,10 +30,16 @@ public class Log {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @PrePersist
     public void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        if (tenantId == null) {
+            tenantId = TenantContext.requireTenant();
         }
     }
 
@@ -72,6 +87,10 @@ public class Log {
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
     }
 
     public User getUser() {

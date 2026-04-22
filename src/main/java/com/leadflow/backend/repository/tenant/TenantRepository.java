@@ -11,45 +11,21 @@ import java.util.UUID;
 public interface TenantRepository extends JpaRepository<Tenant, UUID> {
 
     /* ======================================================
-       ACTIVE TENANTS (Soft Delete Applied)
+       ACTIVE TENANTS (Soft Delete Applied) - UUID BASED
        ====================================================== */
 
     /**
-     * Busca tenant ativo pelo schemaName.
-     */
-    Optional<Tenant> findBySchemaNameIgnoreCaseAndDeletedAtIsNull(String schemaName);
-
-    /**
-     * Busca tenant ativo pelo nome.
+     * Find active tenant by name (case-insensitive).
      */
     Optional<Tenant> findByNameIgnoreCaseAndDeletedAtIsNull(String name);
 
     /**
-     * Busca tenant ativo por ID.
+     * Find active tenant by ID.
      */
     Optional<Tenant> findByIdAndDeletedAtIsNull(UUID id);
 
     /**
-     * Verifica existência de tenant ativo pelo schemaName.
-     */
-    boolean existsBySchemaNameIgnoreCaseAndDeletedAtIsNull(String schemaName);
-
-    /**
-     * Verifica existência de tenant ativo pelo nome.
+     * Check if active tenant exists by name.
      */
     boolean existsByNameIgnoreCaseAndDeletedAtIsNull(String name);
-
-    /* ======================================================
-       INCLUDE SOFT-DELETED (ADMIN / SYSTEM)
-       ====================================================== */
-
-    /**
-     * Busca tenant (ativo ou deletado) pelo schemaName.
-     */
-    Optional<Tenant> findBySchemaNameIgnoreCase(String schemaName);
-
-    /**
-     * Verifica existência de tenant (ativo ou deletado).
-     */
-    boolean existsBySchemaNameIgnoreCase(String schemaName);
 }

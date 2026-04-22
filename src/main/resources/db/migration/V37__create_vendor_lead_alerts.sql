@@ -1,44 +1,38 @@
 /* ======================================================
-   VENDOR LEAD ALERTS
-   Stores alerts related to vendor leads
+   V37__create_vendor_lead_alerts.sql
+   TENANT SCHEMA
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.vendor_lead_alerts (
+CREATE TABLE vendor_lead_alerts (
 
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     vendor_lead_id UUID NOT NULL,
 
-    tipo VARCHAR(50) NOT NULL,
+    type VARCHAR(50) NOT NULL
+        CHECK (type IN ('RISK', 'FOLLOW_UP', 'AI_ALERT', 'SYSTEM')),
 
-    mensagem TEXT NOT NULL,
+    message TEXT NOT NULL,
 
-    resolvido BOOLEAN NOT NULL DEFAULT FALSE,
+    resolved BOOLEAN NOT NULL DEFAULT FALSE,
 
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT fk_vendor_lead_alerts_lead
         FOREIGN KEY (vendor_lead_id)
-        REFERENCES public.vendor_leads(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT chk_vendor_lead_alert_type
-        CHECK (tipo IN ('RISK', 'FOLLOW_UP', 'AI_ALERT', 'SYSTEM'))
+        REFERENCES vendor_leads(id)
+        ON DELETE CASCADE
 );
-
 
 /* ======================================================
    INDEXES
    ====================================================== */
 
--- Lookup alerts for a lead
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_alerts_lead
-    ON public.vendor_lead_alerts (vendor_lead_id);
+CREATE INDEX idx_vendor_lead_alerts_lead
+    ON vendor_lead_alerts (vendor_lead_id);
 
--- Filtering unresolved alerts
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_alerts_resolved
-    ON public.vendor_lead_alerts (resolvido);
+CREATE INDEX idx_vendor_lead_alerts_resolved
+    ON vendor_lead_alerts (resolved);
 
--- Timeline queries
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_alerts_created
-    ON public.vendor_lead_alerts (created_at DESC);
+CREATE INDEX idx_vendor_lead_alerts_created
+    ON vendor_lead_alerts (created_at DESC);

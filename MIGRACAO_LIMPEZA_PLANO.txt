@@ -1,0 +1,39 @@
+﻿📊 ANÁLISE DE LIMPEZA - DB/MIGRATION
+====================================
+
+🔴 MIGRATIONS DE CLEANUP/FIX (15 arquivos):
+
+1. REMOVALS (3):
+   - V100__remove_tenant_id_from_vendors.sql (tenant_id foi adicionado errado)
+   - V101__remove_tenant_id_from_settings.sql (idem)
+   - V102__remove_tenant_id_from_vendor_leads.sql (idem)
+
+2. ADD MISSING COLUMNS (6):
+   - V28__add_missing_indexes.sql
+   - V64__add_missing_vendor_billing_columns.sql
+   - V65__ensure_vendor_subscription_core_columns.sql
+   - V67__ensure_vendor_entity_core_columns.sql
+   - V68__ensure_vendor_leads_entity_columns.sql
+   - V80__add_missing_subscription_columns.sql
+
+3. FIXES/CONSTRAINTS (6):
+   - V59__fix_login_audit_schema.sql
+   - V84__fix_email_unique_constraint_for_multitenant.sql
+   - V77__ensure_plans_seeded.sql
+   - V93__fix_subscription_status_constraint_add_trialing.sql
+   - V95__fix_settings_whatsapp_length.sql
+   - (tenant/) V96__create_notification_tables.sql (em tenant/)
+
+✅ ESTRATÉGIA DE LIMPEZA (em ordem):
+
+PASSO 1 - REMOVER migrations de "remove" (V100-V102)
+       Consolidar com as create originárias (não adicionar tenant_id)
+
+PASSO 2 - REMOVER migrations "add_missing" (V28, V64-68, V80)
+       Consolidar as colunas nas create originárias
+
+PASSO 3 - REMOVER migrations "fix" não críticas
+       Consolidar constraints/defaults nas create originárias
+
+RESULTADO: De 73 para ~55 migrations (redução de 25%)
+BENEFÍCIO: Schema limpo, sem histórico de erros, mais fácil de entender

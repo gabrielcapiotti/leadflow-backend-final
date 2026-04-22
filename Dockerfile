@@ -54,7 +54,6 @@ CMD ["java", \
      "-XX:+UseG1GC", \
      "-XX:MaxGCPauseMillis=200", \
      "-XX:+PrintGCDetails", \
-     "-XX:+PrintGCDateStamps", \
      "-Djava.awt.headless=true", \
      "-Duser.timezone=UTC", \
      "-Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod}", \

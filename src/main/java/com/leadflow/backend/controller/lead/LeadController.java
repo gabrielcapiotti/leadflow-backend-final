@@ -7,6 +7,7 @@ import com.leadflow.backend.entities.lead.Lead;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
 import com.leadflow.backend.security.CustomUserDetails;
+import com.leadflow.backend.service.billing.RequiresBilling;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.service.lead.LeadService;
 import com.leadflow.backend.service.user.UserService;
@@ -51,6 +52,7 @@ public class LeadController {
        ====================================================== */
 
     @PostMapping
+    @RequiresBilling
     public ResponseEntity<LeadResponse> createLead(
             @AuthenticationPrincipal UserDetails principal,
             @Valid @RequestBody CreateLeadRequest request
@@ -59,7 +61,8 @@ public class LeadController {
         try {
             enforceWriteAccess();
             User user = resolveAuthenticatedUser(principal);
-            log.info("Creating lead for user: {} with email: {}", user.getId(), request.getEmail());
+            log.info("Creating lead (sanitized)");
+            // NOTE: Email NOT logged - sensitive data
             Lead lead = leadService.createLead(
                 request.getName(),
                 request.getEmail(),
@@ -89,7 +92,7 @@ public class LeadController {
     ) {
 
         User user = resolveAuthenticatedUser(principal);
-        log.debug("Listing active leads for user: {}", user.getId());
+        log.debug("Listing active leads (sanitized)");
 
         List<LeadResponse> response = leadService
                 .listActiveLeads(user)
@@ -97,7 +100,7 @@ public class LeadController {
                 .map(LeadResponse::new)
                 .toList();
 
-        log.debug("Found {} active leads for user: {}", response.size(), user.getId());
+        log.debug("Found {} active leads (sanitized)", response.size());
         return ResponseEntity.ok(response);
     }
 
@@ -112,14 +115,14 @@ public class LeadController {
     ) {
 
         User user = resolveAuthenticatedUser(principal);
-        log.debug("Fetching lead {} details for user: {}", id, user.getId());
+        log.debug("Fetching lead details (sanitized)");
 
         try {
             Lead lead = leadService.getByIdForUser(id, user.getId());
             log.debug("Lead {} retrieved successfully", id);
             return ResponseEntity.ok(new LeadResponse(lead));
         } catch (EntityNotFoundException e) {
-            log.warn("Lead {} not found for user {}", id, user.getId());
+            log.warn("Lead not found (sanitized)");
             throw new ResponseStatusException(
                     HttpStatus.NOT_FOUND,
                     "Lead not found"
@@ -132,6 +135,7 @@ public class LeadController {
        ====================================================== */
 
     @PatchMapping("/{id}/status")
+    @RequiresBilling
     public ResponseEntity<LeadResponse> updateLeadStatus(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable UUID id,
@@ -154,6 +158,7 @@ public class LeadController {
        ====================================================== */
 
     @DeleteMapping("/{id}")
+    @RequiresBilling
     public ResponseEntity<Void> deleteLead(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable UUID id

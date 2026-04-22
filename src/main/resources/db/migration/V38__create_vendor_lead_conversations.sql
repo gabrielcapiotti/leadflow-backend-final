@@ -1,72 +1,71 @@
 /* ======================================================
-   VENDOR LEAD CONVERSATIONS
-   Stores messages exchanged with a lead
+   V38__create_vendor_lead_conversations.sql
+   TENANT SCHEMA
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.vendor_lead_conversations (
+CREATE TABLE vendor_lead_conversations (
 
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
+    /* ========== MULTI-TENANT ========== */
+
+    tenant_id UUID NOT NULL,
     vendor_lead_id UUID NOT NULL,
+
+    /* ========== OPTIONAL RELATIONS ========== */
 
     lead_id UUID,
 
-    role VARCHAR(20) NOT NULL,
+    role VARCHAR(20) NOT NULL
+        CHECK (role IN ('USER','ASSISTANT','SYSTEM')),
 
     content TEXT NOT NULL,
 
     sender VARCHAR(50),
 
-    tenant VARCHAR(100),
+    metadata JSONB,
 
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    correlation_id UUID,
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    /* ========== CONSTRAINTS ========== */
+
+    CONSTRAINT fk_vendor_lead_conversations_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES tenants(id)
+        ON DELETE CASCADE,
 
     CONSTRAINT fk_vendor_lead_conversations_lead
         FOREIGN KEY (vendor_lead_id)
-        REFERENCES public.vendor_leads(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT chk_vendor_lead_conversation_role
-        CHECK (role IN ('USER','ASSISTANT','SYSTEM'))
+        REFERENCES vendor_leads(id)
+        ON DELETE CASCADE
 );
-
 
 /* ======================================================
    INDEXES
    ====================================================== */
 
--- Conversation timeline per lead
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_lead_created
-    ON public.vendor_lead_conversations (vendor_lead_id, created_at DESC);
+/* Multi-tenant isolation */
+CREATE INDEX idx_vlc_tenant_id
+    ON vendor_lead_conversations (tenant_id);
 
--- Filtering by role
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_role
-    ON public.vendor_lead_conversations (role);
+/* timeline principal (chat) */
+CREATE INDEX idx_vlc_lead_created
+    ON vendor_lead_conversations (vendor_lead_id, created_at DESC);
 
--- Fast lookup by lead only
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_lead
-    ON public.vendor_lead_conversations (vendor_lead_id);
+/* Tenant isolation + lead timeline */
+CREATE INDEX idx_vlc_tenant_lead_created
+    ON vendor_lead_conversations (tenant_id, vendor_lead_id, created_at DESC);
 
--- Lookup by lead_id (entity mapping)
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_lead_id
-    ON public.vendor_lead_conversations (lead_id);
+/* filtro por role (analytics / IA) */
+CREATE INDEX idx_vlc_role
+    ON vendor_lead_conversations (role);
 
--- Filtering by sender
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_sender
-    ON public.vendor_lead_conversations (sender);
+/* busca por sender (se usado no sistema) */
+CREATE INDEX idx_vlc_sender
+    ON vendor_lead_conversations (sender);
 
--- Filtering by tenant
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_tenant
-    ON public.vendor_lead_conversations (tenant);
-
--- Index for lead_id lookups
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_lead_id
-    ON public.vendor_lead_conversations (lead_id);
-
--- Index for tenant filtering
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_tenant
-    ON public.vendor_lead_conversations (tenant);
-
--- Composite index for sender + role queries
-CREATE INDEX IF NOT EXISTS idx_vendor_lead_conversations_sender_role
-    ON public.vendor_lead_conversations (sender, role);
+/* rastreamento de requisições (debug / tracing) */
+CREATE INDEX idx_vlc_correlation
+    ON vendor_lead_conversations (correlation_id);

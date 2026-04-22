@@ -171,13 +171,20 @@ public class WebhookReplayController {
                 return ResponseEntity.notFound().build();
             }
             
-            String tenantId = TenantContext.getTenant().toString();
+            // ✅ DEFENSIVE: Safely get tenant or return 403
+            java.util.UUID tenant = TenantContext.getIfPresent();
+            if (tenant == null) {
+                log.error("Webhook replay requested but no tenant context available");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            
+            String tenantId = tenant.toString();
             
             // Validate webhook belongs to current tenant
             tenantValidator.validateFailedWebhookTenant(webhookId, tenantId);
             
             FailedWebhookEvent webhookEvent = webhookReplayService.manualReplay(webhookId);
-            log.info("Webhook {} scheduled for replay by tenant {}", webhookId, tenantId);
+            log.info("Webhook scheduled for replay: {}", webhookId);
             return ResponseEntity.ok(webhookEvent);
             
         } catch (WebhookTenantValidator.WebhookTenantViolationException e) {
@@ -241,7 +248,14 @@ public class WebhookReplayController {
 
         log.info("Delete requested for webhook: {}", webhookId);
         try {
-            String tenantId = TenantContext.getTenant().toString();
+            // ✅ DEFENSIVE: Safely get tenant or return 403
+            java.util.UUID tenant = TenantContext.getIfPresent();
+            if (tenant == null) {
+                log.error("Webhook delete requested but no tenant context available");
+                return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+            }
+            
+            String tenantId = tenant.toString();
             
             // Validate webhook belongs to current tenant
             tenantValidator.validateFailedWebhookTenant(webhookId, tenantId);

@@ -49,7 +49,7 @@ public class UserSessionService {
        DEVICE LIMIT ENFORCEMENT
        ====================================================== */
 
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    @Transactional(propagation = Propagation.NESTED)
     private void enforceDeviceLimit(UUID userId, UUID tenantId) {
 
         long activeCount =
@@ -129,8 +129,7 @@ public class UserSessionService {
             throw new IllegalStateException("Session persistence corrupted UUID");
         }
         
-        log.info("SESSION PERSISTED: sessionId={}, tokenId={}, user={}, tenant={}", 
-            session.getId(), tokenId, userId, tenantId);
+        log.info("✓ Session created successfully");
     }
 
     /* ======================================================
@@ -151,10 +150,7 @@ public class UserSessionService {
                 .orElse(null);
         
         if (session == null) {
-            log.warn(
-                "Session not found during activity processing (treating as already logged out): tokenId={}, tenantId={}",
-                tokenId, tenantId
-            );
+            log.warn("Session not found during activity processing (likely revoked after password change)");
             return;  // ✅ Silently succeed - session already revoked or expired
         }
 
@@ -353,8 +349,7 @@ public class UserSessionService {
                 .orElse(null);
         
         if (session == null) {
-            log.warn("Session not found for refresh (treating as already expired): oldTokenId={}, tenantId={}", 
-                oldTokenId, tenantId);
+            log.warn("Session not found for refresh (treating as already expired)");
             return;  // ✅ IDEMPOTENT: Session already expired/revoked
         }
 

@@ -29,6 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 import java.util.regex.Pattern;
+import java.math.BigDecimal;
 import org.springframework.transaction.annotation.Transactional;
 import com.leadflow.backend.entities.vendor.Vendor;
 
@@ -85,7 +86,7 @@ public class VendorLeadService {
 
                 String nomeCompleto = sanitizeNomeCompleto(node.get("nomeCompleto").asText());
                 String whatsapp = sanitizeWhatsapp(node.get("whatsapp").asText());
-                String valorCredito = sanitizeValorCredito(node.path("valorCredito").asText(null));
+                BigDecimal valorCredito = sanitizeAndConvertValorCredito(node.path("valorCredito").asText(null));
 
                 if (nomeCompleto == null || whatsapp == null) {
                     return null;
@@ -152,7 +153,7 @@ public class VendorLeadService {
 
         String nomeCompleto = sanitizeNomeCompleto(request.getNomeCompleto());
         String whatsapp = sanitizeWhatsapp(request.getWhatsapp());
-        String valorCredito = sanitizeValorCredito(request.getValorCredito());
+        BigDecimal valorCredito = sanitizeAndConvertValorCredito(request.getValorCredito());
 
         if (nomeCompleto == null || whatsapp == null) {
             throw new IllegalArgumentException("Dados do lead inválidos");
@@ -226,6 +227,27 @@ public class VendorLeadService {
         return VALOR_CREDITO_PATTERN.matcher(sanitized).matches() ? sanitized : null;
     }
 
+    private BigDecimal sanitizeAndConvertValorCredito(Object value) {
+        if (value == null) return null;
+        
+        String strValue;
+        if (value instanceof BigDecimal) {
+            strValue = value.toString();
+        } else {
+            strValue = value.toString();
+        }
+        
+        String sanitized = sanitizeValorCredito(strValue);
+        if (sanitized == null) return null;
+        
+        try {
+            return new BigDecimal(sanitized.replaceAll("[^0-9.]", ""));
+        } catch (Exception e) {
+            log.warn("Failed to convert valor_credito: {}", sanitized);
+            return null;
+        }
+    }
+
     private int calculateScore(VendorLead lead) {
 
         int base =
@@ -241,8 +263,8 @@ public class VendorLeadService {
         if (lead.getStage() != null) {
             bonus =
                     switch (lead.getStage()) {
-                        case PROPOSTA -> 20;
-                        case CONTATO -> 10;
+                        case NEGOTIATION -> 20;
+                        case CONTACT -> 10;
                         default -> 0;
                     };
         }
@@ -288,7 +310,7 @@ public class VendorLeadService {
                 .orElseThrow(() -> new RuntimeException("Lead não encontrado ou acesso negado"));
 
         // Mark as owned (could include user ID if needed)
-        lead.setStage(LeadStage.CONTATO);
+        lead.setStage(LeadStage.CONTACT);
 
         VendorLead updated = repository.save(lead);
 
@@ -308,9 +330,9 @@ public class VendorLeadService {
 
         Map<String, Long> stagesMap = new HashMap<>();
         stagesMap.put("total", (long) leads.size());
-        stagesMap.put("CONTATO", leads.stream().filter(l -> l.getStage() == LeadStage.CONTATO).count());
-        stagesMap.put("PROPOSTA", leads.stream().filter(l -> l.getStage() == LeadStage.PROPOSTA).count());
-        stagesMap.put("FECHADO", leads.stream().filter(l -> l.getStage() == LeadStage.FECHADO).count());
+        stagesMap.put("CONTACT", leads.stream().filter(l -> l.getStage() == LeadStage.CONTACT).count());
+        stagesMap.put("NEGOTIATION", leads.stream().filter(l -> l.getStage() == LeadStage.NEGOTIATION).count());
+        stagesMap.put("CLOSED", leads.stream().filter(l -> l.getStage() == LeadStage.CLOSED).count());
 
         return new VendorLeadMetricsResponse(stagesMap);
     }
@@ -346,19 +368,19 @@ public class VendorLeadService {
         Map<String, Double> conversionMap = new HashMap<>();
 
         if (total == 0) {
-            conversionMap.put("CONTATO_rate", 0.0);
-            conversionMap.put("PROPOSTA_rate", 0.0);
-            conversionMap.put("FECHADO_rate", 0.0);
+            conversionMap.put("CONTACT_rate", 0.0);
+            conversionMap.put("NEGOTIATION_rate", 0.0);
+            conversionMap.put("CLOSED_rate", 0.0);
             return new StageConversionResponse(conversionMap);
         }
 
-        long contatoCount = leads.stream().filter(l -> l.getStage() == LeadStage.CONTATO).count();
-        long propostaCount = leads.stream().filter(l -> l.getStage() == LeadStage.PROPOSTA).count();
-        long fechadoCount = leads.stream().filter(l -> l.getStage() == LeadStage.FECHADO).count();
+        long contatoCount = leads.stream().filter(l -> l.getStage() == LeadStage.CONTACT).count();
+        long propostaCount = leads.stream().filter(l -> l.getStage() == LeadStage.NEGOTIATION).count();
+        long fechadoCount = leads.stream().filter(l -> l.getStage() == LeadStage.CLOSED).count();
 
-        conversionMap.put("CONTATO_rate", (contatoCount * 100.0) / total);
-        conversionMap.put("PROPOSTA_rate", (propostaCount * 100.0) / total);
-        conversionMap.put("FECHADO_rate", (fechadoCount * 100.0) / total);
+        conversionMap.put("CONTACT_rate", (contatoCount * 100.0) / total);
+        conversionMap.put("NEGOTIATION_rate", (propostaCount * 100.0) / total);
+        conversionMap.put("CLOSED_rate", (fechadoCount * 100.0) / total);
 
         return new StageConversionResponse(conversionMap);
     }

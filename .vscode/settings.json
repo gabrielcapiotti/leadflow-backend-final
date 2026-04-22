@@ -1,4 +1,17 @@
 {
     "java.compile.nullAnalysis.mode": "automatic",
-    "java.configuration.updateBuildConfiguration": "disabled"
+    "java.configuration.updateBuildConfiguration": "disabled",
+    "sqltools.connections": [
+        {
+            "ssh": "Disabled",
+            "previewLimit": 50,
+            "server": "localhost",
+            "port": 2411,
+            "driver": "PostgreSQL",
+            "name": "leadflowDB",
+            "password": "venusia",
+            "username": "postgres",
+            "database": "leadflowDB"
+        }
+    ]
 }

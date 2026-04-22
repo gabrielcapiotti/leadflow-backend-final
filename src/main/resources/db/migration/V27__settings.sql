@@ -1,14 +1,14 @@
 /* ======================================================
-   SETTINGS TABLE
-   Stores per-user CRM/vendor configuration
-   Align with Setting entity @Table(name = "settings")
+   V27__create_settings.sql
+   TENANT SCHEMA
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.settings (
+CREATE TABLE settings (
 
-    id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    user_id UUID NOT NULL,
+    tenant_id UUID NOT NULL,
+    user_id UUID,
 
     vendor_name VARCHAR(100) NOT NULL,
     whatsapp VARCHAR(15) NOT NULL,
@@ -21,18 +21,19 @@ CREATE TABLE IF NOT EXISTS public.settings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deleted_at TIMESTAMPTZ,
 
-    CONSTRAINT pk_settings PRIMARY KEY (id),
-
-    CONSTRAINT uq_settings_user UNIQUE (user_id)
+    CONSTRAINT fk_settings_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE,
+    CONSTRAINT uq_settings_tenant_user UNIQUE (tenant_id, user_id)
 );
-
 
 /* ======================================================
    INDEXES
    ====================================================== */
 
-CREATE INDEX IF NOT EXISTS idx_settings_user
-    ON public.settings (user_id);
+CREATE INDEX idx_settings_tenant
+    ON settings (tenant_id);
 
-CREATE INDEX IF NOT EXISTS idx_settings_deleted_at
-    ON public.settings (deleted_at);
+CREATE INDEX idx_settings_tenant_user
+    ON settings (tenant_id, user_id);
+
+CREATE INDEX idx_settings_deleted_at
+    ON settings (deleted_at);

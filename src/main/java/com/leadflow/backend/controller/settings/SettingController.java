@@ -49,7 +49,7 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
-        log.debug("GET /api/me/settings - user: {}", user.getId());
+        log.debug("GET /api/me/settings (sanitized)");
 
         Setting setting = settingService.getByUser(user);
 
@@ -81,7 +81,7 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
-        log.info("PUT /api/me/settings - user: {}", user.getId());
+        log.info("PUT /api/me/settings (sanitized)");
 
         Setting setting = settingService.saveOrUpdate(
                 user,
@@ -92,7 +92,7 @@ public class SettingController {
                 request.getWelcomeMessage()
         );
 
-        log.info("PUT /api/me/settings successful - user: {}", user.getId());
+        log.info("PUT /api/me/settings successful (sanitized)");
         return ResponseEntity.ok(settingMapper.toResponse(setting));
     }
 
@@ -106,11 +106,11 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
-        log.info("DELETE /api/me/settings - user: {}", user.getId());
+        log.info("DELETE /api/me/settings (sanitized)");
 
         settingService.softDelete(user);
 
-        log.info("DELETE /api/me/settings successful - user: {}", user.getId());
+        log.info("DELETE /api/me/settings successful (sanitized)");
         return ResponseEntity.noContent().build();
     }
 
@@ -125,7 +125,7 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
-        log.info("PATCH /api/me/settings - user: {}", user.getId());
+        log.info("PATCH /api/me/settings (sanitized)");
 
         Setting setting = settingService.partialUpdate(
                 user,
@@ -136,7 +136,7 @@ public class SettingController {
                 request.getWelcomeMessage()
         );
 
-        log.info("PATCH /api/me/settings successful - user: {}", user.getId());
+        log.info("PATCH /api/me/settings successful (sanitized)");
         return ResponseEntity.ok(settingMapper.toResponse(setting));
     }
 
@@ -150,11 +150,11 @@ public class SettingController {
     ) {
 
         User user = resolveUser(principal);
-        log.info("POST /api/me/settings/reset - user: {}", user.getId());
+        log.info("POST /api/me/settings/reset (sanitized)");
 
         Setting setting = settingService.resetToDefaults(user);
 
-        log.info("POST /api/me/settings/reset successful - user: {}", user.getId());
+        log.info("POST /api/me/settings/reset successful (sanitized)");
         return ResponseEntity.ok(settingMapper.toResponse(setting));
     }
 

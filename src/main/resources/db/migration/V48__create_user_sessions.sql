@@ -1,70 +1,64 @@
 /* ======================================================
-   USER SESSIONS
-   Tracks user session tokens for multi-device support
+   V48__create_user_sessions.sql
+   GLOBAL (PUBLIC SCHEMA)
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.user_sessions (
+CREATE TABLE public.user_sessions (
 
-    id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     user_id UUID NOT NULL,
 
-    tenant_id UUID,
+    tenant_id UUID NOT NULL,
 
-    token_id VARCHAR(255) NOT NULL,
+    token_id VARCHAR(255) NOT NULL UNIQUE,
 
-    active BOOLEAN DEFAULT TRUE,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
 
-    suspicious BOOLEAN DEFAULT FALSE,
+    suspicious BOOLEAN NOT NULL DEFAULT FALSE,
 
     ip_address VARCHAR(100),
-
     initial_ip_address VARCHAR(100),
 
     user_agent TEXT,
-
     initial_user_agent TEXT,
 
     last_access_at TIMESTAMPTZ,
 
     revoked_at TIMESTAMPTZ,
 
-    created_at TIMESTAMPTZ NOT NULL,
-
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ,
-
-    CONSTRAINT pk_user_sessions PRIMARY KEY (id),
 
     CONSTRAINT fk_user_sessions_user
         FOREIGN KEY (user_id)
         REFERENCES public.users(id)
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_user_sessions_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
         ON DELETE CASCADE
 );
 
--- =========================
--- Indexes
--- =========================
-
-CREATE INDEX IF NOT EXISTS idx_session_user
+-- lookup por usuário
+CREATE INDEX idx_user_sessions_user
     ON public.user_sessions(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_session_token_id
+-- sessões ativas por usuário + tenant
+CREATE INDEX idx_user_sessions_user_tenant_active
+    ON public.user_sessions(user_id, tenant_id)
+    WHERE active = TRUE;
+
+-- lookup por token (redundante com UNIQUE, mas ok para leitura)
+CREATE INDEX idx_user_sessions_token
     ON public.user_sessions(token_id);
 
-CREATE INDEX IF NOT EXISTS idx_session_token_tenant
-    ON public.user_sessions(token_id, tenant_id);
+-- timeline de acesso
+CREATE INDEX idx_user_sessions_last_access
+    ON public.user_sessions(last_access_at DESC);
 
-CREATE INDEX IF NOT EXISTS idx_session_user_tenant
-    ON public.user_sessions(user_id, tenant_id);
-
-CREATE INDEX IF NOT EXISTS idx_session_user_tenant_active
-    ON public.user_sessions(user_id, tenant_id, active);
-
-CREATE INDEX IF NOT EXISTS idx_session_last_access
-    ON public.user_sessions(last_access_at);
-
-CREATE INDEX IF NOT EXISTS idx_session_active
-    ON public.user_sessions(active);
-
-CREATE INDEX IF NOT EXISTS idx_session_suspicious
-    ON public.user_sessions(suspicious);
+-- sessões suspeitas
+CREATE INDEX idx_user_sessions_suspicious
+    ON public.user_sessions(suspicious)
+    WHERE suspicious = TRUE;

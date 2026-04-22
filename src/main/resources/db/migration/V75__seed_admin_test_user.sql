@@ -1,69 +1,77 @@
 /* ======================================================
-   SEED ADMIN USER FOR TESTING (PUBLIC TENANT)
+   V75__seed_admin_test_user.sql (DETERMINISTIC)
+   GLOBAL (PUBLIC SCHEMA)
+
+   Responsabilidades:
+   - Garantir existência de tenant padrão
+   - Criar/atualizar admin de teste de forma consistente
    ====================================================== */
 
+-- ======================================================
+-- 1. GARANTIR TENANT PADRÃO
+-- ======================================================
+
+INSERT INTO public.tenants (id, name, status, created_at, updated_at)
+VALUES (
+    '00000000-0000-0000-0000-000000000000'::uuid,
+    'Default Tenant',
+    'ACTIVE',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- ======================================================
+-- 2. VALIDAR ROLE ADMIN (FAIL FAST)
+-- ======================================================
+
 DO $$
-DECLARE
-    admin_role_id UUID;
-    tenant_schema VARCHAR := 'public';
-    users_table_exists BOOLEAN;
 BEGIN
-    -- Check if users table exists in public schema
-    SELECT EXISTS (
-        SELECT 1 FROM information_schema.tables 
-        WHERE table_schema = tenant_schema
-          AND table_name = 'users'
-    ) INTO users_table_exists;
-    
-    -- Get the ADMIN role ID from the public schema
-    SELECT r.id INTO admin_role_id
-    FROM public.roles r
-    WHERE r.name = 'ROLE_ADMIN'
-    LIMIT 1;
-    
-    -- Insert admin user if doesn't exist (and table exists)
-    IF users_table_exists AND admin_role_id IS NOT NULL THEN
-
-        INSERT INTO public.users (
-            id,
-            name,
-            email,
-            password,
-            role_id,
-            tenant_id, -- 🔥 CORREÇÃO CRÍTICA
-            failed_attempts,
-            lock_until,
-            credentials_updated_at,
-            created_at,
-            updated_at,
-            deleted_at
-        )
-        SELECT
-            '550e8400-e29b-41d4-a716-446655440000'::uuid,
-            'Test Admin',
-            'admin.test@leadflow.com',
-            '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36jStoFm',
-            admin_role_id,
-            tenant_schema, -- 🔥 usa variável (melhor que hardcode)
-            0,
-            NULL,
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP,
-            NULL
-        WHERE NOT EXISTS (
-            SELECT 1 FROM public.users u
-            WHERE u.email = 'admin.test@leadflow.com'
-              AND u.tenant_id = tenant_schema -- 🔥 evita duplicação cross-tenant
-        );
-        
-        RAISE NOTICE 'Admin user seeded successfully for tenant %', tenant_schema;
-
-    ELSE
-        IF NOT users_table_exists THEN
-            RAISE NOTICE 'Skipping admin user seed: users table does not exist in schema %', tenant_schema;
-        ELSIF admin_role_id IS NULL THEN
-            RAISE WARNING 'ROLE_ADMIN not found in public schema';
-        END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM public.roles WHERE name = 'ROLE_ADMIN'
+    ) THEN
+        RAISE EXCEPTION 'ROLE_ADMIN not found. Seed roles before V75.';
     END IF;
-END $$;
+END;
+$$;
+
+-- ======================================================
+-- 3. UPSERT ADMIN USER
+-- ======================================================
+
+INSERT INTO public.users (
+    id,
+    name,
+    email,
+    password_hash,
+    role_id,
+    tenant_id,
+    failed_attempts,
+    lock_until,
+    credentials_updated_at,
+    created_at,
+    updated_at,
+    deleted_at
+)
+SELECT
+    '550e8400-e29b-41d4-a716-446655440000'::uuid,
+    'Test Admin',
+    'admin.test@leadflow.com',
+    '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcg7b3XeKeUxWdeS86E36jStoFm',
+    r.id,
+    '00000000-0000-0000-0000-000000000000'::uuid,
+    0,
+    NULL,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    NULL
+FROM public.roles r
+WHERE r.name = 'ROLE_ADMIN'
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    email = EXCLUDED.email,
+    password_hash = EXCLUDED.password_hash,
+    role_id = EXCLUDED.role_id,
+    tenant_id = EXCLUDED.tenant_id,
+    updated_at = CURRENT_TIMESTAMP;

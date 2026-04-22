@@ -1,35 +1,42 @@
 package com.leadflow.backend.entities.system;
 
-import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.Table;
+import com.leadflow.backend.multitenancy.context.TenantContext;
+import jakarta.persistence.*;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "audit_logs")
+@Table(name = "audit_logs", indexes = {
+        @Index(name = "idx_audit_tenant_id", columnList = "tenant_id"),
+        @Index(name = "idx_audit_tenant_actor", columnList = "tenant_id, actor_email"),
+        @Index(name = "idx_audit_entity", columnList = "tenant_id, entity_type, entity_id")
+})
 public class AuditLog {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
+    @Column(name = "action")
     private String action;
 
+    @Column(name = "actor_email")
     private String actorEmail;
 
+    @Column(name = "entity_type")
     private String entityType;
 
+    @Column(name = "entity_id")
     private String entityId;
 
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "details", columnDefinition = "TEXT")
     private String details;
 
+    @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
     @PrePersist
@@ -37,10 +44,21 @@ public class AuditLog {
         if (createdAt == null) {
             createdAt = Instant.now();
         }
+        if (tenantId == null) {
+            this.tenantId = TenantContext.requireTenant();
+        }
     }
 
     public UUID getId() {
         return id;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public String getAction() {
@@ -85,5 +103,9 @@ public class AuditLog {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 }

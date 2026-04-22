@@ -5,20 +5,30 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Index;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.Filter;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "email_events")
+@Table(name = "email_events", indexes = {
+    @Index(name = "idx_email_events_tenant_id", columnList = "tenant_id"),
+    @Index(name = "idx_email_events_email_tenant", columnList = "email, tenant_id")
+})
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class EmailEvent {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
+
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
 
     @Column(nullable = false)
     private String email;
@@ -57,6 +67,9 @@ public class EmailEvent {
 
     @PrePersist
     public void onCreate() {
+        if (tenantId == null) {
+            tenantId = TenantContext.requireTenant();
+        }
         if (occurredAt == null) {
             occurredAt = Instant.now();
         }
@@ -85,6 +98,14 @@ public class EmailEvent {
 
     public void setId(UUID id) {
         this.id = id;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public String getEmail() {

@@ -1,33 +1,53 @@
 /* ======================================================
-   VENDOR USAGE
-   Tracks usage quotas for vendors (API calls, leads, etc.)
+   V14__create_vendor_usage.sql
+   MIGRATED TO PUBLIC SCHEMA with column-based multi-tenancy
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.vendor_usage (
-    id UUID PRIMARY KEY,
+CREATE TABLE public.vendor_usage (
+
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     vendor_id UUID NOT NULL,
 
-    quota_type VARCHAR(50) NOT NULL,
-    used INTEGER NOT NULL DEFAULT 0,
+    tenant_id UUID NOT NULL,
 
-    period_start TIMESTAMP WITH TIME ZONE NOT NULL,
-    period_end TIMESTAMP WITH TIME ZONE NOT NULL,
+    quota_type VARCHAR(50) NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0 CHECK (used >= 0),
+
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
 
     CONSTRAINT fk_vendor_usage_vendor
         FOREIGN KEY (vendor_id)
         REFERENCES public.vendors(id)
-        ON DELETE CASCADE
+        ON DELETE CASCADE,
+
+    CONSTRAINT fk_vendor_usage_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES public.tenants(id)
+        ON DELETE CASCADE,
+
+    -- garante integridade temporal
+    CONSTRAINT chk_vendor_usage_period
+        CHECK (period_end > period_start)
 );
 
--- Ensures one usage record per vendor and quota type
-CREATE UNIQUE INDEX IF NOT EXISTS uq_vendor_usage_vendor_quota
-    ON public.vendor_usage (vendor_id, quota_type);
+/* ======================================================
+   INDEXES
+   ======================================================  */
 
--- Useful for billing / monthly resets
-CREATE INDEX IF NOT EXISTS idx_vendor_usage_period
+-- Multi-tenant isolation first
+CREATE INDEX idx_vendor_usage_tenant
+    ON public.vendor_usage (tenant_id);
+
+-- Um registro por vendor + tipo + período (evita conflito mensal)
+CREATE UNIQUE INDEX idx_vendor_usage_vendor_quota_period
+    ON public.vendor_usage (vendor_id, quota_type, period_start);
+
+-- consultas de período (billing/reset)
+CREATE INDEX idx_vendor_usage_period
     ON public.vendor_usage (period_start, period_end);
 
--- Useful for vendor usage lookups
-CREATE INDEX IF NOT EXISTS idx_vendor_usage_vendor
+-- lookup por vendor
+CREATE INDEX idx_vendor_usage_vendor
     ON public.vendor_usage (vendor_id);

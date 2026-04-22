@@ -71,16 +71,6 @@ public class SendGridEmailService {
                                    String subject,
                                    String htmlContent) {
 
-        boolean emailInvalid = vendorRepository.findByUserEmail(to)
-            .stream()
-            .anyMatch(vendor -> vendor.isEmailInvalid());
-
-        if (emailInvalid) {
-            log.warn("event=email_not_sent_invalid_recipient provider=sendgrid to={} subject={}",
-                to, subject);
-            return;
-        }
-
         Email from = new Email(fromEmail);
         Email recipient = new Email(to);
         Content content = new Content("text/html", htmlContent);

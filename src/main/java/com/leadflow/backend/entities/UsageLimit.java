@@ -13,8 +13,8 @@ import java.util.UUID;
 public class UsageLimit {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(name = "tenant_id", nullable = false, unique = true)
     private UUID tenantId;
@@ -115,7 +115,7 @@ public class UsageLimit {
        GETTERS / SETTERS
        ====================================================== */
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 

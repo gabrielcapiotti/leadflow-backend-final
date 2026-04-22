@@ -2,6 +2,7 @@ package com.leadflow.backend.entities.vendor;
 
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -26,18 +27,15 @@ public class VendorLead {
     private String whatsapp;
 
     private String tipoConsorcio;
-    private String valorCredito;
+    private BigDecimal valorCredito;
     private String urgencia;
 
     // 🔵 NOVO CAMPO (FASE 1 - CRM)
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private LeadStage stage = LeadStage.NOVO;
+    private LeadStage stage = LeadStage.NEW;
 
-    @Column(nullable = false)
-    private String status = "novo";
-
-    @Column(nullable = false, updatable = false)
+    @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdDate;
 
     @Column(nullable = false)
@@ -69,10 +67,9 @@ public class VendorLead {
     public String getNomeCompleto() { return nomeCompleto; }
     public String getWhatsapp() { return whatsapp; }
     public String getTipoConsorcio() { return tipoConsorcio; }
-    public String getValorCredito() { return valorCredito; }
+    public BigDecimal getValorCredito() { return valorCredito; }
     public String getUrgencia() { return urgencia; }
     public LeadStage getStage() { return stage; }
-    public String getStatus() { return status; }
     public Instant getCreatedDate() { return createdDate; }
     public Integer getScore() { return score; }
     public String getOwnerEmail() { return ownerEmail; }
@@ -87,10 +84,9 @@ public class VendorLead {
     public void setNomeCompleto(String nomeCompleto) { this.nomeCompleto = nomeCompleto; }
     public void setWhatsapp(String whatsapp) { this.whatsapp = whatsapp; }
     public void setTipoConsorcio(String tipoConsorcio) { this.tipoConsorcio = tipoConsorcio; }
-    public void setValorCredito(String valorCredito) { this.valorCredito = valorCredito; }
+    public void setValorCredito(BigDecimal valorCredito) { this.valorCredito = valorCredito; }
     public void setUrgencia(String urgencia) { this.urgencia = urgencia; }
     public void setStage(LeadStage stage) { this.stage = stage; }
-    public void setStatus(String status) { this.status = status; }
     public void setScore(Integer score) { this.score = score; }
     public void setOwnerEmail(String ownerEmail) { this.ownerEmail = ownerEmail; }
     public void setResumoEstrategico(String resumoEstrategico) {

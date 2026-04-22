@@ -1,5 +1,6 @@
 package com.leadflow.backend.dto.billing;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -20,6 +21,7 @@ public class AdminBillingRevenueDTO {
     private BigDecimal totalRevenueAllTime;
     private BigDecimal totalRevenueThisMonth;
     private BigDecimal totalRevenueThisYear;
+    @JsonProperty("averageMonthlyValue")
     private BigDecimal averageRevenuePerSubscription;
     private BigDecimal monthlyRecurringRevenue;
     private BigDecimal annualRecurringRevenue;

@@ -1,6 +1,7 @@
 package com.leadflow.backend.dto.billing;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Subscription;
 import lombok.AllArgsConstructor;
@@ -9,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @NoArgsConstructor
@@ -16,7 +18,8 @@ import java.time.LocalDateTime;
 @Builder
 public class SubscriptionDetailsDTO {
 
-    private Long subscriptionId;
+    @JsonProperty("id")
+    private UUID subscriptionId;
     private String tenantId;
     private String stripeCustomerId;
     private String stripeSubscriptionId;

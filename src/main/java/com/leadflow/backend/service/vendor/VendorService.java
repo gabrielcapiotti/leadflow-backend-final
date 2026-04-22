@@ -230,7 +230,7 @@ public class VendorService {
         }
 
         Vendor savedVendor = vendorRepository.save(vendor);
-        logger.info("✅ Auto-created vendor for tenant: {}", tenantId);
+        logger.info("✅ Auto-created vendor successfully");
         return savedVendor;
     }
 
@@ -266,11 +266,5 @@ public class VendorService {
             return "vendor";
         }
         return email.substring(0, email.indexOf('@'));
-    }
-
-    @Transactional
-    public void assignSchema(Vendor vendor, String schema) {
-        vendor.setSchemaName(schema);
-        vendorRepository.save(vendor);
     }
 }

@@ -30,6 +30,11 @@ $global:PassedTests = 0
 $global:FailedTests = 0
 $global:AuthToken = ""
 $global:TenantId = ""
+$global:UserId = ""
+
+# Tenant cache configuration
+$script:TenantCacheFile = ".tenant-cache.json"
+$script:UuidRegex = '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
 
 # Color constants
 $script:Green = "Green"
@@ -38,157 +43,447 @@ $script:Yellow = "Yellow"
 $script:Cyan = "Cyan"
 $script:DarkGray = "DarkGray"
 
-# ===== STANDARDIZED HELPER FUNCTIONS =====
-function Write-Success {
-    param([string]$Message, [int]$Status = 200)
-    Write-Host "    ✅ OK - $Message (HTTP $Status)" -ForegroundColor $script:Green
-    $global:PassedTests++
+# ===== CACHE MANAGEMENT FUNCTIONS =====
+
+function Load-TenantCache {
+    if (Test-Path $script:TenantCacheFile) {
+        try {
+            $raw = Get-Content $script:TenantCacheFile -Raw
+            $cacheObj = $raw | ConvertFrom-Json
+            
+            $cache = @{}
+            if ($cacheObj -and $cacheObj.PSObject.Properties) {
+                $cacheObj.PSObject.Properties | ForEach-Object {
+                    $cache[$_.Name] = [string]$_.Value
+                }
+            }
+            Write-Info "Loaded tenant cache: $($cache.Count) entries" | Out-Null
+            return $cache
+        } catch {
+            Write-Info "Cache file corrupted, starting fresh" | Out-Null
+            return @{}
+        }
+    }
+    return @{}
 }
 
-function Write-Fail {
-    param([string]$Message, [int]$Status = 0, [string]$Error = "")
-    if ($Status -gt 0) {
-        Write-Host "    ❌ FAIL - $Message (HTTP $Status)" -ForegroundColor $script:Red
-    } else {
-        Write-Host "    ❌ FAIL - $Message" -ForegroundColor $script:Red
+function Save-TenantCache {
+    param([hashtable]$Cache)
+    try {
+        $Cache | ConvertTo-Json | Set-Content $script:TenantCacheFile -Force
+        Write-Info "Tenant cache persisted ($(Get-Date -Format 'HH:mm:ss'))" | Out-Null
+    } catch {
+        Write-Info "Warning: Failed to persist cache: $($_.Exception.Message)" | Out-Null
     }
-    if ($Error) {
-        Write-Host "             Error: $Error" -ForegroundColor $script:Red
+}
+
+# ===== VALIDATION FUNCTIONS =====
+
+function Test-ValidUUID {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
     }
-    $global:FailedTests++
+    try {
+        [guid]::Parse($Value.Trim()) | Out-Null
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+function Invoke-WithRetry {
+    param(
+        [scriptblock]$Action,
+        [int]$MaxRetries = 3,
+        [int]$DelaySeconds = 1
+    )
+    
+    for ($i = 1; $i -le $MaxRetries; $i++) {
+        try {
+            return & $Action
+        } catch {
+            if ($i -eq $MaxRetries) { 
+                throw 
+            }
+            Write-Info "Retry $i/$MaxRetries - waiting ${DelaySeconds}s..."
+            Start-Sleep -Seconds $DelaySeconds
+        }
+    }
+}
+
+# ===== LOGGING FUNCTIONS =====
+
+function Write-Header {
+    param([string]$Message)
+    Write-Host ""
+    Write-Host "===============================================================" -ForegroundColor $script:Cyan
+    Write-Host "  $Message" -ForegroundColor $script:Cyan
+    Write-Host "===============================================================" -ForegroundColor $script:Cyan
+}
+
+function Write-Step {
+    param([int]$TestNum, [string]$Description)
+    $global:TotalTests++
+    Write-Host ""
+    Write-Host "[$TestNum] $Description" -ForegroundColor $script:Yellow
 }
 
 function Write-Info {
     param([string]$Message)
-    Write-Host "      [INFO] $Message" -ForegroundColor $script:DarkGray
+    Write-Host "    [INFO] $Message" -ForegroundColor $script:DarkGray
 }
 
-function Write-Step {
-    param([int]$Number, [string]$Name)
-    Write-Host "`nTEST $Number`: $Name" -ForegroundColor $script:Yellow
-    $global:TotalTests++
+function Write-Success {
+    param([string]$Message, [int]$StatusCode = 200, [string]$Details = "")
+    $global:PassedTests++
+    Write-Host "    [OK] $Message [$StatusCode]" -ForegroundColor $script:Green
+    if ($Details) {
+        Write-Host "       $Details" -ForegroundColor $script:DarkGray
+    }
 }
 
-function Write-Header {
-    param([string]$Title)
-    Write-Host "`n" -ForegroundColor $script:Cyan
-    Write-Host "================================================" -ForegroundColor $script:Cyan
-    Write-Host $Title -ForegroundColor $script:Cyan
-    Write-Host "================================================" -ForegroundColor $script:Cyan
+function Write-Fail {
+    param([string]$Message, [int]$StatusCode = 0, [string]$Details = "")
+    $global:FailedTests++
+    Write-Host "    [FAIL] $Message [$StatusCode]" -ForegroundColor $script:Red
+    if ($Details) {
+        Write-Host "       $Details" -ForegroundColor $script:Red
+    }
 }
 
 # ===== INITIALIZATION & HEADER =====
-Write-Header "DASHBOARD & ANALYTICS TEST SUITE (8+ ENDPOINTS)"
+Write-Header "DASHBOARD AND ANALYTICS TEST SUITE (PRODUCTION-READY)"
 
-Write-Host "`nConfiguration:" -ForegroundColor $script:Yellow
+Write-Host "Configuration:" -ForegroundColor $script:Yellow
 Write-Host "  Base URL: $BaseUrl" -ForegroundColor $script:Cyan
 Write-Host "  Test Email: $Username" -ForegroundColor $script:Cyan
 Write-Host "  Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor $script:Cyan
 
-# ===== GROUP 1: AUTHENTICATION & SETUP =====
-Write-Header "GROUP 1: AUTH & USER CONTEXT SETUP"
+# ===== SELF-HEALING REGISTRATION FUNCTION =====
+function Invoke-SelfHealingRegistration {
+    param([string]$BaseUrl, [string]$Password)
+    
+    $timestamp = Get-Date -Format 'yyyyMMddHHmmss'
+    $random = -join ((0..9) | Get-Random -Count 4)
+    $uniqueEmail = "dashboard_test_${timestamp}_${random}@e2e.com"
+    
+    Write-Info "Self-healing: registering with unique email: $uniqueEmail"
+    
+    $body = @{
+        email = $uniqueEmail
+        password = $Password
+        confirmPassword = $Password
+        name = "Dashboard Test User (Self-Healed)"
+    } | ConvertTo-Json
+    
+    try {
+        $response = Invoke-WithRetry {
+            Invoke-WebRequest -Uri "$BaseUrl/api/auth/register" `
+                -Method POST `
+                -Body $body `
+                -Headers @{"Content-Type" = "application/json"} `
+                -UseBasicParsing -ErrorAction Stop
+        }
+        
+        $data = $response.Content | ConvertFrom-Json
+        if ($response.StatusCode -eq 201 -and $data.tenantId -and (Test-ValidUUID $data.tenantId)) {
+            Write-Success "Self-healed registration successful" 201
+            return @{TenantId = $data.tenantId; Email = $uniqueEmail}
+        }
+    } catch {
+        Write-Fail "Self-healing registration failed" $_.Exception.Response.StatusCode.value__
+    }
+    
+    return $null
+}
+
+# ===== JWT PAYLOAD EXTRACTION (PRODUCTION-GRADE) =====
+function Get-JwtPayload {
+    param([string]$token)
+    
+    try {
+        $parts = $token.Split('.')
+        if ($parts.Length -lt 2) { 
+            Write-Info "JWT format error: expected 3 parts, got $($parts.Length)"
+            return $null 
+        }
+        
+        $payload = $parts[1]
+        
+        # Base64 padding fix
+        switch ($payload.Length % 4) {
+            2 { $payload += '==' }
+            3 { $payload += '=' }
+        }
+        
+        $bytes = [Convert]::FromBase64String($payload)
+        $json = [System.Text.Encoding]::UTF8.GetString($bytes)
+        
+        return $json | ConvertFrom-Json
+    } catch {
+        Write-Info "JWT decode error: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+# ===== GROUP 1: AUTHENTICATION & SETUP (PRODUCTION-READY) =====
+Write-Header "GROUP 1: AUTH (DETERMINISTIC MULTI-TENANT)"
 
 $testNumber = 1
+$tenantCache = Load-TenantCache
 
-# TEST 1: Register User
-Write-Step $testNumber "Register User"
-try {
+# ENSURE CACHE IS VALID HASHTABLE
+if (-not ($tenantCache -is [hashtable])) {
+    Write-Info "Cache type validation: Converting to hashtable" | Out-Null
+    $tenantCache = @{}
+}
+
+# TEST 1: Resolve TenantId (Cache → Register → Self-Heal)
+Write-Step $testNumber "Resolve TenantId"
+
+Write-Info "Cache type: $($tenantCache.GetType().Name)"
+Write-Info "Cache content: $($tenantCache | ConvertTo-Json)"
+Write-Info "Looking for username: $Username"
+
+# STEP 1A: Check cache first
+if ($tenantCache -and $tenantCache.PSObject.Properties.Name -contains $Username) {
+    $global:TenantId = $tenantCache.$Username
+    if (Test-ValidUUID $global:TenantId) {
+        Write-Success "TenantId loaded from cache" 200
+        Write-Info "  Source: local cache"
+        Write-Info "  TenantId: $global:TenantId"
+    } else {
+        Write-Fail "CRITICAL: Cached TenantId is invalid UUID" 0
+        exit 1
+    }
+} else {
+    Write-Info "Cache miss - attempting fresh registration"
+    
     $registerBody = @{
         email = $Username
         password = $Password
         confirmPassword = $Password
         name = "Dashboard Test User"
     } | ConvertTo-Json
-
-    $registerHeaders = @{
-        "Content-Type" = "application/json"
+    
+    try {
+        $response = Invoke-WithRetry {
+            Invoke-WebRequest -Uri "$BaseUrl/api/auth/register" `
+                -Method POST `
+                -Body $registerBody `
+                -Headers @{"Content-Type" = "application/json"} `
+                -UseBasicParsing -ErrorAction Stop
+        }
+        
+        # HTTP 201: New user
+        Write-Info "Registration response status: $($response.StatusCode)"
+        $data = $response.Content | ConvertFrom-Json
+        Write-Info "Response data: $($data | ConvertTo-Json)"
+        
+        if (-not ($data.tenantId -and (Test-ValidUUID $data.tenantId))) {
+            Write-Fail "CRITICAL: Registration response missing valid tenantId" 201
+            Write-Host "Response received: $($response.Content)" -ForegroundColor Yellow
+            exit 1
+        }
+        $global:TenantId = [string]$data.tenantId
+        $global:TenantId = $global:TenantId.Trim()
+        if ($global:TenantId -isnot [string] -or [string]::IsNullOrWhiteSpace($global:TenantId)) {
+            Write-Fail "TenantId assignment failed - type validation" 0
+            exit 1
+        }
+        Write-Success "New user registered" 201 | Out-Null
+        Write-Info "  TenantId: $global:TenantId" | Out-Null
+        
+    } catch {
+        $statusCode = $_.Exception.Response.StatusCode.value__
+        $errorMsg = $_.Exception.Message
+        Write-Info "Registration error: $errorMsg (StatusCode: $statusCode)"
+        
+        # HTTP 409: User exists - use self-healing
+        if ($statusCode -eq 409) {
+            Write-Info "User exists (409) - initiating self-healing"
+            
+            $healResult = Invoke-SelfHealingRegistration -BaseUrl $BaseUrl -Password $Password
+            
+            if (-not ($healResult -and $healResult.TenantId -and (Test-ValidUUID $healResult.TenantId))) {
+                Write-Fail "CRITICAL: Self-healing failed - cannot resolve TenantId" 0
+                Write-Host "Debug: Verify username/password are correct, or check backend connectivity" -ForegroundColor Yellow
+                exit 1
+            }
+            
+            $global:TenantId = [string]$healResult.TenantId
+            $global:TenantId = $global:TenantId.Trim()
+            if ($global:TenantId -isnot [string] -or [string]::IsNullOrWhiteSpace($global:TenantId)) {
+                Write-Fail "Self-healing TenantId assignment failed" 0
+                exit 1
+            }
+            $Username = $healResult.Email  # Use new email
+            Write-Info "  Email updated to: $Username" | Out-Null
+        } else {
+            Write-Fail "Registration error" $statusCode $errorMsg
+            exit 1
+        }
     }
-
-    $registerResponse = Invoke-WebRequest -Uri "$BaseUrl/api/auth/register" `
-        -Method POST `
-        -Body $registerBody `
-        -Headers $registerHeaders `
-        -UseBasicParsing -ErrorAction Stop
-
-    if ($registerResponse.StatusCode -eq 201) {
-        $registerData = $registerResponse.Content | ConvertFrom-Json
-        $global:TenantId = $registerData.tenantId
-        Write-Success "User registered successfully" $registerResponse.StatusCode
-        Write-Info "Tenant ID: $global:TenantId"
-    } else {
-        Write-Fail "User registration failed" $registerResponse.StatusCode
-        exit 1
-    }
-} catch {
-    if ($_.Exception.Response.StatusCode.value__ -eq 409) {
-        Write-Info "User already exists, using existing account"
-        $global:TenantId = "test-tenant"
-    } else {
-        Write-Fail "Registration error" $_.Exception.Response.StatusCode.value__ $_.Exception.Message
-        exit 1
-    }
+    
+    # Persist to cache
+    $tenantCache[$Username] = $global:TenantId
+    Save-TenantCache $tenantCache
 }
 
-# TEST 2: Login User
-$testNumber++
-Write-Step $testNumber "Login User"
-try {
-    $loginBody = @{
-        email = $Username
-        password = $Password
-        tenantId = $global:TenantId
-    } | ConvertTo-Json
-
-    $loginHeaders = @{
-        "Content-Type" = "application/json"
-    }
-
-    $loginResponse = Invoke-WebRequest -Uri "$BaseUrl/api/auth/login" `
-        -Method POST `
-        -Body $loginBody `
-        -Headers $loginHeaders `
-        -UseBasicParsing -ErrorAction Stop
-
-    $loginData = $loginResponse.Content | ConvertFrom-Json
-    $global:AuthToken = $loginData.accessToken
-
-    if ($global:AuthToken) {
-        Write-Success "User authenticated" $loginResponse.StatusCode
-        Write-Info "Token acquired: $($global:AuthToken.Substring(0,20))..."
-    } else {
-        Write-Fail "Login failed - no token" $loginResponse.StatusCode
-        exit 1
-    }
-} catch {
-    Write-Fail "Login error" $_.Exception.Response.StatusCode.value__ $_.Exception.Message
+# Runtime validation with corruption detection
+if ($global:TenantId -match "Test Email|Timestamp|dashboard_test@") {
+    Write-Fail "CRITICAL: TenantId corrupted by output leak" 0 "Value: $global:TenantId"
+    Write-Host "ERROR: Variable contains header text instead of UUID. Pipeline pollution detected." -ForegroundColor Red
+    exit 1
+}
+if (-not (Test-ValidUUID $global:TenantId)) {
+    Write-Fail "CRITICAL: TenantId validation failed" 0 "Value: $global:TenantId"
     exit 1
 }
 
-# Prepare standard headers
+Write-Info "TenantId validated: $global:TenantId"
+
+# TEST 2: Login User (with guaranteed valid TenantId)
+$testNumber++
+Write-Step $testNumber "Login User"
+
+$loginBody = @{
+    email = $Username
+    password = $Password
+    tenantId = $global:TenantId
+} | ConvertTo-Json
+
+try {
+    $loginResponse = Invoke-WithRetry {
+        Invoke-WebRequest -Uri "$BaseUrl/api/auth/login" `
+            -Method POST `
+            -Body $loginBody `
+            -Headers @{
+                "Content-Type" = "application/json"
+                "X-Tenant-Id" = $global:TenantId
+            } `
+            -UseBasicParsing -ErrorAction Stop
+    }
+    
+    $loginData = $loginResponse.Content | ConvertFrom-Json
+    
+    # === ROBUST LOGIN RESPONSE HANDLING (PRODUCTION-GRADE) ===
+    if (-not $loginData) {
+        Write-Fail "Login returned empty response" 0
+        exit 1
+    }
+    
+    # Validate token first (hard requirement)
+    if (-not $loginData.accessToken) {
+        Write-Fail "Login missing accessToken" $loginResponse.StatusCode `
+            ($loginData | ConvertTo-Json -Depth 3)
+        exit 1
+    }
+    
+    # === USER ID RESOLUTION (JWT-FIRST STRATEGY) ===
+    $userId = $null
+    
+    # 1. Try response body first (legacy / fallback)
+    if ($loginData.userId) {
+        $userId = $loginData.userId
+        Write-Info "UserId found at: loginData.userId (body)" | Out-Null
+    }
+    elseif ($loginData.id) {
+        $userId = $loginData.id
+        Write-Info "UserId found at: loginData.id (body fallback)" | Out-Null
+    }
+    
+    # 2. CRITICAL: Extract from JWT payload (primary source)
+    if (-not $userId -and $loginData.accessToken) {
+        Write-Info "UserId not in body - extracting from JWT payload..." | Out-Null
+        $jwtPayload = Get-JwtPayload $loginData.accessToken
+        
+        if ($jwtPayload) {
+            Write-Info "JWT payload decoded successfully" | Out-Null
+            if ($jwtPayload.userId) {
+                $userId = $jwtPayload.userId
+                Write-Info "UserId extracted from JWT.userId: $userId" | Out-Null
+            }
+            elseif ($jwtPayload.sub) {
+                $userId = $jwtPayload.sub
+                Write-Info "UserId extracted from JWT.sub (standard claim): $userId" | Out-Null
+            }
+            elseif ($jwtPayload.id) {
+                $userId = $jwtPayload.id
+                Write-Info "UserId extracted from JWT.id: $userId" | Out-Null
+            }
+        } else {
+            Write-Info "JWT payload decode failed" | Out-Null
+        }
+    }
+    
+    # 3. Final validation
+    if (-not $userId) {
+        Write-Fail "Login missing userId (body + JWT)" $loginResponse.StatusCode
+        
+        Write-Host "Response body keys: $($loginData.PSObject.Properties.Name -join ', ')" -ForegroundColor Yellow
+        
+        $jwtPayload = Get-JwtPayload $loginData.accessToken
+        if ($jwtPayload) {
+            Write-Host "JWT payload debug:" -ForegroundColor Yellow
+            Write-Host ($jwtPayload | ConvertTo-Json -Depth 5) -ForegroundColor DarkGray
+        } else {
+            Write-Host "JWT payload extraction failed" -ForegroundColor Yellow
+        }
+        
+        exit 1
+    }
+    
+    # UUID validation (multi-tenant safety)
+    if (-not (Test-ValidUUID $userId)) {
+        Write-Fail "Invalid userId format (not UUID)" $loginResponse.StatusCode $userId
+        exit 1
+    }
+    
+    # Store globally
+    $global:AuthToken = $loginData.accessToken
+    $global:UserId = $userId
+    
+    # === TENANT CONSISTENCY CHECK ===
+    if ($loginData.tenantId -and (Test-ValidUUID $loginData.tenantId)) {
+        if ($loginData.tenantId -ne $global:TenantId) {
+            Write-Info "TenantId mismatch detected - updating from login response" | Out-Null
+            Write-Info "  Old: $global:TenantId" | Out-Null
+            Write-Info "  New: $($loginData.tenantId)" | Out-Null
+            $global:TenantId = $loginData.tenantId
+        }
+    }
+    
+    Write-Success "User authenticated" $loginResponse.StatusCode
+    Write-Info "  UserId: $global:UserId"
+    Write-Info "  TenantId: $global:TenantId"
+    
+} catch {
+    Write-Fail "Login error" $_.Exception.Response.StatusCode.value__ $_.Exception.Message
+    Write-Host "Debug - Email: $Username | TenantId: $global:TenantId" -ForegroundColor DarkGray
+    exit 1
+}
+
+# Prepare API headers
 $AuthHeaders = @{
     "Authorization" = "Bearer $global:AuthToken"
+    "X-Tenant-Id" = $global:TenantId
     "Content-Type" = "application/json"
 }
 
-Write-Info "Authorization header prepared: Bearer $($global:AuthToken.Substring(0,30))..."
+# === HEADER VALIDATION ===
+if (-not $global:AuthToken -or -not (Test-ValidUUID $global:TenantId)) {
+    Write-Fail "CRITICAL: Auth headers not properly initialized" 0
+    Write-Info "  AuthToken: $($global:AuthToken.Length) chars"
+    Write-Info "  TenantId: $global:TenantId"
+    exit 1
+}
+
+Write-Info "Auth headers prepared and validated" | Out-Null
 
 # ===== GROUP 2: USER DASHBOARDS =====
 Write-Header "GROUP 2: USER DASHBOARD ENDPOINTS (DATA FROM CONTEXT)"
-
-# Debug: Test that auth header is working
-$testNumber++
-Write-Step $testNumber "AUTH DEBUG: Verify token is valid with a known endpoint"
-
-try {
-    $debugResponse = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/overview" `
-        -Method Get `
-        -Headers $AuthHeaders `
-        -UseBasicParsing -ErrorAction Stop
-    Write-Info "Debug: Auth header working, endpoint returned $($debugResponse.StatusCode)"
-} catch {
-    Write-Info "Debug: Token test failed with $($_.Exception.Response.StatusCode.value__)"
-    Write-Info "Headers being sent: $($AuthHeaders | ConvertTo-Json)"
-}
 
 # TEST 3: GET /dashboard - User Dashboard
 $testNumber++
@@ -205,7 +500,11 @@ try {
     Write-Info "Dashboard fields: totalLeads, activeLeads, conversionRate, avgStageTime"
 } catch {
     $statusCode = $_.Exception.Response.StatusCode.value__
-    if ($statusCode -eq 204) {
+    if ($statusCode -eq 401) {
+        Write-Fail "User dashboard" $statusCode "Unauthorized - check token validity"
+        Write-Info "  Token length: $($global:AuthToken.Length)"
+        Write-Info "  TenantId: $global:TenantId"
+    } elseif ($statusCode -eq 204) {
         Write-Success "Dashboard retrieved (no content - user has no leads)" 204
     } elseif ($statusCode -eq 200) {
         Write-Success "User dashboard retrieved" 200
@@ -274,7 +573,9 @@ try {
     Write-Success "Webhook dashboard - unexpected success (user not admin)" $response.StatusCode
 } catch {
     $statusCode = $_.Exception.Response.StatusCode.value__
-    if ($statusCode -eq 403) {
+    if ($statusCode -eq 401) {
+        Write-Fail "Webhook dashboard" 401 "Unauthorized - token or tenant issue"
+    } elseif ($statusCode -eq 403) {
         Write-Success "Webhook dashboard correctly restricted to ADMIN (403)" 403
     } elseif ($statusCode -eq 200) {
         Write-Success "Webhook dashboard retrieved" 200
@@ -399,21 +700,22 @@ try {
         Write-Success "Breakdown by status correctly restricted to ADMIN (403)" 403
     } elseif ($statusCode -eq 200) {
         Write-Success "Breakdown by status retrieved" 200
-        Write-Info "Data shows webhook distribution by status (SUCCESS, FAILED, PENDING, etc.)"
+        Write-Info "Data shows webhook distribution by status: SUCCESS, FAILED, PENDING, etc"
     } else {
         Write-Fail "Breakdown by status" $statusCode "Unexpected error"
     }
 }
 
 # ===== GROUP 5: PAGINATION & FILTERING =====
-Write-Header "GROUP 5: PAGINATION & FILTERING TESTS"
+Write-Header "GROUP 5: PAGINATION AND FILTERING TESTS"
 
 # TEST 12: GET /api/v1/billing/usage with Pagination
 $testNumber++
 Write-Step $testNumber "GET /api/v1/billing/usage - Pagination Test"
 
 try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/usage?page=0&size=10" `
+    $url = $BaseUrl + '/api/v1/billing/usage?page=0' + '&size=10'
+    $response = Invoke-WebRequest -Uri $url `
         -Method Get `
         -Headers $AuthHeaders `
         -UseBasicParsing -ErrorAction Stop
@@ -429,7 +731,7 @@ try {
 }
 
 # ===== GROUP 6: DATA VALIDATION =====
-Write-Header "GROUP 6: DATA VALIDATION & STRUCTURE TESTS"
+Write-Header "GROUP 6: DATA VALIDATION AND STRUCTURE TESTS"
 
 # TEST 13: Verify Dashboard Data Structure
 $testNumber++
@@ -476,14 +778,15 @@ try {
 }
 
 # ===== GROUP 7: ERROR HANDLING =====
-Write-Header "GROUP 7: ERROR HANDLING & EDGE CASES"
+Write-Header "GROUP 7: ERROR HANDLING AND EDGE CASES"
 
 # TEST 15: Invalid Pagination Parameters
 $testNumber++
 Write-Step $testNumber "Invalid Pagination Parameters"
 
 try {
-    $response = Invoke-WebRequest -Uri "$BaseUrl/api/v1/billing/usage?page=invalid&size=abc" `
+    $url = $BaseUrl + '/api/v1/billing/usage?page=invalid' + '&size=abc'
+    $response = Invoke-WebRequest -Uri $url `
         -Method Get `
         -Headers $AuthHeaders `
         -UseBasicParsing -ErrorAction Stop
@@ -524,7 +827,7 @@ try {
 # ===== FINAL REPORT & SUMMARY =====
 Write-Header "TEST EXECUTION SUMMARY"
 
-Write-Host "`nResults:" -ForegroundColor $script:Cyan
+Write-Host "Results:" -ForegroundColor $script:Cyan
 Write-Host "  Total Tests: $global:TotalTests" -ForegroundColor $script:Cyan
 Write-Host "  Passed: $global:PassedTests" -ForegroundColor $script:Green
 Write-Host "  Failed: $global:FailedTests" -ForegroundColor $script:Red
@@ -540,7 +843,7 @@ Write-Host "  Pass Rate: $passRate%" -ForegroundColor $(if ($passRate -ge 75) { 
 # ===== ENDPOINT COVERAGE TABLE =====
 Write-Header "ENDPOINT COVERAGE MAP"
 
-$endpointMap = @"
+$endpointMap = @'
 GROUP 1 - AUTH & SETUP (2 endpoints)
   PASS [1]  POST /api/auth/register                  - User registration
   PASS [2]  POST /api/auth/login                     - User authentication
@@ -574,7 +877,7 @@ GROUP 7 - ERROR HANDLING (2 tests)
 ---
 TOTAL: 16 tests covering 8+ endpoints across dashboard & analytics
 ---
-"@
+'@
 
 Write-Host $endpointMap -ForegroundColor $script:Cyan
 
@@ -582,18 +885,18 @@ Write-Host $endpointMap -ForegroundColor $script:Cyan
 Write-Header "VALIDATION RESULT"
 
 if ($global:FailedTests -eq 0 -and $global:PassedTests -gt 0) {
-    Write-Host "`n  SUCCESS - ALL $global:PassedTests DASHBOARD & ANALYTICS ENDPOINTS OPERATIONAL!" -ForegroundColor $script:Green
-    Write-Host "`n  Coverage: 8+ endpoints fully tested" -ForegroundColor $script:Green
-    Write-Host "  User dashboards: Working ✅" -ForegroundColor $script:Green
-    Write-Host "  Admin analytics: Authorization enforced ✅" -ForegroundColor $script:Green
-    Write-Host "  Data validation: Structure checked ✅" -ForegroundColor $script:Green
+    Write-Host "  SUCCESS - ALL $global:PassedTests DASHBOARD AND ANALYTICS ENDPOINTS OPERATIONAL!" -ForegroundColor $script:Green
+    Write-Host "" -ForegroundColor $script:Green
+    Write-Host "  Coverage: 8 plus endpoints fully tested" -ForegroundColor $script:Green
+    Write-Host "  User dashboards: Working" -ForegroundColor $script:Green
+    Write-Host "  Admin analytics: Authorization enforced" -ForegroundColor $script:Green
+    Write-Host "  Data validation: Structure checked" -ForegroundColor $script:Green
 } else {
-    Write-Host "`n  WARNING - $global:FailedTests endpoint(s) failed" -ForegroundColor $(if ($global:FailedTests -eq 0) { $script:Green } else { $script:Yellow })
+    Write-Host "  WARNING - $global:FailedTests endpoint(s) failed" -ForegroundColor $(if ($global:FailedTests -eq 0) { $script:Green } else { $script:Yellow })
     if ($global:FailedTests -gt 0) {
         Write-Host "  Please review failures above for corrective action" -ForegroundColor $script:Yellow
     }
 }
 
 $completionTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
-Write-Host "`nTest Suite Completed: $completionTime" -ForegroundColor $script:Cyan
-Write-Host "`n" -ForegroundColor $script:Cyan
+Write-Host "Test Suite Completed: $completionTime" -ForegroundColor $script:Cyan

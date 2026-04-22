@@ -1,13 +1,17 @@
 /* ======================================================
-   VENDOR LEADS
-   Leads associated with vendors
+   V36__create_vendor_leads.sql (FINAL - CORRECTED & DETERMINISTIC)
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.vendor_leads (
+CREATE TABLE vendor_leads (
 
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
+    /* ========== MULTI-TENANT ========== */
+
+    tenant_id UUID NOT NULL,
     vendor_id UUID NOT NULL,
+
+    /* ========== LEAD DATA ========== */
 
     nome_completo VARCHAR(200) NOT NULL,
     whatsapp VARCHAR(30) NOT NULL,
@@ -17,54 +21,129 @@ CREATE TABLE IF NOT EXISTS public.vendor_leads (
 
     urgencia VARCHAR(20),
 
-    stage VARCHAR(50) NOT NULL DEFAULT 'NEW',
+    /* ========== PIPELINE ========== */
 
-    status VARCHAR(50),
+    stage VARCHAR(50) NOT NULL DEFAULT 'NEW'
+        CHECK (stage IN ('NEW','CONTACT','NEGOTIATION','CLOSED','LOST')),
 
-    score INT NOT NULL DEFAULT 0,
+    /* ========== SCORING ========== */
+
+    score INT NOT NULL DEFAULT 0
+        CHECK (score BETWEEN 0 AND 100),
+
+    /* ========== CRM ========== */
+
     owner_email VARCHAR(255),
-
     resumo_estrategico TEXT,
 
-    created_date TIMESTAMP WITH TIME ZONE,
+    /* ========== AUDITORIA (PADRONIZADO) ========== */
 
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMPTZ,
+
+    /* ========== CONSTRAINTS ========== */
 
     CONSTRAINT fk_vendor_leads_vendor
         FOREIGN KEY (vendor_id)
-        REFERENCES public.vendors(id)
+        REFERENCES vendors(id)
         ON DELETE CASCADE,
 
-    CONSTRAINT chk_vendor_leads_score
-        CHECK (score BETWEEN 0 AND 100),
-
-    CONSTRAINT chk_vendor_leads_stage
-        CHECK (stage IN ('NEW','CONTACT','PROPOSAL','NEGOTIATION','CLOSED','LOST'))
+    CONSTRAINT fk_vendor_leads_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES tenants(id)
+        ON DELETE CASCADE
 );
 
-
 /* ======================================================
-   INDEXES
+   INDEXES (DETERMINÍSTICOS)
    ====================================================== */
 
--- Leads by vendor
-CREATE INDEX IF NOT EXISTS idx_vendor_leads_vendor
-    ON public.vendor_leads (vendor_id);
+CREATE INDEX idx_vendor_leads_tenant_id
+    ON vendor_leads (tenant_id);
 
--- Leads by vendor + stage
-CREATE INDEX IF NOT EXISTS idx_vendor_leads_vendor_stage
-    ON public.vendor_leads (vendor_id, stage);
+CREATE INDEX idx_vendor_leads_vendor_id
+    ON vendor_leads (vendor_id);
 
--- Leads timeline
-CREATE INDEX IF NOT EXISTS idx_vendor_leads_vendor_created
-    ON public.vendor_leads (vendor_id, created_at DESC);
+CREATE INDEX idx_vendor_leads_tenant_vendor
+    ON vendor_leads (tenant_id, vendor_id);
 
--- Timeline by created_date
-CREATE INDEX IF NOT EXISTS idx_vendor_leads_created_date_timeline
-    ON public.vendor_leads (vendor_id, created_date DESC);
+CREATE INDEX idx_vendor_leads_stage
+    ON vendor_leads (stage);
 
--- Filtering by stage only
-CREATE INDEX IF NOT EXISTS idx_vendor_leads_stage
-    ON public.vendor_leads (stage);
+CREATE INDEX idx_vendor_leads_vendor_stage
+    ON vendor_leads (vendor_id, stage);
+
+CREATE INDEX idx_vendor_leads_created_at
+    ON vendor_leads (created_at DESC);
+
+/* 🔥 ESSENCIAL PARA SAAS (QUERY POR TENANT + TIME) */
+CREATE INDEX idx_vendor_leads_tenant_created
+    ON vendor_leads (tenant_id, created_at DESC);
+
+/* ======================================================
+   VENDOR AUDIT LOGS
+   ====================================================== */
+
+CREATE TABLE vendor_audit_logs (
+
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    /* ========== MULTI-TENANT ========== */
+
+    tenant_id UUID NOT NULL,
+    vendor_id UUID NOT NULL,
+
+    /* ========== AUDIT DATA ========== */
+
+    user_email VARCHAR(255) NOT NULL,
+    acao VARCHAR(255) NOT NULL,
+
+    entity_type VARCHAR(255) NOT NULL,
+    entidade_id UUID NOT NULL,
+
+    detalhes TEXT,
+
+    /* ========== TIMESTAMPS ========== */
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    /* ========== CONSTRAINTS ========== */
+
+    CONSTRAINT fk_vendor_audit_logs_vendor
+        FOREIGN KEY (vendor_id)
+        REFERENCES vendors(id)
+        ON DELETE CASCADE,
+
+    /* 🔥 CRÍTICO: GARANTE ISOLAMENTO */
+    CONSTRAINT fk_vendor_audit_logs_tenant
+        FOREIGN KEY (tenant_id)
+        REFERENCES tenants(id)
+        ON DELETE CASCADE
+);
+
+/* ======================================================
+   INDEXES (AUDIT LOGS)
+   ====================================================== */
+
+CREATE INDEX idx_vendor_audit_logs_tenant
+    ON vendor_audit_logs(tenant_id);
+
+CREATE INDEX idx_vendor_audit_logs_vendor
+    ON vendor_audit_logs(vendor_id);
+
+CREATE INDEX idx_vendor_audit_logs_tenant_vendor
+    ON vendor_audit_logs(tenant_id, vendor_id);
+
+CREATE INDEX idx_vendor_audit_logs_vendor_created
+    ON vendor_audit_logs(vendor_id, created_at DESC);
+
+/* 🔥 ESSENCIAL PARA CONSULTAS POR TENANT */
+CREATE INDEX idx_vendor_audit_logs_tenant_created
+    ON vendor_audit_logs(tenant_id, created_at DESC);
+
+CREATE INDEX idx_vendor_audit_logs_entity
+    ON vendor_audit_logs(entity_type, entidade_id);
+
+CREATE INDEX idx_vendor_audit_logs_action_created
+    ON vendor_audit_logs(acao, created_at DESC);

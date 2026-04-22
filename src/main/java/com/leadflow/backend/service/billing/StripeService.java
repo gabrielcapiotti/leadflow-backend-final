@@ -1,10 +1,10 @@
 package com.leadflow.backend.service.billing;
 
+import com.leadflow.backend.config.StripeProperties;
 import com.leadflow.backend.dto.billing.CheckoutRequest;
 import com.leadflow.backend.dto.billing.CheckoutResponse;
 import com.leadflow.backend.entities.billing.PaymentCheckoutRequest;
 import com.leadflow.backend.repository.PaymentCheckoutRequestRepository;
-import com.stripe.Stripe;
 import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
 import com.stripe.model.Customer;
@@ -33,35 +33,57 @@ public class StripeService {
 
     private final PaymentCheckoutRequestRepository checkoutRepository;
     private final BillingTenantProvisioningService provisioningService;
+    private final StripeProperties stripeProperties;
 
-    @Value("${stripe.secret-key:${stripe.secret.key:}}")
-    private String stripeSecretKey;
-
-    @Value("${stripe.webhook-secret:${stripe.webhook.secret:}}")
-    private String webhookSecret;
-
-    @Value("${stripe.success-url:${app.frontend.success-url}}")
+    @Value("${stripe.success-url:${app.frontend.success-url:http://localhost:3000/payment-success}}")
     private String successUrl;
 
-    @Value("${stripe.cancel-url:${app.frontend.cancel-url}}")
+    @Value("${stripe.cancel-url:${app.frontend.cancel-url:http://localhost:3000/payment-cancel}}")
     private String cancelUrl;
 
-    @Value("${stripe.price-id:${stripe.price.default:}}")
+    @Value("${stripe.price-id:${stripe.price.default:price_1TEGJEFzdxPQXW4wOjEzE5pN}}")
     private String priceId;
 
-    @Value("${stripe.price.pro:${stripe.price-id:}}")
+    @Value("${stripe.price.pro:${stripe.price-id:price_1TEGJEFzdxPQXW4wOjEzE5pN}}")
     private String proPriceId;
+
+    @Value("${stripe.webhook.secret:${stripe.webhook-secret:whsec_test_xxxxx}}")
+    private String webhookSecret;
+
+    /**
+     * Test mode flag: If true, Stripe signature validation is SKIPPED.
+     * Use ONLY in development/testing. MUST be false in production.
+     * 
+     * Configuration: stripe.test-mode=true (default: false)
+     */
+    @Value("${stripe.test-mode:false}")
+    private boolean testMode;
 
     @PostConstruct
     public void init() {
+        String stripeSecretKey = stripeProperties.getApi().getSecretKey();
+        
         if (stripeSecretKey == null || stripeSecretKey.isBlank()) {
-            log.warn("Stripe secret key is not configured - Stripe integration will not be available");
+            log.warn("⚠️  StripeService: Secret key not configured from StripeProperties - Stripe integration will not be available");
             return;
         }
 
-        Stripe.apiKey = stripeSecretKey;
-        log.info("Stripe initialized");
+        // Stripe SDK already initialized by StripeProperties, but we log this service initialization
+        log.info("✅ StripeService initialized successfully (using StripeProperties)");
+        log.info("   - Stripe Mode: {}", stripeProperties.getMode());
+        log.info("   - Stripe Key: {}...", stripeSecretKey.substring(0, Math.min(15, stripeSecretKey.length())));
+        
+        // Warn if price ID is not configured
+        if (priceId == null || priceId.isBlank()) {
+            log.warn("⚠️  STRIPE PRICE ID NOT CONFIGURED!");
+            log.warn("   1. Go to https://dashboard.stripe.com/test/prices");
+            log.warn("   2. Create a product + price");
+            log.warn("   3. Copy the price ID");
+            log.warn("   4. Set environment variable: export STRIPE_PRICE_ID=price_xxx");
+            log.warn("   Subscriptions will fail until this is configured!");
+        }
     }
+
 
     public CheckoutResponse createCheckoutSession(CheckoutRequest request) {
 
@@ -74,7 +96,7 @@ public class StripeService {
         return new CheckoutResponse(session.getUrl(), referenceId, "stripe");
     }
 
-    public Session createCheckoutSession(String email, Long tenantId) {
+    public Session createCheckoutSession(String email, UUID tenantId) {
         if (email == null || email.isBlank()) {
             throw new IllegalArgumentException("Email is required to create checkout session");
         }
@@ -111,7 +133,7 @@ public class StripeService {
 
         try {
             Session session = Session.create(params);
-            savePendingCheckout(normalizedEmail, "default", referenceId);
+            savePendingCheckout(normalizedEmail, "default", referenceId, tenantId);
             return session;
         } catch (StripeException e) {
             log.error("Stripe checkout creation failed for email={}", normalizedEmail, e);
@@ -202,19 +224,36 @@ public class StripeService {
             throw new IllegalArgumentException("Stripe signature cannot be blank");
         }
 
+        log.info("[STRIPESERVICE] Webhook validation starting (testMode={})", testMode);
+
+        // 🔥 TEST MODE: Skip signature validation in development
+        if (testMode) {
+            log.warn("[STRIPESERVICE] ⚠️  TEST MODE ACTIVE - Skipping Stripe signature validation");
+            try {
+                Event event = Event.GSON.fromJson(payload, Event.class);
+                log.info("[STRIPESERVICE] ✅ Test mode: Event parsed - Event ID: {}, Type: {}", 
+                    event.getId(), event.getType());
+                return event;
+            } catch (Exception e) {
+                log.error("[STRIPESERVICE] Failed to parse event in test mode: {}", e.getMessage());
+                throw new RuntimeException("Event parsing failed in test mode", e);
+            }
+        }
+
+        // 🔥 PRODUCTION MODE: Strict Stripe signature validation
         if (webhookSecret == null || webhookSecret.isBlank()) {
             log.error("[STRIPESERVICE] CRITICAL: Webhook secret is empty! Value: '{}'", webhookSecret);
             throw new IllegalStateException("Stripe webhook secret is not configured");
         }
 
-        log.info("[STRIPESERVICE] Webhook validation starting");
+        log.info("[STRIPESERVICE] Production mode: validating signature");
         log.info("[STRIPESERVICE] Webhook secret length: {}", webhookSecret.length());
         log.info("[STRIPESERVICE] Payload length: {}", payload.length());
         log.info("[STRIPESERVICE] Signature header: {}", signature.substring(0, Math.min(50, signature.length())));
 
         try {
             Event event = Webhook.constructEvent(payload, signature, webhookSecret);
-            log.info("[STRIPESERVICE] ✅ Webhook.constructEvent() succeeded - Event ID: {}, Type: {}", 
+            log.info("[STRIPESERVICE] ✅ Stripe signature validated - Event ID: {}, Type: {}", 
                 event.getId(), event.getType());
             return event;
         } catch (SignatureVerificationException e) {
@@ -222,7 +261,7 @@ public class StripeService {
                 e.getMessage());
             throw new RuntimeException("Invalid webhook signature", e);
         } catch (Exception e) {
-            log.error("[STRIPESERVICE] ❌ Webhook.constructEvent() failed with exception: {}", 
+            log.error("[STRIPESERVICE] ❌ Webhook.constructEvent() failed: {}", 
                 e.getClass().getSimpleName() + ": " + e.getMessage());
             throw new RuntimeException("Webhook processing failed", e);
         }
@@ -240,17 +279,6 @@ public class StripeService {
     @Deprecated
     public String extractTenantIdFromEvent(Event event) {
         log.warn("[DEPRECATED] extractTenantIdFromEvent should not be called. Use database mapping instead.");
-        return "unknown";
-    }
-
-    /**
-     * Extract customer ID from various Stripe object types in webhook events
-     * 
-     * @deprecated Use StripeEventJsonExtractor.getString(dataObject, "customer") for raw JSON parsing
-     */
-    @Deprecated
-    private String extractCustomerIdFromEvent(Event event) {
-        log.warn("[DEPRECATED] extractCustomerIdFromEvent should not be called. Use StripeEventJsonExtractor instead.");
         return "unknown";
     }
 
@@ -282,16 +310,17 @@ public class StripeService {
         provisioningService.provisionFromCheckout(event.getId(), session, payload);
     }
 
-    private void savePendingCheckout(String email, String plan, String referenceId) {
+    private void savePendingCheckout(String email, String plan, String referenceId, UUID tenantId) {
         PaymentCheckoutRequest checkoutRequest = new PaymentCheckoutRequest();
         checkoutRequest.setReferenceId(referenceId);
-        checkoutRequest.setProvider("stripe");
+        checkoutRequest.setProvider("STRIPE");
         checkoutRequest.setEmail(email);
+        checkoutRequest.setTenantId(tenantId);
         checkoutRequest.setNomeVendedor(localPart(email));
         checkoutRequest.setWhatsappVendedor("0000000000");
         checkoutRequest.setNomeEmpresa(null);
         checkoutRequest.setSlug(localPart(email) + "-" + UUID.randomUUID().toString().substring(0, 6));
-        checkoutRequest.setStatus("PENDING_" + plan.toUpperCase(Locale.ROOT));
+        checkoutRequest.setStatus("PENDING");
         checkoutRepository.save(checkoutRequest);
     }
 
@@ -460,7 +489,7 @@ public class StripeService {
 
         try {
             Session session = Session.create(params);
-            savePendingCheckout(normalizedEmail, "default", referenceId);
+            savePendingCheckout(normalizedEmail, "default", referenceId, null);
             
             return new CheckoutResponse(
                 session.getUrl(),

@@ -185,9 +185,17 @@ public class StripeEventRetryScheduler {
             log.info("Processing retry for webhook event: eventId={}, type={}, retryCount={}/{}",
                 event.getEventId(), event.getEventType(), event.getRetryCount(), event.getMaxRetries());
             
+            // 🔥 SECURITY: Validate tenantId before processing
+            if (event.getTenantId() == null) {
+                log.error("🔴 CRITICAL: StripeEventRetryScheduler received event without tenantId - REJECTING");
+                event.setLastError("Missing tenantId");
+                eventLogRepository.save(event);
+                return;
+            }
+            
             // Record metric: retry attempt
             metricsTracker.recordRetryAttempt(
-                    event.getTenantId() != null ? event.getTenantId() : UUID.fromString("00000000-0000-0000-0000-000000000000"),
+                    event.getTenantId(),
                     event.getEventId(),
                     event.getRetryCount(),
                     event.getMaxRetries()

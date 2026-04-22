@@ -11,7 +11,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface UsageLimitRepository extends JpaRepository<UsageLimit, Long> {
+public interface UsageLimitRepository extends JpaRepository<UsageLimit, UUID> {
 
     /**
      * Finds usage limit by tenantId without lock (for dashboard reads).

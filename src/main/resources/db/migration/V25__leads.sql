@@ -1,63 +1,55 @@
-/* ======================================================
-   LEADS TABLE (FINAL STRUCTURE - NO TEMPLATE)
-   ====================================================== */
+CREATE TABLE leads (
 
-CREATE TABLE IF NOT EXISTS public.leads (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
-    id UUID NOT NULL,
+    /* ========== MULTI-TENANT (COLUMN-BASED) ========== */
 
+    tenant_id UUID NOT NULL,
+
+    /* ========== RELACIONAMENTOS ========== */
+
+    vendor_id UUID NOT NULL,
     user_id UUID,
+
+    /* ========== DADOS DO LEAD ========== */
 
     name VARCHAR(255),
     email VARCHAR(255),
     phone VARCHAR(50),
 
-    status VARCHAR(30) DEFAULT 'NEW',
+    /* ========== STATUS ========== */
 
-    created_at TIMESTAMPTZ,
-    updated_at TIMESTAMPTZ,
-    deleted_at TIMESTAMPTZ
+    status VARCHAR(30) NOT NULL DEFAULT 'NEW'
+        CHECK (status IN ('NEW', 'CONTACTED', 'QUALIFIED', 'CLOSED')),
+
+    /* ========== AUDITORIA ========== */
+
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at TIMESTAMPTZ,
+
+    /* ========== CONSTRAINTS ========== */
+
+    CONSTRAINT fk_leads_vendor
+        FOREIGN KEY (vendor_id)
+        REFERENCES vendors(id)
+        ON DELETE CASCADE
 );
 
--- PRIMARY KEY (idempotente)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint
-        WHERE conname = 'pk_leads'
-    ) THEN
-        ALTER TABLE public.leads
-        ADD CONSTRAINT pk_leads PRIMARY KEY (id);
-    END IF;
-END $$;
+CREATE INDEX idx_leads_vendor_id
+    ON leads (vendor_id);
 
+CREATE INDEX idx_leads_status
+    ON leads (status);
 
--- STATUS DEFAULT (garantia)
-ALTER TABLE public.leads
-ALTER COLUMN status SET DEFAULT 'NEW';
+CREATE INDEX idx_leads_deleted_at
+    ON leads (deleted_at);
 
+CREATE INDEX idx_leads_user_id
+    ON leads (user_id);
 
--- STATUS CHECK (idempotente e seguro)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint
-        WHERE conname = 'chk_lead_status'
-    ) THEN
-        ALTER TABLE public.leads
-        ADD CONSTRAINT chk_lead_status
-        CHECK (status IN ('NEW', 'CONTACTED', 'QUALIFIED', 'CLOSED'));
-    END IF;
-END $$;
+CREATE INDEX idx_leads_tenant_id
+    ON leads (tenant_id);
 
-
--- INDEXES
-CREATE INDEX IF NOT EXISTS idx_leads_status
-    ON public.leads (status);
-
-CREATE INDEX IF NOT EXISTS idx_leads_deleted_at
-    ON public.leads (deleted_at);
-
-CREATE INDEX IF NOT EXISTS idx_leads_user_id
-    ON public.leads (user_id);
+CREATE INDEX idx_leads_tenant_email
+    ON leads (tenant_id, email);

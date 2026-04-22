@@ -1,4 +1,4 @@
-#Requires -Version 5.0
+﻿#Requires -Version 5.0
 <#
 .SYNOPSIS
     Complete Billing Endpoints Test Suite - Full Validation
@@ -17,8 +17,9 @@
 
 param(
     [string]$BaseUrl = "http://localhost:8081",
-    [string]$Username = "teste@e2e.com",
-    [string]$Password = "SenhaForte123!@#"
+    [string]$Username = "teste.billing.$(Get-Date -Format 'yyyyMMdd-HHmmss')@e2e.com",
+    [string]$Password = "SenhaForte123!@#",
+    [string]$StripeSecretKey = "sk_test_51TEG1fFzdxPQXW4wPJZ44ulOz2mqrMaPGUpKSJd5toTddkfCTpjQTjOExwuph9uMJhYFFn3PErOLZesj5SSvRryc00ryq0MEU7"
 )
 
 # ===== CONFIGURATION =====
@@ -28,6 +29,8 @@ $global:PassedTests = 0
 $global:FailedTests = 0
 $global:AuthToken = ""
 $global:TenantId = ""
+$global:HasRealStripe = $false
+$global:StripeCustomerId = ""
 
 # Color constants
 $script:Green = "Green"
@@ -39,16 +42,16 @@ $script:DarkGray = "DarkGray"
 # ===== STANDARDIZED HELPER FUNCTIONS =====
 function Write-Success {
     param([string]$Message, [int]$Status = 200)
-    Write-Host "    ✅ OK - $Message (HTTP $Status)" -ForegroundColor $script:Green
+    Write-Host "    OK - $Message (HTTP $Status)" -ForegroundColor $script:Green
     $global:PassedTests++
 }
 
 function Write-Fail {
     param([string]$Message, [int]$Status = 0, [string]$Error = "")
     if ($Status -gt 0) {
-        Write-Host "    ❌ FAIL - $Message (HTTP $Status)" -ForegroundColor $script:Red
+        Write-Host "    FAIL - $Message (HTTP $Status)" -ForegroundColor $script:Red
     } else {
-        Write-Host "    ❌ FAIL - $Message" -ForegroundColor $script:Red
+        Write-Host "    FAIL - $Message" -ForegroundColor $script:Red
     }
     if ($Error) {
         Write-Host "             Error: $Error" -ForegroundColor $script:Red
@@ -69,10 +72,62 @@ function Write-Step {
 
 function Write-Header {
     param([string]$Title)
-    Write-Host "`n" -ForegroundColor $script:Cyan
+    Write-Host ""
     Write-Host "================================================" -ForegroundColor $script:Cyan
     Write-Host $Title -ForegroundColor $script:Cyan
     Write-Host "================================================" -ForegroundColor $script:Cyan
+}
+
+# ===== STRIPE API INTEGRATION =====
+function Get-StripeCustomer {
+    param([string]$CustomerId)
+    
+    try {
+        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($StripeSecretKey):"))
+        $response = Invoke-RestMethod `
+            -Uri "https://api.stripe.com/v1/customers/$CustomerId" `
+            -Headers @{ Authorization = "Basic $auth" } `
+            -Method GET `
+            -ErrorAction Stop
+        return $response
+    } catch {
+        return $null
+    }
+}
+
+function Get-StripeSubscriptions {
+    param([string]$CustomerId)
+    
+    try {
+        $auth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("$($StripeSecretKey):"))
+        $response = Invoke-RestMethod `
+            -Uri "https://api.stripe.com/v1/subscriptions?customer=$CustomerId&limit=10" `
+            -Headers @{ Authorization = "Basic $auth" } `
+            -Method GET `
+            -ErrorAction Stop
+        return $response.data
+    } catch {
+        return @()
+    }
+}
+
+function Validate-StripeLink {
+    param([object]$BillingResponse)
+    
+    if (-not $BillingResponse.stripeCustomerId) {
+        Write-Fail "Resposta sem Stripe customer ID"
+        return $false
+    }
+    
+    $stripeCustomer = Get-StripeCustomer -CustomerId $BillingResponse.stripeCustomerId
+    if (-not $stripeCustomer) {
+        Write-Fail "Stripe customer nao encontrado: $($BillingResponse.stripeCustomerId)"
+        return $false
+    }
+    
+    Write-Info "Stripe customer validado: $($stripeCustomer.id)"
+    $global:HasRealStripe = $true
+    return $true
 }
 
 # ===== TEST EXECUTION FUNCTION =====
@@ -110,12 +165,24 @@ function Test-Endpoint {
         $statusCode = $response.StatusCode
 
         if ($ExpectedStatus -contains $statusCode) {
-            Write-Success $Description $statusCode
             try {
-                return ($response.Content | ConvertFrom-Json)
+                $responseData = $response.Content | ConvertFrom-Json
             } catch {
-                return $response.Content
+                $responseData = $response.Content
             }
+            
+            # Validacao de conteudo - novo criterio
+            if ($ValidateScript) {
+                try {
+                    & $ValidateScript $responseData
+                } catch {
+                    Write-Fail "$Description (Content validation failed)" $statusCode $_.Exception.Message
+                    return $null
+                }
+            }
+            
+            Write-Success $Description $statusCode
+            return $responseData
         } else {
             Write-Fail $Description $statusCode "Unexpected status code"
             return $null
@@ -136,9 +203,10 @@ function Test-Endpoint {
 }
 
 # ===== INITIALIZATION & HEADER =====
-Write-Header "BILLING ENDPOINTS - COMPLETE TEST SUITE (18+ ENDPOINTS)"
+Write-Header "BILLING ENDPOINTS - COMPLETE TEST SUITE (18 endpoints)"
 
-Write-Host "`nConfiguration:" -ForegroundColor $script:Yellow
+Write-Host ""
+Write-Host "Configuration:" -ForegroundColor $script:Yellow
 Write-Host "  Base URL: $BaseUrl" -ForegroundColor $script:Cyan
 Write-Host "  Test Email: $Username" -ForegroundColor $script:Cyan
 Write-Host "  Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor $script:Cyan
@@ -179,8 +247,8 @@ try {
     }
 } catch {
     if ($_.Exception.Response.StatusCode.value__ -eq 409) {
-        Write-Info "User already exists, using existing account"
-        $global:TenantId = "public"  # Fallback
+        Write-Fail "User already exists - email collision detected (should not happen with unique email)"
+        exit 1
     } else {
         Write-Fail "Registration error" $_.Exception.Response.StatusCode.value__ $_.Exception.Message
         exit 1
@@ -346,7 +414,12 @@ $response = Test-Endpoint -Method GET `
     -Url "$BaseUrl/api/v1/billing/subscription" `
     -Description "Get subscription (v1)" `
     -Headers $AuthHeaders `
-    -ExpectedStatus @(200, 204, 404)
+    -ExpectedStatus @(200) `
+    -ValidateScript {
+        param($data)
+        if (-not $data.id) { throw "Sem subscription ID" }
+        if (-not $data.stripeCustomerId) { throw "Sem Stripe customer" }
+    }
 
 # TEST 13: POST /api/v1/billing/subscription
 $testNumber++
@@ -360,7 +433,14 @@ $response = Test-Endpoint -Method POST `
     -Description "Create subscription (v1)" `
     -Headers $AuthHeaders `
     -Body $subscriptionV1Body `
-    -ExpectedStatus @(200, 201, 400, 404)
+    -ExpectedStatus @(200, 201) `
+    -ValidateScript {
+        param($data)
+        if (-not $data.id) { throw "Subscription sem ID" }
+        if (-not $data.stripeCustomerId) { throw "Sem Stripe customer" }
+        $global:StripeCustomerId = $data.stripeCustomerId
+        if (-not (Validate-StripeLink $data)) { throw "Stripe integration failed" }
+    }
 
 # TEST 14: GET /api/v1/billing/invoices
 $testNumber++
@@ -378,7 +458,11 @@ $response = Test-Endpoint -Method GET `
     -Url "$BaseUrl/api/v1/billing/plans" `
     -Description "Get billing plans" `
     -Headers $AuthHeaders `
-    -ExpectedStatus @(200, 404)
+    -ExpectedStatus @(200) `
+    -ValidateScript {
+        param($data)
+        if ($data.Count -eq 0) { throw "Nenhum plano disponivel" }
+    }
 
 # TEST 16: PUT /api/v1/billing/subscription
 $testNumber++
@@ -392,7 +476,11 @@ $response = Test-Endpoint -Method PUT `
     -Description "Update subscription (v1)" `
     -Headers $AuthHeaders `
     -Body $updateSubBody `
-    -ExpectedStatus @(200, 400, 404)
+    -ExpectedStatus @(200) `
+    -ValidateScript {
+        param($data)
+        if (-not $data.id) { throw "Update sem ID" }
+    }
 
 # TEST 17: POST /api/v1/billing/cancel (Optional - may not be implemented)
 $testNumber++
@@ -414,7 +502,7 @@ $response = Test-Endpoint -Method GET `
     -Url "$BaseUrl/api/v1/admin/billing/users" `
     -Description "Get billing users (admin)" `
     -Headers $AuthHeaders `
-    -ExpectedStatus @(200, 403, 404)
+    -ExpectedStatus @(200)
 
 # TEST 19: GET /api/v1/admin/billing/analytics
 $testNumber++
@@ -423,7 +511,13 @@ $response = Test-Endpoint -Method GET `
     -Url "$BaseUrl/api/v1/admin/billing/analytics" `
     -Description "Get billing analytics (admin)" `
     -Headers $AuthHeaders `
-    -ExpectedStatus @(200, 403, 404)
+    -ExpectedStatus @(200) `
+    -ValidateScript {
+        param($data)
+        if ($data.mrr -eq 0 -and $data.totalSubscriptions -gt 0) {
+            throw "MRR inconsistente: total=$($data.totalSubscriptions) mas MRR=0"
+        }
+    }
 
 # TEST 20: GET /api/v1/admin/billing/revenue
 $testNumber++
@@ -432,7 +526,7 @@ $response = Test-Endpoint -Method GET `
     -Url "$BaseUrl/api/v1/admin/billing/revenue" `
     -Description "Get billing revenue (admin)" `
     -Headers $AuthHeaders `
-    -ExpectedStatus @(200, 403, 404)
+    -ExpectedStatus @(200)
 
 # TEST 21: POST /api/v1/admin/billing/refund
 $testNumber++
@@ -497,6 +591,41 @@ $response = Test-Endpoint -Method GET `
 
 Write-Info "JWT-only validation confirmed: Server uses JWT exclusively for tenant resolution"
 
+# ===== GROUP 7: CRITICAL BILLING INTEGRITY CHECK =====
+Write-Header "GROUP 7: CRITICAL BILLING INTEGRITY VALIDATION"
+
+# TEST 24: Verify Stripe customer exists (CRITICAL)
+$testNumber++
+Write-Step $testNumber "Verify Stripe customer (CRITICAL)"
+
+if (-not $global:StripeCustomerId) {
+    Write-Fail "No Stripe customer to validate - registration failed"
+} else {
+    $stripeCustomer = Get-StripeCustomer -CustomerId $global:StripeCustomerId
+    if ($stripeCustomer -and $stripeCustomer.id) {
+        Write-Success "Stripe customer validated" 200
+        $global:HasRealStripe = $true
+    } else {
+        Write-Fail "Stripe customer not found in API" 404 "Customer ID: $global:StripeCustomerId does not exist in Stripe"
+        $global:HasRealStripe = $false
+    }
+}
+
+# TEST 25: Verify subscription can be queried from Stripe (CRITICAL)
+$testNumber++
+Write-Step $testNumber "Verify subscription in Stripe (CRITICAL)"
+
+if ($global:HasRealStripe) {
+    $stripeSubs = Get-StripeSubscriptions -CustomerId $global:StripeCustomerId
+    if ($stripeSubs -and $stripeSubs.Count -gt 0) {
+        Write-Success "Stripe subscription found" 200
+        Write-Info "Subscription count in Stripe: $($stripeSubs.Count)"
+    } else {
+        Write-Fail "No subscriptions in Stripe for customer" 404
+        $global:HasRealStripe = $false
+    }
+}
+
 # ===== FINAL REPORT & SUMMARY =====
 Write-Header "TEST EXECUTION SUMMARY"
 
@@ -504,6 +633,7 @@ Write-Host "`nResults:" -ForegroundColor $script:Cyan
 Write-Host "  Total Tests: $global:TotalTests" -ForegroundColor $script:Cyan
 Write-Host "  Passed: $global:PassedTests" -ForegroundColor $script:Green
 Write-Host "  Failed: $global:FailedTests" -ForegroundColor $script:Red
+Write-Host "  Stripe Linked: $(if ($global:HasRealStripe) { 'YES' } else { 'NO' })" -ForegroundColor $(if ($global:HasRealStripe) { $script:Green } else { $script:Red })
 
 $passRate = if ($global:TotalTests -gt 0) {
     [Math]::Round(($global:PassedTests / $global:TotalTests) * 100, 2)
@@ -562,19 +692,26 @@ Write-Host $endpointMap -ForegroundColor $script:Cyan
 # ===== FINAL VERDICT =====
 Write-Header "VALIDATION RESULT"
 
-if ($global:FailedTests -eq 0 -and $global:PassedTests -gt 0) {
-    Write-Host "`n  SUCCESS - ALL $global:PassedTests BILLING ENDPOINTS OPERATIONAL!" -ForegroundColor $script:Green
-    Write-Host "`n  Coverage: 21+ endpoints fully tested" -ForegroundColor $script:Green
-    Write-Host "  Security: Multi-tenant isolation validated" -ForegroundColor $script:Green
-    Write-Host "  Multi-tenant: Dynamic UUID extraction and propagation working" -ForegroundColor $script:Green
-    Write-Info "All billing functionality ready for production deployment"
+# âœ… NOVO CRITÃ‰RIO - Mede integridade de billing, nÃ£o apenas HTTP
+if ($global:FailedTests -eq 0 -and $global:PassedTests -gt 0 -and $global:HasRealStripe -eq $true) {
+    Write-Host "`n  âœ… PRODUCTION READY - BILLING SYSTEM VALIDATED!" -ForegroundColor $script:Green
+    Write-Host "`n  â€¢ All 23 endpoints operational" -ForegroundColor $script:Green
+    Write-Host "  â€¢ Stripe integration confirmed" -ForegroundColor $script:Green
+    Write-Host "  â€¢ Multi-tenant isolation validated" -ForegroundColor $script:Green
+    Write-Host "  â€¢ Revenue tracking functional" -ForegroundColor $script:Green
+    Write-Info "SaaS can charge customers correctly"
+} elseif ($global:HasRealStripe -eq $false) {
+    Write-Host "`n  âŒ NOT PRODUCTION READY - NO STRIPE INTEGRATION" -ForegroundColor $script:Red
+    Write-Host "  â€¢ Endpoints respond but billing not functional" -ForegroundColor $script:Yellow
+    Write-Host "  â€¢ Cannot process payments without Stripe" -ForegroundColor $script:Yellow
 } else {
-    Write-Host "`n  WARNING - $global:FailedTests endpoint(s) failed" -ForegroundColor $script:Yellow
-    Write-Host "  Please review failures above for corrective action" -ForegroundColor $script:Yellow
+    Write-Host "`n  âš ï¸  PARTIAL - $global:FailedTests endpoint(s) failed" -ForegroundColor $script:Yellow
+    Write-Host "  â€¢ Please review failures above" -ForegroundColor $script:Yellow
 }
 
 $completionTime = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
 Write-Host "`nTest Suite Completed: $completionTime" -ForegroundColor $script:Cyan
 Write-Host "`n" -ForegroundColor $script:Cyan
+
 
 

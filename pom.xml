@@ -356,7 +356,7 @@
                 <artifactId>flyway-maven-plugin</artifactId>
                 <version>11.7.2</version>
                 <configuration>
-                    <url>jdbc:postgresql://localhost:2411/leadflow_test</url>
+                    <url>jdbc:postgresql://localhost:2411/leadflowDB</url>
                     <user>postgres</user>
                     <password>venusia</password>
                     <ignoreMigrationPatterns>*:missing</ignoreMigrationPatterns>

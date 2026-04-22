@@ -113,9 +113,16 @@ public class NotificationController {
     }
 
     private String extractTenantId(Authentication principal) {
-        return principal.getDetails() != null ? 
-            principal.getDetails().toString() : 
-            "00000000-0000-0000-0000-000000000000";
+        if (principal == null || principal.getDetails() == null) {
+            log.error("🔴 SECURITY ALERT: Cannot extract tenantId from Authentication - REJECTING");
+            throw new IllegalStateException("Authentication missing required tenant information");
+        }
+        String tenantId = principal.getDetails().toString();
+        if (tenantId.equals("00000000-0000-0000-0000-000000000000")) {
+            log.error("🔴 CRITICAL SECURITY: System tenant UUID detected in extractTenantId");
+            throw new IllegalStateException("System tenant UUID cannot be used for notification operations");
+        }
+        return tenantId;
     }
 
     /**

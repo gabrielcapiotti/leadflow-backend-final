@@ -18,11 +18,11 @@ import java.util.UUID;
 public class SubscriptionAudit {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(name = "subscription_id", nullable = false)
-    private Long subscriptionId;
+    private UUID subscriptionId;
 
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;

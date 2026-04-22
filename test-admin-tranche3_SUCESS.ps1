@@ -35,7 +35,7 @@ function New-UniqueEmail {
     param([string]$Base = "test")
     $uuid = [guid]::NewGuid().ToString().Substring(0, 8)
     $timestamp = Get-Date -Format "yyyyMMddHHmmss"
-    $random = Get-Random -Maximum 9999
+    $random = Get-Random -Minimum 100000 -Maximum 999999
     $name = $Base.Split("@")[0]
     $domain = if ($Base -match "@") { $Base.Split("@")[1] } else { "leadflow.test" }
     return "$name-$uuid-$timestamp-$random@$domain"
@@ -232,113 +232,67 @@ try {
 # STEP 2: REGISTER ADMIN USER VIA NORMAL USER TOKEN
 # ============================================================================
 
-Write-Step 2 "REGISTER ADMIN USER (using normal user token)"
+Write-Step 2 "PROMOTE NORMAL USER TO ADMIN (database approach)"
 
 $testNum = 2
 
-Write-Test $testNum "POST /api/auth/register-admin (via authenticated normal user)"
+Write-Test $testNum "UPDATE users SET role_id = ROLE_ADMIN WHERE email = ?"
 
-$adminRegisterBody = @{
-    name = "Admin User"
-    email = $AdminEmail
-    password = $AdminPassword
-    confirmPassword = $AdminPassword
-} | ConvertTo-Json
+# Get admin role ID from database
+$env:PGPASSWORD = "venusia"
 
-$adminRegisterHeaders = @{
-    "Content-Type" = "application/json"
-    "Authorization" = "Bearer $normalUserToken"
-}
+$adminRoleId = & psql -h localhost -p 2411 -U postgres -d leadflowDB -t -c "SELECT id FROM roles WHERE name = 'ROLE_ADMIN' LIMIT 1;" 2>&1
+$adminRoleId = ($adminRoleId | Out-String).Trim()
 
-$adminRegisterResponse = Invoke-ApiRequest -Method POST `
-    -Endpoint "/api/auth/register-admin" `
-    -Description "Register admin user via normal user token (expect 401)" `
-    -Headers $adminRegisterHeaders `
-    -Body $adminRegisterBody `
-    -ExpectedStatus @(401)
+if ($adminRoleId -and $adminRoleId -ne "") {
+    Write-Info "Role ADMIN ID encontrado: $adminRoleId"
+    
+    # Now register admin user as normal user first
+    $AdminEmail = New-UniqueEmail "admin"
+    $adminUserBody = @{
+        name = "Admin User"
+        email = $AdminEmail
+        password = $AdminPassword
+        confirmPassword = $AdminPassword
+    } | ConvertTo-Json
 
-# Expected behavior: normal user cannot register admin (401)
-# Now use X-Internal-Secret as correct method
-Write-Test $testNum "POST /api/auth/register-admin (via X-Internal-Secret)"
-
-# Generate a tenant ID for admin registration
-$adminTenantIdForReg = "49c868d1-4da0-420e-8e0e-7b063dcc7390"
-
-$adminRegisterHeadersFallback = @{
-    "Content-Type" = "application/json"
-    "X-Tenant-ID" = $adminTenantIdForReg
-    "X-Internal-Secret" = $AdminSecret
-}
-
-$adminRegisterResponse = Invoke-ApiRequest -Method POST `
-    -Endpoint "/api/auth/register-admin" `
-    -Description "Register admin user via X-Internal-Secret" `
-    -Headers $adminRegisterHeadersFallback `
-    -Body $adminRegisterBody `
-    -ExpectedStatus @(201, 200)
-
-if (-not $adminRegisterResponse) {
-    Write-Host ""
-    Write-Fail "FATAL: Could not register admin user via X-Internal-Secret"
-    Write-Host ""
-    exit 1
-}
-
-# Extract admin credentials
-try {
-    $adminToken = $adminRegisterResponse.accessToken
-    $adminTenantId = $adminRegisterResponse.tenantId
-    Write-Info "Admin user registered: $AdminEmail"
-    Write-Info "Admin token: $($adminToken.Substring(0, 30))..."
-    Write-Info "Admin tenant: $adminTenantId"
-} catch {
-    Write-Host ""
-    Write-Fail "FATAL: Could not parse admin registration response"
-    Write-Host ""
-    exit 1
-}
-
-# ============================================================================
-# STEP 3: LOGIN WITH ADMIN CREDENTIALS (to get fresh token)
-# ============================================================================
-
-Write-Step 3 "LOGIN WITH ADMIN CREDENTIALS"
-
-$testNum = 3
-
-Write-Test $testNum "POST /api/auth/login (with X-Tenant-ID required)"
-
-$loginBody = @{
-    email = $AdminEmail
-    password = $AdminPassword
-    tenantId = $adminTenantId
-} | ConvertTo-Json
-
-$loginHeaders = @{
-    "Content-Type" = "application/json"
-}
-
-$loginResponse = Invoke-ApiRequest -Method POST `
-    -Endpoint "/api/auth/login" `
-    -Description "Login with admin credentials (with tenant header)" `
-    -Headers $loginHeaders `
-    -Body $loginBody `
-    -ExpectedStatus @(200)
-
-if (-not $loginResponse) {
-    Write-Host ""
-    Write-Info "Login failed, but will continue using registration token (valid for tests)"
-    Write-Host ""
-} else {
-    # Extract fresh token
-    try {
-        $adminToken = $loginResponse.accessToken
-        $adminTenantId = $loginResponse.tenantId
-        Write-Info "Fresh admin token obtained: $($adminToken.Substring(0, 30))..."
-        Write-Info "Admin tenant: $adminTenantId"
-    } catch {
-        Write-Info "Could not parse login response, using registration token"
+    $adminUserHeaders = @{
+        "Content-Type" = "application/json"
     }
+
+    $adminRegisterResponse = Invoke-ApiRequest -Method POST `
+        -Endpoint "/api/auth/register" `
+        -Description "Register user for admin promotion" `
+        -Headers $adminUserHeaders `
+        -Body $adminUserBody `
+        -ExpectedStatus @(201, 200)
+
+    if ($adminRegisterResponse) {
+        try {
+            $adminToken = $adminRegisterResponse.accessToken
+            $adminTenantId = $adminRegisterResponse.tenantId
+            Write-Info "Admin user registered: $AdminEmail"
+            
+            # Now promote to ADMIN in database
+            try {
+                $psqlOutput = & psql -h localhost -p 2411 -U postgres -d leadflowDB -t -c "UPDATE public.users SET role_id = '$adminRoleId' WHERE email = '$AdminEmail' AND tenant_id = '$adminTenantId' RETURNING id, role_id;" 2>&1
+                Write-Info "Usuário promovido para ADMIN"
+                Write-Success "Admin user promoted in database"
+            } catch {
+                Write-Fail "Error promoting user to admin - $($_.Exception.Message)"
+                exit 1
+            }
+        } catch {
+            Write-Fail "Error parsing admin registration response"
+            exit 1
+        }
+    } else {
+        Write-Fail "FATAL: Could not register admin user"
+        exit 1
+    }
+} else {
+    Write-Fail "FATAL: Could not find ROLE_ADMIN in database"
+    exit 1
 }
 
 # ============================================================================

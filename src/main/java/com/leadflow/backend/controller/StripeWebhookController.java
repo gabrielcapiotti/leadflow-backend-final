@@ -1,12 +1,15 @@
 package com.leadflow.backend.controller;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.leadflow.backend.entities.StripeEventLog;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.StripeCustomerRepository;
 import com.leadflow.backend.repository.StripeEventLogRepository;
 import com.leadflow.backend.service.billing.*;
 import com.leadflow.backend.util.StripeEventJsonExtractor;
+import com.leadflow.backend.webhook.resolver.WebhookTenantResolver;
+import com.leadflow.backend.webhook.service.WebhookReplayService;
 import com.stripe.model.Event;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -15,9 +18,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/stripe")
@@ -27,209 +31,241 @@ public class StripeWebhookController {
 
     private final StripeService stripeService;
     private final StripeWebhookProcessor webhookProcessor;
-    private final StripeEventLogRepository eventLogRepository;
     private final StripeEventIdempotencyService idempotencyService;
     private final WebhookLoggingService webhookLoggingService;
     private final WebhookMetricsTracker metricsTracker;
-    private final StripeCustomerRepository stripeCustomerRepository;
+    private final WebhookReplayService webhookReplayService;
+    private final WebhookTenantResolver webhookTenantResolver;
+    private final StripeEventLogRepository eventLogRepository;
 
     @PostMapping("/webhook")
     public ResponseEntity<String> handleWebhook(HttpServletRequest request) throws IOException {
-
         long startTime = System.currentTimeMillis();
-
-        String payload = request.getReader()
-                .lines()
-                .collect(Collectors.joining());
-
-        String signatureHeader = request.getHeader("Stripe-Signature");
+        String eventId = null;
+        String eventType = null;
+        String customerId = null;
+        UUID tenantUuid = null;
+        String payload = null;
 
         try {
-            log.info("[WEBHOOK] Received Stripe webhook");
+            // ========================================================================
+            // STEP 1: Read RAW request body (never transform before validation)
+            // ========================================================================
+            payload = new String(
+                request.getInputStream().readAllBytes(),
+                StandardCharsets.UTF_8
+            );
+            String signatureHeader = request.getHeader("Stripe-Signature");
 
-            // ============================================================
-            // 1️⃣ VALIDAR ASSINATURA
-            // ============================================================
-            Event event = stripeService.constructWebhookEvent(payload, signatureHeader);
-            String eventId = event.getId();
-            String eventType = event.getType();
+            log.info("[WEBHOOK] 📥 Received webhook - payload size: {} bytes", payload.length());
 
-            log.debug("[WEBHOOK] Event validated: id={}, type={}", eventId, eventType);
-
-            // ============================================================
-            // 2️⃣ VERIFICAR IDEMPOTÊNCIA (prevenir duplicação)
-            // ============================================================
-            if (idempotencyService.isDuplicate(eventId)) {
-                log.info("[WEBHOOK] Evento duplicado recebido (será ignorado): {}", eventId);
-                return ResponseEntity.ok("{}"); // Stripe espera 200 mesmo para duplicados
+            // ========================================================================
+            // STEP 2: VALIDATE STRIPE SIGNATURE (BEFORE any persistence/processing)
+            // ========================================================================
+            Event event = null;
+            try {
+                event = stripeService.constructWebhookEvent(payload, signatureHeader);
+                log.info("[WEBHOOK] ✅ Stripe signature validated");
+            } catch (Exception validationEx) {
+                log.error("[WEBHOOK] ❌ Stripe validation FAILED (rejecting webhook): {}", validationEx.getMessage());
+                // 🔥 CRITICAL: Return 200 to prevent retries, but DO NOT persist
+                return ResponseEntity.ok("{}");
             }
 
-            // ============================================================
-            // 3️⃣ EXTRAIR INFORMAÇÕES DO EVENTO (usando JSON RAW)
-            // ============================================================
-            // 🔥 Extract customerID from raw JSON (not SDK deserialization)
+            if (event == null) {
+                log.error("[WEBHOOK] Event is null after validation");
+                return ResponseEntity.ok("{}");
+            }
+
+            // ========================================================================
+            // STEP 3: Extract event metadata (before tenant resolution)
+            // ========================================================================
+            eventId = event.getId();
+            eventType = event.getType();
+
+            log.info("[WEBHOOK] 📋 Event parsed: id={}, type={}", eventId, eventType);
+
+            // ========================================================================
+            // STEP 4: Extract tenant context from webhook payload
+            // ========================================================================
             JsonObject dataObject = StripeEventJsonExtractor.extractDataObjectAsJson(event);
-            String customerId = StripeEventJsonExtractor.getString(dataObject, "customer");
+            customerId = StripeEventJsonExtractor.getString(dataObject, "customer");
             if (customerId == null || customerId.isBlank()) {
                 customerId = "unknown";
             }
+
+            // Extract ADDITIONAL sources for multi-source tenant resolution (production-grade fallbacks)
+            String subscriptionId = StripeEventJsonExtractor.getString(dataObject, "subscription");
+            String invoiceId = StripeEventJsonExtractor.getString(dataObject, "invoice");
+            String paymentIntentId = StripeEventJsonExtractor.getString(dataObject, "payment_intent");
             
-            // 🔥 Resolve tenant from database (not Stripe API)
-            UUID tenantUuid = resolveTenantFromCustomer(customerId);
-            String tenantId = tenantUuid != null ? tenantUuid.toString() : "unknown";
+            // Extract metadata to get tenantId (PRIMARY source for tenant resolution)
+            String metadataTenantId = extractTenantIdFromMetadata(payload);
 
-            log.info("[WEBHOOK] Processing event: id={}, type={}, tenant={}, customer={}", 
-                    eventId, eventType, tenantId, customerId);
+            log.info("[WEBHOOK] 🔍 Extracted sources: metadataTenantId={}, customerId={}, subscriptionId={}, invoiceId={}, paymentIntentId={}", 
+                metadataTenantId, customerId, subscriptionId, invoiceId, paymentIntentId);
 
-            // ============================================================
-            // 4️⃣ SALVAR EVENTO NO BANCO (para rastreamento + idempotência)
-            // ============================================================
-            idempotencyService.saveEvent(eventId, eventType, payload, tenantUuid, customerId);
+            // ========================================================================
+            // STEP 5: Resolve tenant using WebhookTenantResolver (priority order)
+            // ========================================================================
+            Optional<UUID> resolvedTenant = webhookTenantResolver.resolveTenant(
+                metadataTenantId, 
+                customerId,
+                subscriptionId,
+                invoiceId,
+                paymentIntentId
+            );
 
-            // 🔥 Safe tenant for metrics (use UUID zero if null)
-            UUID safeTenant = tenantUuid != null
-                    ? tenantUuid
-                    : UUID.fromString("00000000-0000-0000-0000-000000000000");
+            if (resolvedTenant.isEmpty()) {
+                log.warn("[WEBHOOK] ⚠️  Cannot resolve tenant from any source - storing in global fallback");
+                // Event will be stored in global fallback (not tenant-scoped)
+                webhookReplayService.storeFailedWebhook(
+                    eventId,
+                    eventType,
+                    payload,
+                    "PENDING_TENANT_RESOLUTION"
+                );
+                return ResponseEntity.ok("{}");
+            }
 
-            // Record metric: event received
-            metricsTracker.recordEventReceived(safeTenant, eventType, eventId);
+            tenantUuid = resolvedTenant.get();
+            log.info("[WEBHOOK] 👤 Tenant resolved: {}", tenantUuid);
 
-            long duration = System.currentTimeMillis() - startTime;
-            webhookLoggingService.logWebhookReceived(event, true, customerId, duration);
+            // ========================================================================
+            // STEP 6: Check idempotency (before processing)
+            // ========================================================================
+            if (idempotencyService.isDuplicate(eventId)) {
+                log.info("[WEBHOOK] ℹ️  Duplicate event detected (ignoring): {}", eventId);
+                return ResponseEntity.ok("{}");
+            }
 
-            // ============================================================
-            // 5️⃣ PROCESSAR EVENTO (com isolamento de tenant)
-            // ============================================================
+            // ========================================================================
+            // STEP 7: Set TenantContext (ONLY with valid tenant)
+            // ========================================================================
+            TenantContext.setTenant(tenantUuid);
+            log.info("[WEBHOOK] 🔐 TenantContext set: {}", tenantUuid);
+
             try {
-                // 🔥 TenantContext.setTenant() expects UUID (not String)
-                // Only set if we have a valid tenant UUID
-                if (tenantUuid != null) {
-                    TenantContext.setTenant(tenantUuid);  // Pass UUID directly
-                } else {
-                    // For public webhooks without tenant context, skip setTenant
-                    // (TenantContext will not be set, operations will fail if they require tenant)
-                    log.debug("No tenant context available for webhook processing");
+                // ====================================================================
+                // STEP 8: Persist event (ONLY after validation + tenant resolution)
+                // ====================================================================
+                idempotencyService.saveEvent(eventId, eventType, payload, tenantUuid, customerId);
+                log.info("[WEBHOOK] 💾 Event persisted: {}", eventId);
+
+                // Record metric: event received
+                metricsTracker.recordEventReceived(tenantUuid, eventType, eventId);
+
+                // ====================================================================
+                // STEP 9: Process event (within tenant context)
+                // ====================================================================
+                long processingStartTime = System.currentTimeMillis();
+
+                try {
+                    webhookProcessor.process(event);
+                    idempotencyService.markProcessed(eventId);
+
+                    long processingDuration = System.currentTimeMillis() - processingStartTime;
+                    metricsTracker.recordEventProcessed(tenantUuid, eventType, processingDuration);
+                    webhookLoggingService.logWebhookProcessed(
+                        event, false, LocalDateTime.now(), processingDuration
+                    );
+
+                    log.info("[WEBHOOK] ✅ Event processed successfully: {}", eventId);
+
+                } catch (Exception processingEx) {
+                    long processingDuration = System.currentTimeMillis() - processingStartTime;
+                    
+                    idempotencyService.markFailed(eventId, processingEx.getMessage());
+                    metricsTracker.recordEventFailed(tenantUuid, eventType, "processing_error", processingDuration);
+                    webhookLoggingService.logWebhookFailed(
+                        eventId, eventType, processingEx.getMessage(), processingDuration
+                    );
+
+                    log.error("[WEBHOOK] ❌ Event processing failed: {}", eventId, processingEx);
                 }
 
-                webhookProcessor.process(event);
-
-                // ✅ Marcar como processado com sucesso
-                idempotencyService.markProcessed(eventId);
-
-                // Record metric: event processed successfully
-                metricsTracker.recordEventProcessed(safeTenant, eventType, duration);
-
-                webhookLoggingService.logWebhookProcessed(
-                        event, false, LocalDateTime.now(), duration
-                );
-
-                log.info("[WEBHOOK] Event processed successfully: {}", eventId);
-
             } catch (Exception e) {
-                // ❌ Marcar para retry
+                log.error("[WEBHOOK] 💥 Error during event persistence/processing: {}", e.getMessage(), e);
                 idempotencyService.markFailed(eventId, e.getMessage());
-
-                // Record metric: event failed
-                metricsTracker.recordEventFailed(safeTenant, eventType, "processing_error", duration);
-
-                webhookLoggingService.logWebhookFailed(eventId, eventType, e.getMessage(), duration);
-
-                log.error("[WEBHOOK] Error processing event {}: {}", eventId, e.getMessage(), e);
-
-            } finally {
-                TenantContext.clear();
             }
 
+            long totalDuration = System.currentTimeMillis() - startTime;
+            log.info("[WEBHOOK] ⏱️  Webhook processing completed in {}ms", totalDuration);
             return ResponseEntity.ok("{}");
 
         } catch (Exception e) {
-            // 🔥 Signature validation happens in constructWebhookEvent()
-            // If we reach here, return 401 only for signature errors, 200 for internal errors
-            String errorMsg = e.getMessage() != null ? e.getMessage() : "";
-            
-            if (errorMsg.toLowerCase().contains("signature") || 
-                errorMsg.toLowerCase().contains("invalid")) {
-                log.warn("[WEBHOOK] Signature validation failed: {}", errorMsg);
-                return ResponseEntity.status(401).body("Invalid signature");
-            }
-            
-            // Internal error = return 200 to prevent Stripe retries
-            log.error("[WEBHOOK] Internal error processing webhook: {}", errorMsg, e);
+            log.error("[WEBHOOK] 🔥 CRITICAL ERROR: {}", e.getMessage(), e);
             return ResponseEntity.ok("{}");
+
+        } finally {
+            // ========================================================================
+            // STEP 10: Always clear TenantContext (thread safety)
+            // ========================================================================
+            TenantContext.clear();
+            log.debug("[WEBHOOK] 🧹 TenantContext cleared");
         }
     }
 
     /**
-     * Resolve tenant from customer mapping in database.
-     * Returns null if customer not mapped (not an error - will retry later).
+     * Extract event ID from raw JSON payload for early identification.
+     * Used only for logging/identification, not for processing.
+     */
+    private String extractEventIdFromPayload(String payload) {
+        try {
+            JsonObject json = JsonParser.parseString(payload).getAsJsonObject();
+            if (json.has("id")) {
+                return json.get("id").getAsString();
+            }
+        } catch (Exception e) {
+            log.debug("[WEBHOOK] Failed to extract event ID: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Extract event type from raw JSON payload for logging.
+     */
+    private String extractEventTypeFromPayload(String payload) {
+        try {
+            JsonObject json = JsonParser.parseString(payload).getAsJsonObject();
+            if (json.has("type")) {
+                return json.get("type").getAsString();
+            }
+        } catch (Exception e) {
+            log.debug("[WEBHOOK] Failed to extract event type: {}", e.getMessage());
+        }
+        return "unknown";
+    }
+
+    /**
+     * Extract tenantId from event metadata (stored in data.object.metadata.tenantId).
+     * This is the PRIMARY source for tenant resolution.
      * 
-     * 🔥 CRITICAL: This resolves tenant via DATABASE, not Stripe API
-     * Stripe API calls break multi-tenancy isolation and add single point of failure
+     * @param payload Raw JSON payload
+     * @return tenantId from metadata, or null if not found
      */
-    private UUID resolveTenantFromCustomer(String customerId) {
-        if (customerId == null || customerId.isBlank() || "unknown".equals(customerId)) {
-            log.warn("[WEBHOOK] Cannot resolve tenant: customerId is unknown");
-            return null;
-        }
-
+    private String extractTenantIdFromMetadata(String payload) {
         try {
-            var mapping = stripeCustomerRepository.findByStripeCustomerId(customerId);
-            if (mapping.isPresent()) {
-                UUID tenantId = mapping.get().getTenant().getId();
-                log.info("[WEBHOOK] Resolved tenant {} for customer {}", tenantId, customerId);
-                return tenantId;
-            } else {
-                log.warn("[WEBHOOK] Customer {} not mapped yet. Will retry on next event.", customerId);
-                return null;
+            JsonObject json = JsonParser.parseString(payload).getAsJsonObject();
+            
+            // Navigate: { data: { object: { metadata: { tenantId: "..." } } } }
+            if (json.has("data")) {
+                JsonObject dataObj = json.getAsJsonObject("data");
+                if (dataObj.has("object")) {
+                    JsonObject objectData = dataObj.getAsJsonObject("object");
+                    if (objectData.has("metadata")) {
+                        JsonObject metadata = objectData.getAsJsonObject("metadata");
+                        if (metadata.has("tenantId")) {
+                            String tenantId = metadata.get("tenantId").getAsString();
+                            log.debug("[WEBHOOK] Extracted metadata.tenantId: {}", tenantId);
+                            return tenantId;
+                        }
+                    }
+                }
             }
         } catch (Exception e) {
-            log.error("[WEBHOOK] Error resolving tenant for customer {}: {}", customerId, e.getMessage());
-            return null;
+            log.debug("[WEBHOOK] Failed to extract tenantId from metadata: {}", e.getMessage());
         }
-    }
-
-    /**
-     * Converte string tenantId para UUID, com tratamento de erros.
-     * Retorna UUID zero se inválido.
-     */
-    private UUID parseTenantId(String tenantId) {
-        try {
-            if (tenantId != null && !tenantId.isBlank() && !"public".equals(tenantId)) {
-                return UUID.fromString(tenantId);
-            }
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid UUID format for tenantId: {}", tenantId);
-        }
-        return UUID.fromString("00000000-0000-0000-0000-000000000000");
-    }
-
-    /**
-     * Método legado (mantido para compatibilidade).
-     * @deprecated Use parseUUID() em vez disso.
-     */
-    @Deprecated
-    private UUID parseUUID(String tenantId) {
-        return parseTenantId(tenantId);
-    }
-
-    /**
-     * Método legado (mantido para compatibilidade).
-     * @deprecated Use idempotencyService.isDuplicate() em vez disso.
-     */
-    @Deprecated
-    private boolean isEventAlreadyProcessed(String eventId) {
-        return eventLogRepository.findByEventId(eventId)
-                .map(log -> log.getStatus() == StripeEventLog.EventProcessingStatus.SUCCESS)
-                .orElse(false);
-    }
-
-    /**
-     * Método legado (mantido para compatibilidade).
-     * @deprecated Use idempotencyService.markFailed() em vez disso.
-     */
-    @Deprecated
-    private LocalDateTime calculateNextRetry(int retryCount) {
-        long delay = Math.min((long) Math.pow(2, retryCount), 300);
-        return LocalDateTime.now().plusSeconds(delay);
+        return null;
     }
 }

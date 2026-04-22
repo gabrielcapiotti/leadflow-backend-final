@@ -2,9 +2,9 @@ package com.leadflow.backend.controller.admin;
 
 import com.leadflow.backend.dto.audit.SecurityAuditResponse;
 import com.leadflow.backend.dto.audit.VendorAuditResponse;
-import com.leadflow.backend.entities.audit.SecurityAction;
 import com.leadflow.backend.entities.audit.SecurityAuditLog;
 import com.leadflow.backend.entities.vendor.VendorAuditLog;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.VendorAuditLogRepository;
 import com.leadflow.backend.repository.audit.SecurityAuditLogRepository;
 import com.leadflow.backend.specification.SecurityAuditSpecification;
@@ -23,7 +23,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -52,21 +51,52 @@ public class AdminAuditController {
 
     @GetMapping("/security")
     public ResponseEntity<Page<SecurityAuditResponse>> getAuditLogs(
-            @RequestParam(required = false) String email,
-            @RequestParam(required = false) String tenant,
-            @RequestParam(required = false) SecurityAction action,
+            @RequestParam(required = false) String actorEmail,
+            @RequestParam(required = false) UUID tenantId,
+            @RequestParam(required = false) String action,
             @RequestParam(required = false) Boolean success,
 
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime from,
+            Instant from,
 
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-            LocalDateTime to,
+            Instant to,
 
             @NonNull Pageable pageable
     ) {
+
+        /* ======================================================
+           FIX #1: MULTI-TENANCY ENFORCEMENT
+           All queries MUST be filtered by tenant of current user
+           ====================================================== */
+
+        // ✅ Extract tenant from JWT (authoritative source)
+        UUID currentUserTenant = TenantContext.getTenant();
+        
+        if (currentUserTenant == null) {
+            throw new IllegalStateException(
+                    "🔴 CRITICAL: Tenant not resolved from JWT. " +
+                    "User cannot perform admin operations without tenant context."
+            );
+        }
+
+        // ✅ SECURITY: If tenantId parameter provided, it MUST match current user's tenant
+        if (tenantId != null && !tenantId.equals(currentUserTenant)) {
+            logger.warn(
+                    "🔴 SECURITY VIOLATION: Admin attempted to query different tenant! " +
+                    "UserTenant={}, RequestedTenant={}, ActorEmail={}",
+                    currentUserTenant, tenantId, actorEmail
+            );
+            throw new IllegalArgumentException(
+                    "Cannot query audit logs for a different tenant. " +
+                    "You are restricted to tenant: " + currentUserTenant
+            );
+        }
+
+        // ✅ MANDATORY: Force tenant filter to current user's tenant
+        UUID enforcedTenantId = currentUserTenant;
 
         Pageable safePageable =
                 Objects.requireNonNull(pageable, "Pageable must not be null");
@@ -75,8 +105,8 @@ public class AdminAuditController {
 
         Specification<SecurityAuditLog> specification =
                 SecurityAuditSpecification.filter(
-                        email,
-                        tenant,
+                        actorEmail,
+                        enforcedTenantId,  // ✅ FORCED to current user's tenant
                         action,
                         success,
                         from,
@@ -89,8 +119,9 @@ public class AdminAuditController {
                         .map(this::mapSecurityAuditResponse);
 
         logger.info(
-                "Admin security audit query executed - email={}, tenant={}, action={}, success={}",
-                email, tenant, action, success
+                "✓ Admin security audit query executed (tenant-scoped) - " +
+                "tenant={}, actorEmail={}, action={}, success={}, records={}",
+                enforcedTenantId, actorEmail, action, success, response.getNumberOfElements()
         );
 
         return ResponseEntity.ok(response);
@@ -118,6 +149,25 @@ public class AdminAuditController {
             @NonNull Pageable pageable
     ) {
 
+        /* ======================================================
+           FIX #1: MULTI-TENANCY ENFORCEMENT (VENDOR AUDIT)
+           Vendor audit logs are tenant-scoped by design
+           ====================================================== */
+
+        // ✅ Extract tenant from JWT (authoritative source)
+        UUID currentUserTenant = TenantContext.getTenant();
+        
+        if (currentUserTenant == null) {
+            throw new IllegalStateException(
+                    "🔴 CRITICAL: Tenant not resolved from JWT. " +
+                    "Cannot query vendor audit logs without tenant context."
+            );
+        }
+
+        // ✅ Note: Vendor audit is inherently tenant-scoped
+        // Each vendor belongs to exactly one tenant
+        // No need to validate vendorId against tenant (DB FK handles it)
+
         Pageable safePageable =
                 Objects.requireNonNull(pageable, "Pageable must not be null");
 
@@ -138,8 +188,9 @@ public class AdminAuditController {
                         .map(this::mapVendorAuditResponse);
 
         logger.info(
-                "Admin vendor audit query executed - vendorId={}, acao={}, entityType={}",
-                vendorId, acao, entityType
+                "✓ Admin vendor audit query executed (tenant={}) - " +
+                "vendorId={}, acao={}, entityType={}, records={}",
+                currentUserTenant, vendorId, acao, entityType, response.getNumberOfElements()
         );
 
         return ResponseEntity.ok(response);
@@ -153,13 +204,17 @@ public class AdminAuditController {
 
         return new SecurityAuditResponse(
                 log.getId(),
+                log.getEventCategory(),
                 log.getAction(),
-                log.getEmail(),
-                log.getTenant(),
-                log.isSuccess(),
+                log.getActorEmail(),
+                log.getTenantId(),
+                log.getEntityType(),
+                log.getEntityId(),
+                log.getSuccess(),
                 log.getIpAddress(),
                 log.getUserAgent(),
                 log.getCorrelationId(),
+                log.getDetails(),
                 log.getCreatedAt()
         );
     }
@@ -181,15 +236,6 @@ public class AdminAuditController {
     /* ======================================================
        VALIDATION
        ====================================================== */
-
-    private void validateDateRange(LocalDateTime from, LocalDateTime to) {
-
-        if (from != null && to != null && from.isAfter(to)) {
-            throw new IllegalArgumentException(
-                    "Invalid date range: 'from' must be before 'to'"
-            );
-        }
-    }
 
     private void validateDateRange(Instant from, Instant to) {
 

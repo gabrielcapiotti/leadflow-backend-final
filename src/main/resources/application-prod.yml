@@ -1,0 +1,149 @@
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# application-prod.yml — PRODUCTION ENVIRONMENT CONFIGURATION
+#━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+spring:
+  profiles:
+    active: prod
+
+  application:
+    name: leadflow-backend
+
+  # ══════════════════════════════════════════════════════════
+  # DATABASE (Production PostgreSQL)
+  # ══════════════════════════════════════════════════════════
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/leadflowDB}
+    username: ${DATABASE_USER:postgres}
+    password: ${DATABASE_PASSWORD:venusia}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 20000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQL10Dialect
+        format_sql: true
+        use_sql_comments: true
+
+  # ══════════════════════════════════════════════════════════
+  # LOGGING (Production Level)
+  # ══════════════════════════════════════════════════════════
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+logging:
+  level:
+    root: WARN
+    com.leadflow.backend: INFO
+    org.springframework.web: WARN
+    org.springframework.security: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+
+# ══════════════════════════════════════════════════════════
+# APPLICATION CONFIGURATION
+# ══════════════════════════════════════════════════════════
+app:
+  billing:
+    enabled: ${APP_BILLING_ENABLED:true}  # ✅ BILLING ENABLED IN PRODUCTION
+
+  frontend:
+    url: ${APP_FRONTEND_URL:https://app.leadflow.com}
+    success-url: ${APP_FRONTEND_URL:https://app.leadflow.com}/payment-success
+    cancel-url: ${APP_FRONTEND_URL:https://app.leadflow.com}/payment-cancel
+
+  jwt:
+    secret: ${JWT_SECRET:change-me-in-production}
+    expiration: 86400000  # 24 hours
+
+  admin-tenant-id: 00000000-0000-0000-0000-000000000000
+
+# ══════════════════════════════════════════════════════════
+# STRIPE CONFIGURATION (Production Keys)
+# ══════════════════════════════════════════════════════════
+stripe:
+  api:
+    secret-key: ${STRIPE_SECRET_KEY:sk_live_xxxxx}  # Live key required
+    publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_live_xxxxx}
+  webhook:
+    secret: ${STRIPE_WEBHOOK_SECRET:whsec_xxxxx}  # Live webhook secret required
+    path: /stripe/webhook
+    enabled: true
+    timestamp-tolerance-seconds: 300
+    alert-threshold: 5
+    alert-email: ${STRIPE_WEBHOOK_ALERT_EMAIL:ops@leadflow.com}
+  retry:
+    max-attempts: 3
+    initial-delay-ms: 1000
+    multiplier: 2.0
+  timeout:
+    connection-ms: 10000
+    read-ms: 30000
+  events:
+    enabled: true
+    max-age-days: 90
+
+# ══════════════════════════════════════════════════════════
+# ACTUATOR (Health Checks)
+# ══════════════════════════════════════════════════════════
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+# ══════════════════════════════════════════════════════════
+# RESILIENCE4J (Circuit Breaker)
+# ══════════════════════════════════════════════════════════
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        automaticTransitionFromOpenToHalfOpenEnabled: true
+        waitDurationInOpenState: 30000
+        failureRateThreshold: 50.0
+        slowCallRateThreshold: 50.0
+        slowCallDurationThreshold: 2000
+    instances:
+      stripe:
+        baseConfig: default
+        failureRateThreshold: 50
+        waitDurationInOpenState: 30000
+  retry:
+    configs:
+      default:
+        maxAttempts: 3
+        waitDuration: 1000
+    instances:
+      stripe:
+        baseConfig: default
+        maxAttempts: 3
+
+# ══════════════════════════════════════════════════════════
+# SERVER CONFIGURATION
+# ══════════════════════════════════════════════════════════
+server:
+  port: 8081
+  servlet:
+    context-path: /api
+  compression:
+    enabled: true
+    min-response-size: 1024

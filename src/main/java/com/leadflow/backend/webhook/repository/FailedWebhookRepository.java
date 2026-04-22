@@ -11,6 +11,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Repository for managing failed webhook events.
@@ -43,7 +44,7 @@ public interface FailedWebhookRepository extends JpaRepository<FailedWebhookEven
      */
     List<FailedWebhookEvent> findByStatusAndTenantId(
         FailedWebhookEvent.WebhookStatus status,
-        String tenantId
+        UUID tenantId
     );
 
     /**

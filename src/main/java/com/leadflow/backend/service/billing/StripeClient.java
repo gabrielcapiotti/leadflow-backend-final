@@ -57,7 +57,8 @@ public class StripeClient {
             throw new IllegalArgumentException("Email required for Stripe customer creation");
         }
 
-        log.info("Creating/retrieving Stripe customer for tenant={}, email={}", tenantId, email);
+        log.info("Creating/retrieving Stripe customer for tenant={}", tenantId);
+        // NOTE: Email NOT logged - sensitive data
 
         try {
             // Create new customer with metadata

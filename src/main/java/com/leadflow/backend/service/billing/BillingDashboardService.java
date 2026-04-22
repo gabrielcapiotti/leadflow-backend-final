@@ -11,7 +11,6 @@ import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.repository.SubscriptionRepository;
 import com.leadflow.backend.repository.UsageLimitRepository;
 import com.leadflow.backend.repository.PlanRepository;
-import com.leadflow.backend.service.PlanService;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -317,11 +316,12 @@ public class BillingDashboardService {
             // Try to create Stripe customer and subscription
             String stripeSubscriptionId = null;
             String stripeCustomerId = null;
+            String tenantEmail = null;
             
             try {
                 // Create or get Stripe customer using tenant context (if email available)
                 // For now, use a placeholder - in production, get email from user context
-                String tenantEmail = getTenantEmailFromContext();
+                tenantEmail = getTenantEmailFromContext();
                 
                 if (tenantEmail != null && !tenantEmail.isBlank()) {
                     // Create Stripe customer
@@ -340,9 +340,15 @@ public class BillingDashboardService {
                     log.warn("Tenant email not available - Stripe subscription not created for tenant: {}", tenantId);
                 }
             } catch (Exception e) {
-                log.error("Failed to create Stripe subscription for tenant: {}", tenantId, e);
-                // If Stripe fails, still save the local subscription but log the error
-                // In production, consider retrying or queuing this operation
+                log.error("❌ CRITICAL: Failed to create Stripe subscription for tenant: {}", tenantId, e);
+                log.warn("⚠️  Falling back to local subscription - Stripe integration unavailable");
+                log.warn("    Error Type: {}", e.getClass().getSimpleName());
+                // NOTE: Email NOT logged - use audit logs if needed
+                
+                // Mark status as INCOMPLETE since Stripe integration failed
+                subscription.setStatus(Subscription.SubscriptionStatus.INCOMPLETE);
+                subscription.setStripeCustomerId(null);
+                subscription.setStripeSubscriptionId(null);
             }
             
             subscription = subscriptionRepository.save(subscription);

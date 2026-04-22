@@ -9,8 +9,8 @@ import java.util.UUID;
 public class Subscription {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(name = "tenant_id", nullable = false)
     private UUID tenantId;
@@ -120,7 +120,7 @@ public class Subscription {
        GETTERS / SETTERS
        ====================================================== */
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 

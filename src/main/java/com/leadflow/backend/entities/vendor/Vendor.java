@@ -57,15 +57,10 @@ public class Vendor {
     @Column(nullable = false, updatable = false)
     private UUID tenantId;
 
-    @Column(nullable = false)
-    private boolean emailInvalid = false;
-
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
 
     private Instant updatedAt;
-
-    private String schemaName;
 
     @Column(name = "name", nullable = true)
     private String name;
@@ -167,14 +162,6 @@ public class Vendor {
         return updatedAt;
     }
 
-    public boolean isEmailInvalid() {
-        return emailInvalid;
-    }
-
-    public String getSchemaName() {
-        return schemaName;
-    }
-
     public String getName() {
         return name;
     }
@@ -255,10 +242,6 @@ public class Vendor {
         this.updatedAt = updatedAt;
     }
 
-    public void setEmailInvalid(boolean emailInvalid) {
-        this.emailInvalid = emailInvalid;
-    }
-
     public void setStatusAssinatura(String statusAssinatura) {
         this.subscriptionStatus = SubscriptionStatus.valueOf(statusAssinatura.toUpperCase());
     }
@@ -270,10 +253,6 @@ public class Vendor {
     public void setTenantId(UUID tenantId) {
         if (tenantId == null) throw new IllegalArgumentException("tenantId cannot be null");
         this.tenantId = tenantId;
-    }
-
-    public void setSchemaName(String schemaName) {
-        this.schemaName = schemaName;
     }
 
     public void setName(String name) {

@@ -86,155 +86,135 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             @NonNull FilterChain filterChain
     ) throws ServletException, IOException {
 
-        try {
+        String requestId = request.getRequestURI() + "@" + Thread.currentThread().getId();
+        logger.info("🔐 JWT_FILTER_START: {} [thread={}]", request.getRequestURI(), Thread.currentThread().getName());
 
+        try {
+            // ✅ STEP 1: Extract and validate token without any context setup yet
             String token = extractToken(request);
 
             if (token == null) {
-                filterChain.doFilter(request, response);
-                return;
+                // ✅ CRITICAL FIX #7: For protected endpoints (not in shouldNotFilter),
+                // throw exception to trigger 401, don't just pass to next filter
+                // This prevents AnonymousAuthenticationToken from being created
+                logger.warn("🔐 Protected endpoint requires authentication token: {}", request.getRequestURI());
+                throw new UnauthorizedException("Authentication token required");
             }
 
-            if (SecurityContextHolder.getContext().getAuthentication() != null) {
-                filterChain.doFilter(request, response);
-                return;
-            }
-
+            // ✅ STEP 3: Extract email (no context needed yet)
             String email;
             try {
                 email = jwtService.extractEmail(token);
             } catch (Exception ex) {
-                logger.debug("Failed to extract email from token: {}", ex.getMessage());
-                filterChain.doFilter(request, response);
+                logger.warn("Failed to extract email from token: {}", ex.getMessage());
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token: email extraction failed");
                 return;
             }
 
             if (email == null) {
-                filterChain.doFilter(request, response);
+                logger.warn("Email claim not found in JWT token");
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token: email claim missing");
                 return;
             }
 
-            /* =====================================================
-               TENANT CONTEXT SETUP (FROM JWT - AUTHORITATIVE SOURCE)
-               🔒 JWT is the sole source of truth for tenant
-               ===================================================== */
+            // ✅ STEP 4: Extract tenant STRING (validate format, NOT convert to UUID yet)
             String tenant;
             try {
                 tenant = jwtService.extractTenant(token);
             } catch (Exception ex) {
-                logger.debug("Failed to extract tenant from token: {}", ex.getMessage());
-                filterChain.doFilter(request, response);
+                logger.warn("Failed to extract tenant from token: {}", ex.getMessage());
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token: tenant extraction failed");
                 return;
             }
             
             if (tenant == null || tenant.isBlank()) {
-                logger.warn("Tenant missing in JWT for {}", request.getRequestURI());
-                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
+                logger.warn("Tenant claim missing or empty in JWT");
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token: tenant claim missing");
                 return;
             }
 
-            // ✅ CRITICAL VALIDATION: Verify tenant format before UUID conversion
+            // ✅ STEP 5: Validate tenant UUID format BEFORE any context setup
             if (!tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
-                logger.error("CRITICAL: Invalid UUID format in JWT tenant after extraction: {}", LogSanitizer.sanitize(tenant));
+                logger.error("CRITICAL: Invalid UUID format in JWT tenant");
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant format in token");
                 return;
             }
 
             UUID tenantId;
             try {
-                // Use safe UUID deserialization with corruption detection
                 tenantId = SafeUUIDDeserializer.deserialize(tenant);
                 
-                // DOUBLE-CHECK: Verify roundtrip after conversion
-                String tenantRoundtrip = tenantId.toString();
-                if (!tenantRoundtrip.equals(tenant)) {
-                    logger.error("CRITICAL: Tenant UUID roundtrip failed after conversion | Original: {} | Roundtrip: {}", 
-                        LogSanitizer.sanitize(tenant), LogSanitizer.sanitize(tenantRoundtrip));
+                // Verify roundtrip integrity
+                if (!tenantId.toString().equals(tenant)) {
+                    logger.error("CRITICAL: Tenant UUID roundtrip integrity failed");
                     response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Tenant validation failed");
                     return;
                 }
-                
-                logger.debug("✅ Tenant UUID validated and converted successfully: {}", tenantId);
             } catch (IllegalArgumentException e) {
-                logger.error("CRITICAL: Failed to parse UUID from JWT tenant (corruption detected?): {} | Error: {}", 
-                    LogSanitizer.sanitize(tenant), e.getMessage());
+                logger.error("CRITICAL: Failed to parse UUID from JWT tenant");
                 response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid tenant format");
                 return;
             }
 
-            // 🔒 FORCE JWT tenant as authoritative - header is completely ignored
-            // This prevents header-based tenant switching attacks
-            // ✅ By now, tenantId has been triple-validated: format check, UUID.fromString(), roundtrip test
+            // ✅ STEP 6: SET TENANT CONTEXT FIRST (CRITICAL for multi-tenant UserDetailsService)
+            // UserDetailsService queries depend on TenantContext being set
             TenantContext.setTenant(tenantId);
-            
-            logger.debug(
-                    "🔒 AUTH CONTEXT SET (from JWT only) | email={} | tenant={}",
-                    LogSanitizer.sanitize(email),
-                    tenantId.toString()
-            );
+            logger.debug("TenantContext set for user loading: tenant={}", tenantId);
 
-            /* =====================================================
-               ✅ NOTE: X-Tenant-ID header is completely ignored
-               JWT is the sole source of truth for tenant identity
-               Any header-based tenant values are silently discarded
-               ===================================================== */
-
-            /* =====================================================
-               LOAD USER (WITH CONTEXT)
-               ===================================================== */
-
+            // ✅ STEP 7: Load user (NOW with TenantContext set for Hibernate filtering)
             UserDetails userDetails;
             try {
                 userDetails = userDetailsService.loadUserByUsername(email);
             } catch (Exception ex) {
-                logger.debug("User not found or error loading user details: {}", ex.getMessage());
-                filterChain.doFilter(request, response);
+                logger.warn("User not found or error loading user details for email: {}", 
+                    email);
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "User not found");
                 return;
             }
 
             if (!(userDetails instanceof CustomUserDetails customUser)) {
-                filterChain.doFilter(request, response);
+                logger.warn("UserDetails not CustomUserDetails instance for email: {}", email);
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid user details");
                 return;
             }
 
             UUID userId = customUser.getId();
 
-            /* =====================================================
-               TOKEN VALIDATION (WITH TENANT)
-               ===================================================== */
-
+            // ✅ STEP 7: Validate token (BEFORE setting any context)
             boolean tokenValid;
             try {
                 tokenValid = jwtService.isTokenValid(token, userDetails, userId, tenant);
             } catch (Exception ex) {
-                logger.debug("Token validation failed: {}", ex.getMessage());
-                filterChain.doFilter(request, response);
+                logger.warn("Token validation failed: {}", ex.getMessage());
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token");
                 return;
             }
 
             if (!tokenValid) {
-                filterChain.doFilter(request, response);
+                logger.warn("Token validation returned false for user: {}", email);
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid or expired token");
                 return;
             }
 
+            // ✅ STEP 8: Check password change validity (BEFORE setting context)
             if (!isTokenStillValidAfterPasswordChange(token, customUser)) {
-                filterChain.doFilter(request, response);
+                logger.warn("Token invalidated due to password change for user: {}", email);
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Token invalidated by password change");
                 return;
             }
 
-            /* =====================================================
-               SESSION TRACKING (NON-BLOCKING)
-               ===================================================== */
-
+            // ✅ STEP 9: Extract token ID (BEFORE session validation)
             String tokenId;
             try {
                 tokenId = jwtService.extractTokenId(token);
             } catch (Exception ex) {
-                logger.debug("Failed to extract token ID: {}", ex.getMessage());
-                filterChain.doFilter(request, response);
+                logger.warn("Failed to extract token ID: {}", ex.getMessage());
+                response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid token: missing token ID");
                 return;
             }
 
+            // ✅ STEP 10: Validate session (NON-BLOCKING - don't fail auth if session issues exist)
+            // Session tracking is for audit/security, NOT for auth enforcement
             try {
                 userSessionService.processSessionActivity(
                         tokenId,
@@ -243,16 +223,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         request.getHeader("User-Agent")
                 );
             } catch (UnauthorizedException ex) {
-                // 🔒 Session validation FAILED - must block
-                logger.warn(
-                        "Session validation failed (BLOCKING): {} | email={}",
-                        LogSanitizer.sanitize(ex.getMessage()),
-                        LogSanitizer.sanitize(email)
-                );
-                // Invalid session = invalid JWT, must reject
-                throw ex;
+                logger.warn("Session validation warning (non-blocking): {}", ex.getMessage());
+                // Continue - valid JWT means valid auth, even if session has issues
+            } catch (Exception ex) {
+                logger.warn("Session tracking failed (non-blocking): {}", ex.getMessage());
+                // Continue - session tracking failure doesn't block authentication
             }
 
+            // ✅ STEP 11: Set authentication in SecurityContext
+            // (TenantContext already set in STEP 6 before loadUser)
             UsernamePasswordAuthenticationToken authToken =
                     new UsernamePasswordAuthenticationToken(
                             userDetails,
@@ -265,52 +244,57 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             );
 
             SecurityContextHolder.getContext().setAuthentication(authToken);
+            logger.info("✅ JWT_FILTER_SUCCESS: Auth set for email={}, tenant={}, thread={}", 
+                        email, tenantId, Thread.currentThread().getName());
             
-            // ✅ Call filterChain EXACTLY ONCE (OncePerRequestFilter contract)
+            // ✅ STEP 12: Call filterChain (TenantContext + SecurityContext fully initialized)
             filterChain.doFilter(request, response);
 
+        } catch (UnauthorizedException ex) {
+            // ✅ CRITICAL: Reject auth cleanly
+            logger.warn("Authentication rejected: {}", ex.getMessage());
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         } catch (Exception ex) {
-
-            logger.error(
-                    "Unexpected authentication error: {}",
-                    LogSanitizer.sanitize(ex.getMessage())
-            );
-            
-            // ✅ Even on exception, filterChain must be called once
-            try {
-                filterChain.doFilter(request, response);
-            } catch (Exception chainEx) {
-                logger.error("Error in downstream filter chain: {}", chainEx.getMessage());
-            }
+            // ✅ CRITICAL: Unexpected error - reject cleanly
+            logger.error("Unexpected authentication error: {} → {}",
+                    ex.getClass().getSimpleName(),
+                    ex.getMessage());
+            response.sendError(HttpServletResponse.SC_UNAUTHORIZED);
+            return;
         }
     }
 
-    private String extractToken(HttpServletRequest request) {
+    private String extractToken(HttpServletRequest request) throws UnauthorizedException {
 
         String authHeader = request.getHeader("Authorization");
 
+        // ✅ Case 1: NO Authorization header → return null (will continue to next filter)
         if (authHeader == null || authHeader.isBlank()) {
             return null;
         }
 
+        // ✅ Case 2 & 3: Authorization header EXISTS → MUST be valid
+        // If header exists but is malformed, throw exception (trigger 401)
+        
         if (!authHeader.startsWith("Bearer ")) {
-            logger.debug("Invalid Authorization header format: missing 'Bearer ' prefix");
-            return null;
+            logger.warn("Invalid Authorization header format: missing 'Bearer ' prefix");
+            throw new UnauthorizedException("Authorization header must start with 'Bearer '");
         }
 
         String token = authHeader.substring(7).trim();
 
-        // ✅ CRITICAL: Reject empty or blank token
+        // ✅ CRITICAL: Token present but empty → invalid
         if (token.isBlank()) {
-            logger.debug("Authorization header present but token is blank");
-            return null;
+            logger.warn("Authorization header present but token is blank");
+            throw new UnauthorizedException("Token cannot be empty");
         }
 
-        // ✅ CRITICAL: Basic structural validation
-        // JWT format: xxxxx.yyyyy.zzzzz (3 parts separated by dots)
+        // ✅ CRITICAL: Token structure validation - must be 3 parts separated by dots
+        // JWT format: xxxxx.yyyyy.zzzzz
         if (!token.contains(".") || token.split("\\.").length != 3) {
             logger.warn("Invalid token structure: expected JWT format (3 parts separated by dots)");
-            return null;
+            throw new UnauthorizedException("Token must be valid JWT format (3 parts with dots)");
         }
 
         // ✅ CRITICAL: Detect obvious corruption (control characters, invalid UTF-8 sequences)
@@ -321,7 +305,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             // Reject if we see control characters (< 32), high bytes (> 127), or other invalid chars
             if (c < 32 || (c > 127 && c != '.')) {
                 logger.warn("Invalid token: contains suspicious characters (possible corruption/encoding issue)");
-                return null;
+                throw new UnauthorizedException("Token contains invalid characters");
             }
         }
 

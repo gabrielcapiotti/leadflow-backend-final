@@ -208,6 +208,9 @@ $failedWebhook1Payload = @{
             amount_paid = 0
             period_end = [int64]([DateTimeOffset]::Now.AddMonths(1).ToUnixTimeSeconds())
             status = "failed"
+            metadata = @{
+                tenantId = $global:TenantId
+            }
         }
     }
 } | ConvertTo-Json -Compress
@@ -245,6 +248,9 @@ $failedWebhook2Payload = @{
             customer = "cus_fail_test_2"
             status = "canceled"
             cancel_at = [int64]([DateTimeOffset]::Now.ToUnixTimeSeconds())
+            metadata = @{
+                tenantId = $global:TenantId
+            }
         }
     }
 } | ConvertTo-Json -Compress

@@ -91,7 +91,7 @@ public class ResumoService {
                                   "nivelInteresse": 0-100,
                                   "probabilidadeFechamento": 0-100,
                                                                                                                                         "recomendacao": "...",
-                                                                                                                                        "stageSugerido": "NOVO|CONTATO|PROPOSTA|FECHADO|PERDIDO"
+                                                                                                                                        "stageSugerido": "NEW|CONTACT|NEGOTIATION|CLOSED|LOST"
                                 }
 
                                 Conversa:
@@ -175,8 +175,8 @@ public class ResumoService {
                 }
 
                 int stageBonus = switch (lead.getStage()) {
-                        case PROPOSTA -> 20;
-                        case CONTATO -> 10;
+                        case NEGOTIATION -> 20;
+                        case CONTACT -> 10;
                         default -> 0;
                 };
 
@@ -203,7 +203,7 @@ public class ResumoService {
 
                 boolean hot = lead.getScore() >= 85
                                 || probFechamento >= 80
-                                || (lead.getStage() == LeadStage.PROPOSTA
+                                || (lead.getStage() == LeadStage.NEGOTIATION
                                 && nivelInteresse >= 75);
 
                 if (!hot) {

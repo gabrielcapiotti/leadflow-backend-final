@@ -122,20 +122,17 @@ public class LoginAuditService {
        INTERNAL
        ====================================================== */
 
-    private UUID resolveTenantId(String tenantSchema) {
+    private UUID resolveTenantId(String tenantId) {
 
-        if (tenantSchema == null || tenantSchema.isBlank()) {
+        if (tenantId == null || tenantId.isBlank()) {
             throw new UnauthorizedException("Tenant not resolved");
         }
 
-        return tenantRepository
-                .findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenantSchema.trim())
-                .map(Tenant::getId)
-                .orElseThrow(() ->
-                        new UnauthorizedException(
-                                "Invalid tenant"
-                        )
-                );
+        try {
+            return java.util.UUID.fromString(tenantId.trim());
+        } catch (IllegalArgumentException e) {
+            throw new UnauthorizedException("Invalid tenant format");
+        }
     }
 
     private String normalizeEmail(String email) {

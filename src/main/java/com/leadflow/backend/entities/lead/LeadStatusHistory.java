@@ -2,8 +2,10 @@ package com.leadflow.backend.entities.lead;
 
 import com.leadflow.backend.entities.enums.LeadStatus;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.Filter;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
@@ -12,11 +14,15 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "lead_status_history",
+        schema = "public",
         indexes = {
+                @Index(name = "idx_lsh_tenant_id", columnList = "tenant_id"),
                 @Index(name = "idx_lsh_lead_id", columnList = "lead_id"),
+                @Index(name = "idx_lsh_lead_tenant", columnList = "lead_id, tenant_id"),
                 @Index(name = "idx_lsh_lead_changed_at", columnList = "lead_id,changed_at")
         }
 )
+@Filter(name = "tenantFilter", condition = "tenant_id = :tenantId")
 public class LeadStatusHistory {
 
     /* ======================================================
@@ -27,10 +33,16 @@ public class LeadStatusHistory {
     @Column(nullable = false, updatable = false)
     private UUID id;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @PrePersist
     public void prePersist() {
         if (id == null) {
             id = UUID.randomUUID();
+        }
+        if (tenantId == null) {
+            tenantId = TenantContext.requireTenant();
         }
     }
 
@@ -100,6 +112,10 @@ public class LeadStatusHistory {
         return id;
     }
 
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
     public Lead getLead() {
         return lead;
     }
@@ -114,6 +130,10 @@ public class LeadStatusHistory {
 
     public User getChangedBy() {
         return changedBy;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     /* ======================================================

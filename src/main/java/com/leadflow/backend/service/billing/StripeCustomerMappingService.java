@@ -102,7 +102,7 @@ public class StripeCustomerMappingService {
     public StripeCustomer createOrUpdateMapping(
         UUID tenantId,
         String stripeCustomerId,
-        Long subscriptionId) {
+        UUID subscriptionId) {
 
         // Validate inputs
         if (tenantId == null) {

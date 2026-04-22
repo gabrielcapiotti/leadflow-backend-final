@@ -34,6 +34,23 @@ function HandleError($status, $content, $expected, $name) {
     $global:failedTests++
 }
 
+# ✅ PROFISSIONAL: Builder de headers com isolamento total
+# Garante imutabilidade lógica e zero side-effects entre requests
+function New-Headers {
+    param([string]$token = $null)
+    $hdrs = @{"Content-Type" = "application/json"; "Accept" = "application/json"}
+    if ($token) { $hdrs["Authorization"] = "Bearer $token" }
+    return $hdrs
+}
+
+# ✅ Deep clone: Evitar qualquer compartilhamento de referência
+function Clone-Headers {
+    param([hashtable]$headers)
+    $cloned = @{}
+    foreach ($key in $headers.Keys) { $cloned[$key] = [string]$headers[$key] }
+    return $cloned
+}
+
 function TestAPI {
     param(
         $name,
@@ -51,19 +68,27 @@ function TestAPI {
     Write-Host "`nTEST $($global:totalTests): $name" -ForegroundColor $cyan
 
     try {
+        # ✅ Deep clone de headers por request (isolamento total)
+        $requestHeaders = Clone-Headers $headers
+        
         $params = @{
             Uri = $url
             Method = $method
-            Headers = $headers
+            Headers = $requestHeaders
             ErrorAction = "Stop"
         }
 
+        # 🔥 CRÍTICO: NUNCA enviar body null
+        # Se não tem body, enviar objeto vazio {}
         if ($body) {
             $params["Body"] = ($body | ConvertTo-Json -Depth 10)
+        } else {
+            $params["Body"] = "{}"  # ← Força JSON vazio
         }
 
         $response = Invoke-WebRequest -UseBasicParsing @params
         $status = $response.StatusCode
+
 
         # Suporta array de status esperados (ex: @(200, 201))
         $statusMatches = $false
@@ -195,6 +220,7 @@ $testPassword = "AITest@123Pass"
 
 $headers = @{
     "Content-Type" = "application/json"
+    "Accept" = "application/json"
 }
 
 # Try register first - aceita 200 ou 201 (comportamento varia entre versões)
@@ -258,46 +284,70 @@ Write-Host "  ✓ Lead criado com ID: $leadId" -ForegroundColor Green
 Write-Host "  ✓ TenantId validado: $leadTenantId" -ForegroundColor Green
 
 # ========================================
+# CREATE VENDOR LEAD - REAL (CRÍTICO!)
+# ========================================
+Header "CREATE VENDOR LEAD (REAL - CRÍTICO)"
+
+# 🔥 Criar VendorLead a partir do Lead criado
+# AI Chat precisa de vendorLeadId, não leadId
+$vendorLeadResp = TestAPI "Create Vendor Lead" "POST" "$baseUrl/vendor-leads/leads" `
+    @{nomeCompleto="Teste AI"; whatsapp="11999999999"; tipoConsorcio="VEICULO"; valorCredito="100000"; urgencia="quero_fechar"} `
+    201 $headers
+
+if (-not $vendorLeadResp) {
+    Write-Host "[ERROR] Falha ao criar VendorLead" -ForegroundColor Red
+    exit 1
+}
+
+$vendorLeadData = $vendorLeadResp | ConvertFrom-Json
+$vendorLeadId = $vendorLeadData.id
+
+if (-not $vendorLeadId) {
+    Write-Host "[ERROR] VendorLead criado mas sem ID" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "  ✓ VendorLead criado com ID: $vendorLeadId" -ForegroundColor Green
+Write-Host "  ✓ Pronto para AI endpoints" -ForegroundColor Green
+
+# ========================================
 # AI ENDPOINTS - REAL TESTS
 # ========================================
 Header "AI ENDPOINTS (REAL)"
 
-# TEST 1: Chat endpoint (uses request body)
+# TEST 1: Chat endpoint (uses vendorLeadId)
 TestAPI -name "POST /ai/chat" -method "POST" -url "$baseUrl/ai/chat" `
-    -body @{leadId=$leadId; message="Qual é a taxa de juros para financiamento de veículo?"} `
+    -body @{vendorLeadId=$vendorLeadId; message="Qual é a taxa de juros para financiamento de veículo?"} `
     -expectedStatus @(200, 201) -headers $headers -requiredFields @("response") -allow403 $true
 
-# TEST 2: Lead Summary (query parameter)
-TestAPI -name "POST /ai/lead-summary" -method "POST" -url "$baseUrl/ai/lead-summary?leadId=$leadId" `
-    -body $null `
+# TEST 2: Lead Summary (using vendorLeadId)
+TestAPI -name "POST /ai/lead-summary" -method "POST" -url "$baseUrl/ai/lead-summary" `
+    -body @{vendorLeadId=$vendorLeadId} `
     -expectedStatus @(200, 201) -headers $headers -requiredFields @("summary") -allow403 $true
 
-# TEST 3: Title Suggestion (query parameters)
-$titleUrl = "$baseUrl/ai/title-suggestion?leadId=$leadId&context=" + [System.Uri]::EscapeDataString("Cliente de alto potencial")
-TestAPI -name "POST /ai/title-suggestion" -method "POST" -url $titleUrl `
-    -body $null `
+# TEST 3: Title Suggestion (using vendorLeadId)
+TestAPI -name "POST /ai/title-suggestion" -method "POST" -url "$baseUrl/ai/title-suggestion" `
+    -body @{vendorLeadId=$vendorLeadId; context="Cliente de alto potencial"} `
     -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-# TEST 4: Refine Message (query parameter)
-$refineUrl = "$baseUrl/ai/refine-message?message=" + [System.Uri]::EscapeDataString("oi, to interessado em credito")
-TestAPI -name "POST /ai/refine-message" -method "POST" -url $refineUrl `
-    -body $null `
+# TEST 4: Refine Message (using BODY - standardized)
+TestAPI -name "POST /ai/refine-message" -method "POST" -url "$baseUrl/ai/refine-message" `
+    -body @{message="oi, to interessado em credito"} `
     -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-# TEST 5: Sentiment Analysis (query parameter)
-TestAPI -name "POST /ai/sentiment-analysis" -method "POST" -url "$baseUrl/ai/sentiment-analysis?leadId=$leadId" `
-    -body $null `
+# TEST 5: Sentiment Analysis (using vendorLeadId)
+TestAPI -name "POST /ai/sentiment-analysis" -method "POST" -url "$baseUrl/ai/sentiment-analysis" `
+    -body @{vendorLeadId=$vendorLeadId} `
     -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-# TEST 6: Classify Lead (query parameter)
-TestAPI -name "POST /ai/classify-lead" -method "POST" -url "$baseUrl/ai/classify-lead?leadId=$leadId" `
-    -body $null `
+# TEST 6: Classify Lead (using vendorLeadId)
+TestAPI -name "POST /ai/classify-lead" -method "POST" -url "$baseUrl/ai/classify-lead" `
+    -body @{vendorLeadId=$vendorLeadId} `
     -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
-# TEST 7: Generate Response (query parameters)
-$genUrl = "$baseUrl/ai/generate-response?leadId=$leadId&prompt=" + [System.Uri]::EscapeDataString("Qual é o valor mínimo para solicitar?")
-TestAPI -name "POST /ai/generate-response" -method "POST" -url $genUrl `
-    -body $null `
+# TEST 7: Generate Response (using vendorLeadId)
+TestAPI -name "POST /ai/generate-response" -method "POST" -url "$baseUrl/ai/generate-response" `
+    -body @{vendorLeadId=$vendorLeadId; prompt="Qual é o valor mínimo para solicitar?"} `
     -expectedStatus @(200, 201) -headers $headers -allow403 $true
 
 # ========================================
@@ -306,7 +356,7 @@ TestAPI -name "POST /ai/generate-response" -method "POST" -url $genUrl `
 Header "SECURITY TEST (REAL)"
 
 TestAPI "No Auth" "POST" "$baseUrl/ai/chat" `
-    @{leadId=$leadId; message="teste"} `
+    @{vendorLeadId=$vendorLeadId; message="teste"} `
     401 @{"Content-Type"="application/json"}
 
 # ========================================
@@ -315,7 +365,7 @@ TestAPI "No Auth" "POST" "$baseUrl/ai/chat" `
 Header "VALIDATION TEST (REAL)"
 
 TestAPI "Empty Message" "POST" "$baseUrl/ai/chat" `
-    @{leadId=$leadId; message=""} `
+    @{vendorLeadId=$vendorLeadId; message=""} `
     400 $headers
 
 # ========================================

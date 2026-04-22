@@ -1,5 +1,6 @@
 package com.leadflow.backend.security;
 
+import com.leadflow.backend.config.BillingConfigService;
 import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
 import com.leadflow.backend.multitenancy.context.TenantContext;
@@ -7,7 +8,6 @@ import com.leadflow.backend.repository.SubscriptionRepository;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
@@ -22,13 +22,11 @@ public class SubscriptionGuard {
     private static final Logger log = LoggerFactory.getLogger(SubscriptionGuard.class);
 
     private final SubscriptionRepository subscriptionRepository;
+    private final BillingConfigService billingConfigService;
 
-    @Value("${app.billing.enabled:false}")
-    private boolean billingEnabled;
-
-    public SubscriptionGuard(SubscriptionRepository subscriptionRepository) {
-
+    public SubscriptionGuard(SubscriptionRepository subscriptionRepository, BillingConfigService billingConfigService) {
         this.subscriptionRepository = Objects.requireNonNull(subscriptionRepository);
+        this.billingConfigService = Objects.requireNonNull(billingConfigService);
     }
 
     /* ======================================================
@@ -38,7 +36,7 @@ public class SubscriptionGuard {
     public SubscriptionAccessLevel resolveAccess() {
 
         // 🔥 HARD BYPASS: evita QUALQUER dependência de DB
-        if (!billingEnabled) {
+        if (billingConfigService.isDisabled()) {
             log.debug("Billing disabled → FULL access granted");
             return SubscriptionAccessLevel.FULL;
         }

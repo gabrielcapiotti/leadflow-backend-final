@@ -1,44 +1,38 @@
 /* ======================================================
-   VENDOR RISK ALERTS
-   Tracks fraud or risk alerts for vendors
+   V34__create_vendor_risk_alerts.sql
+   TENANT SCHEMA
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.vendor_risk_alerts (
+CREATE TABLE vendor_risk_alerts (
 
-    id UUID PRIMARY KEY,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
     vendor_id UUID NOT NULL,
 
     score INTEGER NOT NULL,
 
-    risk_level VARCHAR(20) NOT NULL,
+    risk_level VARCHAR(20) NOT NULL
+        CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')),
 
-    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     resolved BOOLEAN NOT NULL DEFAULT FALSE,
 
     CONSTRAINT fk_vendor_risk_alerts_vendor
         FOREIGN KEY (vendor_id)
-        REFERENCES public.vendors(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT chk_vendor_risk_level
-        CHECK (risk_level IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL'))
+        REFERENCES vendors(id)
+        ON DELETE CASCADE
 );
-
 
 /* ======================================================
    INDEXES
    ====================================================== */
 
--- Lookup unresolved alerts for a vendor
-CREATE INDEX IF NOT EXISTS idx_vendor_risk_alerts_vendor_resolved
-    ON public.vendor_risk_alerts (vendor_id, resolved);
+CREATE INDEX idx_vendor_risk_alerts_vendor_resolved
+    ON vendor_risk_alerts (vendor_id, resolved);
 
--- Timeline queries
-CREATE INDEX IF NOT EXISTS idx_vendor_risk_alerts_created
-    ON public.vendor_risk_alerts (created_at DESC);
+CREATE INDEX idx_vendor_risk_alerts_created
+    ON vendor_risk_alerts (created_at DESC);
 
--- Filtering by risk level
-CREATE INDEX IF NOT EXISTS idx_vendor_risk_alerts_risk_level
-    ON public.vendor_risk_alerts (risk_level);
+CREATE INDEX idx_vendor_risk_alerts_risk_level
+    ON vendor_risk_alerts (risk_level);

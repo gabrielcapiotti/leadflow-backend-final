@@ -1,45 +1,48 @@
 /* ======================================================
-   LEAD STATUS HISTORY
-   Audit trail of lead status changes
+   V26__create_lead_status_history.sql
+   TENANT SCHEMA
    ====================================================== */
 
-CREATE TABLE IF NOT EXISTS public.lead_status_history (
+CREATE TABLE lead_status_history (
 
-    id UUID NOT NULL,
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+    tenant_id UUID NOT NULL,
 
     lead_id UUID NOT NULL,
 
-    status VARCHAR(30) NOT NULL,
+    status VARCHAR(30) NOT NULL
+        CHECK (status IN ('NEW', 'CONTACTED', 'QUALIFIED', 'CLOSED')),
 
     changed_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     changed_by UUID,
 
-    CONSTRAINT pk_lead_status_history PRIMARY KEY (id),
-
     CONSTRAINT fk_lead_status_history_lead
         FOREIGN KEY (lead_id)
-        REFERENCES public.leads(id)
-        ON DELETE CASCADE,
-
-    CONSTRAINT chk_lead_status_history_status
-        CHECK (status IN ('NEW', 'CONTACTED', 'QUALIFIED', 'CLOSED'))
+        REFERENCES leads(id)
+        ON DELETE CASCADE
 );
-
 
 /* ======================================================
    INDEXES
    ====================================================== */
 
-CREATE INDEX IF NOT EXISTS idx_lsh_lead_id
-    ON public.lead_status_history (lead_id);
+CREATE INDEX idx_lsh_tenant_id
+    ON lead_status_history (tenant_id);
 
-CREATE INDEX IF NOT EXISTS idx_lsh_lead_changed_at
-    ON public.lead_status_history (lead_id, changed_at DESC);
+CREATE INDEX idx_lsh_lead_id
+    ON lead_status_history (lead_id);
 
-CREATE INDEX IF NOT EXISTS idx_lsh_status
-    ON public.lead_status_history (status);
+CREATE INDEX idx_lsh_lead_tenant
+    ON lead_status_history (lead_id, tenant_id);
 
-CREATE INDEX IF NOT EXISTS idx_lsh_changed_by
-    ON public.lead_status_history (changed_by);
+CREATE INDEX idx_lsh_lead_changed_at
+    ON lead_status_history (lead_id, changed_at DESC);
+
+CREATE INDEX idx_lsh_status
+    ON lead_status_history (status);
+
+CREATE INDEX idx_lsh_changed_by
+    ON lead_status_history (changed_by);

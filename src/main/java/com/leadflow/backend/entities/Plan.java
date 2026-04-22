@@ -2,14 +2,15 @@ package com.leadflow.backend.entities;
 
 import jakarta.persistence.*;
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
 @Table(name = "plans")
 public class Plan {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
 
     @Column(nullable = false, unique = true, length = 50)
     private String code;
@@ -28,6 +29,12 @@ public class Plan {
 
     @Column(nullable = false)
     private Boolean active;
+
+    @Column(name = "stripe_product_id", length = 255)
+    private String stripeProductId;
+
+    @Column(name = "stripe_price_id", length = 255)
+    private String stripePriceId;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -51,11 +58,11 @@ public class Plan {
 
     // Getters and Setters
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 
-    public void setId(Long id) {
+    public void setId(UUID id) {
         this.id = id;
     }
 
@@ -105,6 +112,22 @@ public class Plan {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public String getStripeProductId() {
+        return stripeProductId;
+    }
+
+    public void setStripeProductId(String stripeProductId) {
+        this.stripeProductId = stripeProductId;
+    }
+
+    public String getStripePriceId() {
+        return stripePriceId;
+    }
+
+    public void setStripePriceId(String stripePriceId) {
+        this.stripePriceId = stripePriceId;
     }
 
     public LocalDateTime getCreatedAt() {

@@ -1,10 +1,13 @@
 package com.leadflow.backend.controller.auth;
 
 import com.leadflow.backend.dto.auth.*;
+import com.leadflow.backend.dto.billing.CheckoutRequest;
 import com.leadflow.backend.entities.user.User;
+import com.leadflow.backend.exception.DuplicateEmailException;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.repository.tenant.TenantRepository;
+import com.leadflow.backend.repository.user.UserRepository;
 import com.leadflow.backend.security.CustomUserDetails;
 import com.leadflow.backend.security.exception.UnauthorizedException;
 import com.leadflow.backend.security.jwt.JwtService;
@@ -12,11 +15,8 @@ import com.leadflow.backend.security.jwt.JwtToken;
 import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
-import com.leadflow.backend.service.vendor.UsageService;
-import com.leadflow.backend.service.vendor.SubscriptionService;
-import com.leadflow.backend.entities.Plan;
+import com.leadflow.backend.service.billing.StripeService;
 import com.leadflow.backend.entities.Tenant;
-import com.leadflow.backend.repository.PlanRepository;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -51,12 +51,9 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
-    private final TenantRepository tenantRepository;
-
-    private final UsageService usageService;
-    private final PlanRepository planRepository;
+    private final UserRepository userRepository;
     private final AuthenticationManager authenticationManager;
-    private final SubscriptionService subscriptionService;
+    private final StripeService stripeService;
 
     public AuthController(
             AuthService authService,
@@ -64,22 +61,18 @@ public class AuthController {
             RefreshTokenService refreshTokenService,
             UserSessionService userSessionService,
             TenantService tenantService,
-            TenantRepository tenantRepository,
-            UsageService usageService,
-            PlanRepository planRepository,
+            UserRepository userRepository,
             AuthenticationManager authenticationManager,
-            SubscriptionService subscriptionService
+            StripeService stripeService
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
-        this.tenantRepository = tenantRepository;
-        this.usageService = usageService;
-        this.planRepository = planRepository;
+        this.userRepository = userRepository;
         this.authenticationManager = authenticationManager;
-        this.subscriptionService = subscriptionService;
+        this.stripeService = stripeService;
     }
 
     /* ======================================================
@@ -92,31 +85,29 @@ public class AuthController {
             HttpServletRequest httpRequest
     ) {
 
-        // 🔧 FIX: Separate tenantId (UUID) from schemaName (schema identifier)
-        // - tenantId: UUID from Tenant table - primary identifier for user
-        // - schemaName: "t_" + UUID without hyphens - valid PostgreSQL schema name
-        String schemaName = "t_" + UUID.randomUUID().toString().replace("-", "");
-        
-        log.info("Generating new tenant for registration: schema={} | Email: {}", 
-                 schemaName, maskEmail(request.email()));
+        log.info("User registration attempt: {}", maskEmail(request.email()));
 
-        // ✅ CRITICAL FIX: Create Tenant record in database and GET its actual ID
-        // The Tenant.id from DB is the TRUE tenantId that must be stored in User.tenantId
+        // ✅ VALIDATION 1: Check if email is already registered (globally, not per-tenant)
+        if (userRepository.existsByEmailIgnoreCaseAndDeletedAtIsNull(request.email())) {
+            log.warn("Registration rejected: email already exists (duplicate user prevention): {}", maskEmail(request.email()));
+            throw new DuplicateEmailException(request.email());
+        }
+
+        // Create tenant with unique name based on UUID
+        String tenantName = "tenant-" + UUID.randomUUID().toString().substring(0, 8);
+        
         UUID tenantId;
         try {
-            Tenant createdTenant = tenantService.createTenant(schemaName);
+            Tenant createdTenant = tenantService.createTenant(tenantName);
             tenantId = createdTenant.getId();
-            log.info("Tenant created: id={}, schema={}", tenantId, schemaName);
+            log.info("Tenant created: id={}, name={}", tenantId, tenantName);
         } catch (IllegalArgumentException e) {
-            // Schema validation failed - let it propagate as BAD_REQUEST (400)
-            log.error("Schema validation failed during tenant creation: {}", e.getMessage());
+            log.error("Invalid tenant name during creation: {}", e.getMessage());
             throw e;
         } catch (Exception e) {
             log.error("CRITICAL: Tenant creation failed during registration: {}", e.getMessage(), e);
             throw new IllegalStateException("Tenant creation failed - registration incomplete", e);
         }
-
-        log.info("User registration attempt: {}", maskEmail(request.email()));
 
         User user = authService.registerUser(
                 request.name(),
@@ -125,49 +116,43 @@ public class AuthController {
                 tenantId
         );
 
-        // ✅ VENDOR criado no AuthService.registerUser() — sem duplicação aqui
+        // 🔥 ARCHITECTURAL DECISION: STRIPE CHECKOUT IS MANDATORY
+        // 
+        // DO NOT:
+        //   • Create subscription locally before payment
+        //   • Create Stripe customer without payment method
+        //   • Attempt to create subscription without payment
+        //   • Silently catch errors (billing CANNOT be optional)
+        //
+        // INSTEAD:
+        //   1. User registered with new tenant (DB only, no Stripe yet)
+        //   2. Return checkoutUrl for user to complete payment via Stripe Checkout
+        //   3. Webhook handles checkout.session.completed → provisioningService
+        //   4. Full provisioning happens via webhook (subscription + features + usage)
+        
+        log.info("✅ User registered, requiring billing setup via Stripe Checkout: {}", maskEmail(request.email()));
+        
+        // Create Stripe Checkout Session (MANDATORY)
+        String checkoutUrl;
         try {
-
-            // 🔥 CREATE DEFAULT SUBSCRIPTION (novo)
-            try {
-                subscriptionService.createDefaultSubscription(tenantId);
-                log.info("Default subscription created successfully for tenant: {}", tenantId);
-            } catch (Exception e) {
-                log.warn("Subscription creation failed: {}", e.getMessage());
-                // Nao interrompe o fluxo
-            }
-
-            // ✅ Inicializar usage com plano padrão
-            try {
-                Plan defaultPlan = planRepository.findByActiveTrue()
-                        .stream()
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException("No active plan found"));
-                
-                // 🔥 CRÍTICO: vendor.id = tenantId (alinhamento de identidade)
-                // Use UUID directly without String conversion to avoid corruption
-                UUID vendorId = user.getTenantId();
-                usageService.initializeUsage(vendorId, defaultPlan);
-                log.info("✓ Usage initialized successfully for vendor: {}", vendorId);
-            } catch (Exception e) {
-                log.warn("⚠️  Usage initialization failed (non-critical): {}", e.getMessage());
-                // Não interrompe o fluxo - vendor foi criado OK
-            }
+            var checkoutSession = stripeService.createCheckoutSession(request.email(), tenantId);
+            checkoutUrl = checkoutSession.getUrl();
+            log.info("✅ Checkout session created: url={}, tenantId={}", checkoutUrl, tenantId);
         } catch (Exception e) {
-            log.error("❌ Vendor creation failed during registration: {}", e.getMessage(), e);
-            throw new IllegalStateException("Vendor initialization failed - registration incomplete", e);
+            log.error("❌ CRITICAL: Stripe checkout creation FAILED - vendor cannot proceed: {}", e.getMessage(), e);
+            throw new IllegalStateException("Billing setup failed - cannot complete registration without Stripe checkout", e);
         }
-
-        // ✅ CRITICAL FIX: Pass tenantId (UUID) directly to generateToken
-        // This ensures type safety and prevents String manipulation
+        
+        // ✅ Generate JWT tokens for the newly registered user
+        // User can authenticate and wait for payment completion
         JwtToken accessToken = jwtService.generateToken(user, tenantId);
 
         try {
             createSession(user.getId(), tenantId, accessToken, httpRequest);
-            log.info("✓ Session created successfully for new user: {} (tenantId={})", user.getId(), tenantId);
+            log.info("✅ Session created for new user (awaiting payment)");
         } catch (Exception e) {
-            log.error("❌ CRITICAL: Session creation failed during registration for user: {} - {}", 
-                user.getId(), e.getMessage(), e);
+            log.error("❌ CRITICAL: Session creation failed during registration - {}", 
+                e.getMessage(), e);
             throw new IllegalStateException("Session creation failed - registration incomplete", e);
         }
 
@@ -177,12 +162,9 @@ public class AuthController {
                 httpRequest.getHeader("User-Agent")
         );
 
-        // ✅ CRITICAL: Return the TRUE tenantId (UUID), not schemaName
-        // schemaName is "t_...", but X-Tenant-ID header expects UUID
-        // Vendor.tenantId is stored as UUID string in database
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(new AuthResponse(accessToken.getToken(), refreshToken, tenantId.toString()));
+                .body(new AuthResponse(accessToken.getToken(), refreshToken, tenantId.toString(), checkoutUrl));
     }
 
     /* ======================================================
@@ -226,19 +208,19 @@ public class AuthController {
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
             User user = userDetails.getUser();
 
-            log.info("User authenticated successfully via Spring Security: {}", user.getId());
+            log.info("User authenticated successfully via Spring Security");
 
             // ✅ CRITICAL FIX: Use user.getTenantId() DIRECTLY (UUID from authenticated user record)
             // SINGLE SOURCE OF TRUTH - no header, no conversion
             UUID tenantIdFromUser = user.getTenantId();
             
             if (tenantIdFromUser == null) {
-                log.error("CRITICAL: User {} has NULL tenantId", user.getId());
+                log.error("CRITICAL: User has NULL tenantId");
                 throw new IllegalStateException("User tenant association is null");
             }
             
             UUID tenantUUID = tenantIdFromUser;
-            log.debug("Tenant identity: userId={}, tenantId={}", user.getId(), tenantUUID);
+            log.debug("Tenant identity resolved (sanitized)");
             
             JwtToken accessToken = jwtService.generateToken(user, tenantUUID);
             
@@ -250,14 +232,14 @@ public class AuthController {
                 // Re-fetch to validate consistency before session creation
                 UUID validateTenantId = user.getTenantId();
                 if (!validateTenantId.equals(tenantIdFromUser)) {
-                    log.error("CRITICAL: Tenant ID mismatch! {} vs {}", tenantIdFromUser, validateTenantId);
+                    log.error("CRITICAL: Tenant ID mismatch detected");
                     throw new IllegalStateException("Tenant validation failed");
                 }
                 
                 createSession(user.getId(), tenantIdFromUser, accessToken, httpRequest);
-                log.info("Session created for user: {} (tenantId={})", user.getId(), tenantIdFromUser);
+                log.info("Session created successfully (sanitized)");
             } catch (Exception e) {
-                log.error("❌ CRITICAL: Session creation failed for user={}. Error={}", user.getId(), e.getMessage(), e);
+                log.error("❌ CRITICAL: Session creation failed. Error={}", e.getMessage(), e);
                 throw e;  // Re-throw to be handled by GlobalExceptionHandler
             }
 
@@ -270,7 +252,7 @@ public class AuthController {
             log.info("User {} logged in successfully", user.getId());
 
             return ResponseEntity.ok(
-                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdFromUser.toString())
+                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdFromUser.toString(), null)
             );
         } catch (Exception e) {
             log.error("❌ Login failed for user {}: {}", maskEmail(request.email()), e.getMessage());
@@ -403,7 +385,8 @@ public class AuthController {
         // It should NOT modify the session in the database
         // Session persists independently - only login creates, logout destroys
         
-        log.debug("Generating new JWT token for user: {}", result.user().getEmail());
+        log.debug("Generating new JWT token - hash: {}", Integer.toHexString(result.user().getId().hashCode()));
+        // NOTE: Email and userId NOT logged - sensitive data
         
         // Generate NEW JWT with NEW tokenId (generates fresh identity)
         JwtToken newAccessToken = jwtService.generateTokenForRefresh(
@@ -431,7 +414,7 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(
-                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenantId.toString())
+                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenantId.toString(), null)
         );
     }
 
@@ -526,7 +509,7 @@ public class AuthController {
             throw new UnauthorizedException("Tenant ID is required");
         }
 
-        UUID tenantId = parseAndValidateTenantId(tenant); // Converts String (schemaName or UUID) to UUID
+        UUID tenantId = parseAndValidateTenantId(tenant);
 
         log.info("🔑 Registering ADMIN user for tenant: {} | Email: {}", tenant, maskEmail(request.email()));
 
@@ -550,7 +533,7 @@ public class AuthController {
         log.info("✅ ADMIN user registered successfully: {} (tenant={})", user.getEmail(), tenant);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(
-                new AuthResponse(accessToken.getToken(), refreshToken, tenant)
+                new AuthResponse(accessToken.getToken(), refreshToken, tenant, null)
         );
     }
 
@@ -643,8 +626,8 @@ public class AuthController {
         if (tenant.matches("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")) {
             // If it's all zeros, it's definitely wrong
             if (tenant.equals("00000000-0000-0000-0000-000000000000")) {
-                log.error("❌ CRITICAL: {} returned empty UUID (00000000-0000-0000-0000-000000000000)", source);
-                throw new UnauthorizedException("Invalid tenant");
+                log.error("🔴 CRITICAL SECURITY: {} returned ZERO UUID - MULTI-TENANT BREACH RISK", source);
+                throw new UnauthorizedException("System tenant UUID cannot be used for authentication");
             }
             // Even if not all zeros, warn about UUID usage (should be String schema names)
             log.warn("⚠️  {} returned UUID format ({}), expected String schema name", source, tenant);
@@ -738,15 +721,12 @@ public class AuthController {
     }
 
     /**
-     * Parse and validate tenant from String (header/param) to UUID
+     * Parse and validate tenant from String (header/param) to UUID.
+     * In pure UUID-based architecture, tenant must be a valid UUID.
      * 
-     * Input can be:
-     * - UUID format: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" → returns as UUID
-     * - SchemaName format: "t_..." → queries DB to get actual tenant UUID
-     * 
-     * @param tenant String tenant identifier (UUID or schemaName)
-     * @return UUID tenant identifier from database
-     * @throws UnauthorizedException if tenant is invalid or not found
+     * @param tenant String tenant identifier (UUID format)
+     * @return UUID tenant identifier
+     * @throws UnauthorizedException if tenant is invalid
      */
     private UUID parseAndValidateTenantId(String tenant) {
         
@@ -754,29 +734,13 @@ public class AuthController {
             throw new UnauthorizedException("Tenant ID is required");
         }
         
-        // Case 1: Input is schemaName (starts with "t_")
-        if (tenant.startsWith("t_")) {
-            log.debug("🔍 [PARSE_TENANT] Tenant from header is schemaName (t_...). Querying DB...");
-            
-            var foundTenant = tenantRepository.findBySchemaNameIgnoreCaseAndDeletedAtIsNull(tenant);
-            if (foundTenant.isPresent()) {
-                UUID tenantId = foundTenant.get().getId();
-                log.debug("✓ [PARSE_TENANT] Found ACTIVE Tenant in DB: id={}, schemaName={}", tenantId, tenant);
-                return tenantId;
-            } else {
-                log.error("❌ [PARSE_TENANT] ACTIVE Tenant NOT found in database for schemaName: {}", tenant);
-                throw new UnauthorizedException("Invalid tenant");
-            }
-        }
-        
-        // Case 2: Input is UUID format
         try {
             UUID tenantId = UUID.fromString(tenant);
-            log.debug("✓ [PARSE_TENANT] Tenant is UUID format: {}", tenantId);
+            log.debug("✓ Tenant validated as UUID: {}", tenantId);
             return tenantId;
         } catch (IllegalArgumentException e) {
-            log.error("❌ [PARSE_TENANT] Invalid tenant format (not UUID, not schemaName): {}", tenant);
-            throw new UnauthorizedException("Invalid tenant format");
+            log.error("❌ Invalid tenant format (expected UUID): {}", tenant);
+            throw new UnauthorizedException("Invalid tenant format - UUID required");
         }
     }
 }

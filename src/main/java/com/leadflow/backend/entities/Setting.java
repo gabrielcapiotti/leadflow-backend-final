@@ -5,6 +5,7 @@ import com.leadflow.backend.multitenancy.context.TenantContext;
 import jakarta.persistence.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
+import org.hibernate.annotations.Filter;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -12,10 +13,15 @@ import java.util.UUID;
 @Entity
 @Table(
     name = "settings",
+    schema = "public",
     indexes = {
         @Index(name = "idx_settings_user", columnList = "user_id"),
         @Index(name = "idx_settings_tenant", columnList = "tenant_id")
     }
+)
+@Filter(
+    name = "tenantFilter",
+    condition = "tenant_id = :tenantId"
 )
 public class Setting {
 

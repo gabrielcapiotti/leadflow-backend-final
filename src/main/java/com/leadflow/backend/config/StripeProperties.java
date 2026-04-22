@@ -6,8 +6,6 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.properties.ConfigurationProperties;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.validation.annotation.Validated;
 
 /**
@@ -16,8 +14,6 @@ import org.springframework.validation.annotation.Validated;
  * 
  * Example: stripe.api.secret-key -> ${STRIPE_SECRET_KEY}
  */
-@Configuration
-@EnableConfigurationProperties(StripeProperties.class)
 @ConfigurationProperties(prefix = "stripe")
 @Getter
 @Setter
@@ -31,7 +27,7 @@ public class StripeProperties {
     private Timeout timeout = new Timeout();
     private Events events = new Events();
     
-    // @PostConstruct // DESABILITADO: causava erro no boot quando Stripe não estava configurado
+    @jakarta.annotation.PostConstruct
     public void init() {
         log.info("=== Initializing Stripe Configuration ===");
         
@@ -142,5 +138,15 @@ public class StripeProperties {
         
         // Keep webhook events in database for this many days
         private int maxAgeDays = 90;
+    }
+
+    /**
+     * Get current Stripe mode (TEST or LIVE)
+     */
+    public String getMode() {
+        if (api.secretKey == null || api.secretKey.isBlank()) {
+            return "UNCONFIGURED";
+        }
+        return api.secretKey.startsWith("sk_test_") ? "TEST" : "LIVE";
     }
 }
