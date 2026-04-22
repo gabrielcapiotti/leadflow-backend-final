@@ -328,4 +328,3 @@ public class BillingAdminController {
         return idStr.substring(0, 4) + "..." + idStr.substring(idStr.length() - 2);
     }
 }
-
