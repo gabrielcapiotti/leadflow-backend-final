@@ -37,26 +37,22 @@ USER appuser
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:${SERVER_PORT:-8080}/actuator/health/live || exit 1
+    CMD curl -f http://localhost:${PORT:-8080}/actuator/health/live || exit 1
 
-# Porta padrão 8080 (pode ser overridden por SERVER_PORT)
-# Development: 8081, Production: 8080 (via SERVER_PORT env var)
-EXPOSE ${SERVER_PORT:-8080}
+# Porta padrão 8080 (pode ser overridden por PORT)
+# Development: 8080, Production: 8080 (via PORT env var)
+EXPOSE ${PORT:-8080}
 
 # entrypoint para graceful shutdown
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start Spring Boot com variáveis do application.yml
-# NOTE (Etapa 5.8): All application-*.yml profiles removed - using single application.yml + env vars
-# SPRING_PROFILES_ACTIVE only controls logging/features (not separate config files)
-# Configuration hierarchy: application.yml defaults → env vars override
-CMD ["java", \
-     "-XX:+UseG1GC", \
-     "-XX:MaxGCPauseMillis=200", \
-     "-XX:+PrintGCDetails", \
-     "-Djava.awt.headless=true", \
-     "-Duser.timezone=UTC", \
-     "-Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod}", \
-     "-Dserver.port=${PORT:-8080}", \
-     "-jar", \
-     "app.jar"]
+# Start Spring Boot - using shell form to expand env vars safely
+CMD sh -c 'java \
+     -XX:+UseG1GC \
+     -XX:MaxGCPauseMillis=200 \
+     -XX:+PrintGCDetails \
+     -Djava.awt.headless=true \
+     -Duser.timezone=UTC \
+     -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod} \
+     -Dserver.port=${PORT:-8080} \
+     -jar app.jar'
