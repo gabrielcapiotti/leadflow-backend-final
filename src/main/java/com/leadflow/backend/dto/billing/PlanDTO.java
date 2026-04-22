@@ -36,6 +36,12 @@ public class PlanDTO {
     @JsonProperty("active")
     private Boolean active;
 
+    @JsonProperty("stripe_product_id")
+    private String stripeProductId;
+
+    @JsonProperty("stripe_price_id")
+    private String stripePriceId;
+
     /**
      * Convert Plan entity to DTO
      */
@@ -52,6 +58,8 @@ public class PlanDTO {
             .maxUsers(plan.getMaxUsers())
             .maxAiExecutions(plan.getMaxAiExecutions())
             .active(plan.getActive())
+            .stripeProductId(plan.getStripeProductId())
+            .stripePriceId(plan.getStripePriceId())
             .build();
     }
 }

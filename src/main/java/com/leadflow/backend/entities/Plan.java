@@ -30,6 +30,12 @@ public class Plan {
     @Column(nullable = false)
     private Boolean active;
 
+    @Column(name = "stripe_product_id", length = 255)
+    private String stripeProductId;
+
+    @Column(name = "stripe_price_id", length = 255)
+    private String stripePriceId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -106,6 +112,22 @@ public class Plan {
 
     public void setActive(Boolean active) {
         this.active = active;
+    }
+
+    public String getStripeProductId() {
+        return stripeProductId;
+    }
+
+    public void setStripeProductId(String stripeProductId) {
+        this.stripeProductId = stripeProductId;
+    }
+
+    public String getStripePriceId() {
+        return stripePriceId;
+    }
+
+    public void setStripePriceId(String stripePriceId) {
+        this.stripePriceId = stripePriceId;
     }
 
     public LocalDateTime getCreatedAt() {

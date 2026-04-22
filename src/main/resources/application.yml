@@ -224,12 +224,13 @@ stripe:
   api:
     secret-key: ${STRIPE_SECRET_KEY:sk_test_51TEG1fFzdxPQXW4wPJZ44ulOz2mqrMaPGUpKSJd5toTddkfCTpjQTjOExwuph9uMJhYFFn3PErOLZesj5SSvRryc00ryq0MEU7}
     publishable-key: ${STRIPE_PUBLISHABLE_KEY:pk_test_51TEG1fFzdxPQXW4werLnbwdxt1EGS22nG0PhmbqLGHRsWhaQrQUrNfuqu7bgeZ8rAKP3E0DPEyJX6M1FaXTpVj0c00NFzZaqG2}
-  # TEST MODE: Use mock price (will fail gracefully, subscription created locally)
-  price-id: ${STRIPE_PRICE_ID:price_test_mock_mode}
-  test-mode: true
+  # Stripe Product and Price IDs for billing integration
+  product-id: ${STRIPE_PRODUCT_ID:prod_UNEkkapYiKhRQ1}
+  price-id: ${STRIPE_PRICE_ID:price_1TOUGrFzdxPQXW4wpPIt0FV7}
+  test-mode: false
   price:
-    default: ${STRIPE_PRICE_DEFAULT:}
-    pro: ${STRIPE_PRICE_PRO:}
+    default: ${STRIPE_PRICE_DEFAULT:price_1TOUGrFzdxPQXW4wpPIt0FV7}
+    pro: ${STRIPE_PRICE_PRO:price_1TOUGrFzdxPQXW4wpPIt0FV7}
   webhook:
     secret: ${STRIPE_WEBHOOK_SECRET:whsec_test_xxxxx}
     path: /stripe/webhook
