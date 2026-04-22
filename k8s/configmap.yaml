@@ -7,7 +7,6 @@ metadata:
   namespace: leadflow
 data:
   # Application Configuration
-  SPRING_PROFILES_ACTIVE: "prod"
   SPRING_APPLICATION_NAME: "leadflow-backend"
   SERVER_PORT: "8080"
   SERVER_SSL_ENABLED: "false"
