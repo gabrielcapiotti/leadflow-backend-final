@@ -44,7 +44,7 @@ services:
     environment:
       # Profile & Server
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
-      SERVER_PORT: ${SERVER_PORT:-8080}
+      PORT: ${PORT:-8080}
       SERVER_SSL_ENABLED: ${SERVER_SSL_ENABLED:-false}
       SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: ${SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE:-5MB}
       SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: ${SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE:-5MB}
@@ -92,13 +92,13 @@ services:
       APP_FRONTEND_URL: ${APP_FRONTEND_URL:-http://localhost:3000}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     ports:
-      - "${SERVER_PORT:-8080}:${SERVER_PORT:-8080}"
+      - "${PORT:-8080}:${PORT:-8080}"
     volumes:
       - ./src:/app/src:ro
     networks:
       - leadflow_network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${SERVER_PORT:-8080}/actuator/health/live"]
+      test: ["CMD", "curl", "-f", "http://localhost:${PORT:-8080}/actuator/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3

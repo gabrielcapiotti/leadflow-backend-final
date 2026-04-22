@@ -57,6 +57,6 @@ CMD ["java", \
      "-Djava.awt.headless=true", \
      "-Duser.timezone=UTC", \
      "-Dspring.profiles.active=${SPRING_PROFILES_ACTIVE:-prod}", \
-     "-Dserver.port=${SERVER_PORT:-8080}", \
+     "-Dserver.port=${PORT:-8080}", \
      "-jar", \
      "app.jar"]
