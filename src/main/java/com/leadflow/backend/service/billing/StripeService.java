@@ -133,7 +133,7 @@ public class StripeService {
 
         try {
             Session session = Session.create(params);
-            savePendingCheckout(normalizedEmail, "default", referenceId);
+            savePendingCheckout(normalizedEmail, "default", referenceId, tenantId);
             return session;
         } catch (StripeException e) {
             log.error("Stripe checkout creation failed for email={}", normalizedEmail, e);
@@ -282,17 +282,6 @@ public class StripeService {
         return "unknown";
     }
 
-    /**
-     * Extract customer ID from various Stripe object types in webhook events
-     * 
-     * @deprecated Use StripeEventJsonExtractor.getString(dataObject, "customer") for raw JSON parsing
-     */
-    @Deprecated
-    private String extractCustomerIdFromEvent(Event event) {
-        log.warn("[DEPRECATED] extractCustomerIdFromEvent should not be called. Use StripeEventJsonExtractor instead.");
-        return "unknown";
-    }
-
     public Optional<Session> extractCheckoutSession(Event event) {
         if (event == null) {
             return Optional.empty();
@@ -321,16 +310,17 @@ public class StripeService {
         provisioningService.provisionFromCheckout(event.getId(), session, payload);
     }
 
-    private void savePendingCheckout(String email, String plan, String referenceId) {
+    private void savePendingCheckout(String email, String plan, String referenceId, UUID tenantId) {
         PaymentCheckoutRequest checkoutRequest = new PaymentCheckoutRequest();
         checkoutRequest.setReferenceId(referenceId);
-        checkoutRequest.setProvider("stripe");
+        checkoutRequest.setProvider("STRIPE");
         checkoutRequest.setEmail(email);
+        checkoutRequest.setTenantId(tenantId);
         checkoutRequest.setNomeVendedor(localPart(email));
         checkoutRequest.setWhatsappVendedor("0000000000");
         checkoutRequest.setNomeEmpresa(null);
         checkoutRequest.setSlug(localPart(email) + "-" + UUID.randomUUID().toString().substring(0, 6));
-        checkoutRequest.setStatus("PENDING_" + plan.toUpperCase(Locale.ROOT));
+        checkoutRequest.setStatus("PENDING");
         checkoutRepository.save(checkoutRequest);
     }
 
@@ -499,7 +489,7 @@ public class StripeService {
 
         try {
             Session session = Session.create(params);
-            savePendingCheckout(normalizedEmail, "default", referenceId);
+            savePendingCheckout(normalizedEmail, "default", referenceId, null);
             
             return new CheckoutResponse(
                 session.getUrl(),

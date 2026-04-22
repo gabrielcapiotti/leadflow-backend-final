@@ -303,6 +303,22 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    /* =========================================================
+       BILLING / ACCESS CONTROL
+       ========================================================= */
+
+    @ExceptionHandler(BillingException.class)
+    public ResponseEntity<ApiErrorResponse> handleBillingException(
+            BillingException ex
+    ) {
+        log.warn("🚫 Billing access denied: {}", ex.getMessage());
+        
+        // HTTP 402 Payment Required is semantically correct for billing issues
+        // However, 403 Forbidden also works
+        // Using 402 to signal specifically that it's a payment/billing issue
+        return build(HttpStatus.PAYMENT_REQUIRED, ex.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiErrorResponse> handleUnexpected(
             Exception ex

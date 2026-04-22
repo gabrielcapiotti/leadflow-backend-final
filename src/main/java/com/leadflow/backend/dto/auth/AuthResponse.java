@@ -1,7 +1,9 @@
 package com.leadflow.backend.dto.auth;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record AuthResponse(
 
         @JsonProperty("accessToken")
@@ -11,7 +13,10 @@ public record AuthResponse(
         String refreshToken,
 
         @JsonProperty("tenantId")
-        String tenantId
+        String tenantId,
+        
+        @JsonProperty("checkoutUrl")
+        String checkoutUrl
 
 ) {
 
@@ -44,5 +49,7 @@ public record AuthResponse(
         if (tenantId.isBlank()) {
             throw new IllegalArgumentException("Tenant ID cannot be blank");
         }
+        
+        // checkoutUrl is optional - can be null
     }
 }

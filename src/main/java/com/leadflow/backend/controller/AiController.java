@@ -3,6 +3,7 @@ package com.leadflow.backend.controller;
 import com.leadflow.backend.dto.ai.ChatRequest;
 import com.leadflow.backend.entities.vendor.*;
 import com.leadflow.backend.multitenancy.context.TenantContext;
+import com.leadflow.backend.service.billing.RequiresBilling;
 import com.leadflow.backend.repository.VendorLeadRepository;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.security.VendorContext;
@@ -128,6 +129,7 @@ public class AiController {
     // CHAT
     // =========================================================
     @PostMapping("/chat")
+    @RequiresBilling
     public ResponseEntity<?> chat(
             @AuthenticationPrincipal UserDetails principal,
             @Valid @RequestBody ChatRequest request
@@ -175,6 +177,7 @@ public class AiController {
     // SUMMARY
     // =========================================================
     @PostMapping("/lead-summary")
+    @RequiresBilling
     public ResponseEntity<?> summary(
             @Valid @RequestBody Map<String, Object> request
     ) {
@@ -192,6 +195,7 @@ public class AiController {
     // TITLE
     // =========================================================
     @PostMapping("/title-suggestion")
+    @RequiresBilling
     public ResponseEntity<?> title(
             @Valid @RequestBody Map<String, Object> request
     ) {
@@ -214,6 +218,7 @@ public class AiController {
     // REFINE
     // =========================================================
     @PostMapping("/refine-message")
+    @RequiresBilling
     public ResponseEntity<?> refine(
             @Valid @RequestBody Map<String, Object> request
     ) {
@@ -236,6 +241,7 @@ public class AiController {
     // SENTIMENT
     // =========================================================
     @PostMapping("/sentiment-analysis")
+    @RequiresBilling
     public ResponseEntity<?> sentiment(
             @Valid @RequestBody Map<String, Object> request
     ) {
@@ -254,6 +260,7 @@ public class AiController {
     // CLASSIFY
     // =========================================================
     @PostMapping("/classify-lead")
+    @RequiresBilling
     public ResponseEntity<?> classify(
             @Valid @RequestBody Map<String, Object> request
     ) {
@@ -272,6 +279,7 @@ public class AiController {
     // GENERATE RESPONSE
     // =========================================================
     @PostMapping("/generate-response")
+    @RequiresBilling
     public ResponseEntity<?> generate(
             @Valid @RequestBody Map<String, Object> request
     ) {

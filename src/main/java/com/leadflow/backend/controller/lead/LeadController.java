@@ -7,6 +7,7 @@ import com.leadflow.backend.entities.lead.Lead;
 import com.leadflow.backend.entities.user.User;
 import com.leadflow.backend.entities.vendor.SubscriptionAccessLevel;
 import com.leadflow.backend.security.CustomUserDetails;
+import com.leadflow.backend.service.billing.RequiresBilling;
 import com.leadflow.backend.security.SubscriptionGuard;
 import com.leadflow.backend.service.lead.LeadService;
 import com.leadflow.backend.service.user.UserService;
@@ -51,6 +52,7 @@ public class LeadController {
        ====================================================== */
 
     @PostMapping
+    @RequiresBilling
     public ResponseEntity<LeadResponse> createLead(
             @AuthenticationPrincipal UserDetails principal,
             @Valid @RequestBody CreateLeadRequest request
@@ -133,6 +135,7 @@ public class LeadController {
        ====================================================== */
 
     @PatchMapping("/{id}/status")
+    @RequiresBilling
     public ResponseEntity<LeadResponse> updateLeadStatus(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable UUID id,
@@ -155,6 +158,7 @@ public class LeadController {
        ====================================================== */
 
     @DeleteMapping("/{id}")
+    @RequiresBilling
     public ResponseEntity<Void> deleteLead(
             @AuthenticationPrincipal UserDetails principal,
             @PathVariable UUID id

@@ -46,6 +46,9 @@ public class PaymentCheckoutRequest {
     @Column(nullable = false)
     private String status;
 
+    @Column(name = "tenant_id", nullable = false)
+    private UUID tenantId;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -122,6 +125,14 @@ public class PaymentCheckoutRequest {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public UUID getTenantId() {
+        return tenantId;
+    }
+
+    public void setTenantId(UUID tenantId) {
+        this.tenantId = tenantId;
     }
 
     public Instant getCreatedAt() {

@@ -3,6 +3,7 @@ package com.leadflow.backend.controller;
 import com.leadflow.backend.dto.vendor.CreateLeadRequest;
 import com.leadflow.backend.dto.vendor.StageConversionResponse;
 import com.leadflow.backend.dto.vendor.StageTimeMetricsResponse;
+import com.leadflow.backend.service.billing.RequiresBilling;
 import com.leadflow.backend.dto.vendor.UpdateStageRequest;
 import com.leadflow.backend.dto.vendor.VendorLeadMetricsResponse;
 import com.leadflow.backend.entities.vendor.VendorLead;
@@ -49,6 +50,7 @@ public class VendorLeadController {
        ====================================================== */
 
     @PostMapping("/leads")
+    @RequiresBilling
     @Transactional
     public ResponseEntity<VendorLead> createLead(
             @Valid @RequestBody CreateLeadRequest request) {
@@ -85,6 +87,7 @@ public class VendorLeadController {
        ====================================================== */
 
     @DeleteMapping("/{id}")
+    @RequiresBilling
     public ResponseEntity<Void> deleteLead(@PathVariable UUID id) {
 
         subscriptionGuard.assertFullAccess();
@@ -99,6 +102,7 @@ public class VendorLeadController {
        ====================================================== */
 
     @PutMapping("/{id}/stage")
+    @RequiresBilling
     public ResponseEntity<VendorLead> updateStage(
             @PathVariable UUID id,
             @RequestBody UpdateStageRequest request) {
@@ -112,6 +116,7 @@ public class VendorLeadController {
     }
 
     @PatchMapping("/{id}")
+    @RequiresBilling
     public ResponseEntity<VendorLead> updateLeadPatch(
             @PathVariable UUID id,
             @RequestBody UpdateStageRequest request) {
@@ -125,6 +130,7 @@ public class VendorLeadController {
     }
 
     @PutMapping("/{id}/owner")
+    @RequiresBilling
     public ResponseEntity<VendorLead> assignOwner(
             @PathVariable UUID id) {
 
@@ -202,6 +208,7 @@ public class VendorLeadController {
     }
 
     @PutMapping("/{id}/resumo")
+    @RequiresBilling
     public ResponseEntity<String> gerarResumo(@PathVariable UUID id) {
 
         subscriptionGuard.assertFullAccess();

@@ -1,13 +1,12 @@
 package com.leadflow.backend.controller.auth;
 
 import com.leadflow.backend.dto.auth.*;
+import com.leadflow.backend.dto.billing.CheckoutRequest;
 import com.leadflow.backend.entities.user.User;
-import com.leadflow.backend.entities.Subscription;
 import com.leadflow.backend.exception.DuplicateEmailException;
 import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.multitenancy.service.TenantService;
 import com.leadflow.backend.repository.tenant.TenantRepository;
-import com.leadflow.backend.repository.SubscriptionRepository;
 import com.leadflow.backend.repository.user.UserRepository;
 import com.leadflow.backend.security.CustomUserDetails;
 import com.leadflow.backend.security.exception.UnauthorizedException;
@@ -17,12 +16,7 @@ import com.leadflow.backend.service.auth.AuthService;
 import com.leadflow.backend.service.auth.RefreshTokenService;
 import com.leadflow.backend.service.auth.UserSessionService;
 import com.leadflow.backend.service.billing.StripeService;
-import com.leadflow.backend.service.vendor.UsageService;
-import com.leadflow.backend.service.vendor.SubscriptionService;
-import com.leadflow.backend.entities.Plan;
 import com.leadflow.backend.entities.Tenant;
-import com.leadflow.backend.repository.PlanRepository;
-import com.stripe.model.Customer;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -57,15 +51,9 @@ public class AuthController {
     private final RefreshTokenService refreshTokenService;
     private final UserSessionService userSessionService;
     private final TenantService tenantService;
-    private final TenantRepository tenantRepository;
     private final UserRepository userRepository;
-
-    private final UsageService usageService;
-    private final PlanRepository planRepository;
     private final AuthenticationManager authenticationManager;
-    private final SubscriptionService subscriptionService;
     private final StripeService stripeService;
-    private final SubscriptionRepository subscriptionRepository;
 
     public AuthController(
             AuthService authService,
@@ -73,28 +61,18 @@ public class AuthController {
             RefreshTokenService refreshTokenService,
             UserSessionService userSessionService,
             TenantService tenantService,
-            TenantRepository tenantRepository,
             UserRepository userRepository,
-            UsageService usageService,
-            PlanRepository planRepository,
             AuthenticationManager authenticationManager,
-            SubscriptionService subscriptionService,
-            StripeService stripeService,
-            SubscriptionRepository subscriptionRepository
+            StripeService stripeService
     ) {
         this.authService = authService;
         this.jwtService = jwtService;
         this.refreshTokenService = refreshTokenService;
         this.userSessionService = userSessionService;
         this.tenantService = tenantService;
-        this.tenantRepository = tenantRepository;
         this.userRepository = userRepository;
-        this.usageService = usageService;
-        this.planRepository = planRepository;
         this.authenticationManager = authenticationManager;
-        this.subscriptionService = subscriptionService;
         this.stripeService = stripeService;
-        this.subscriptionRepository = subscriptionRepository;
     }
 
     /* ======================================================
@@ -138,73 +116,40 @@ public class AuthController {
                 tenantId
         );
 
-        // ✅ VENDOR criado no AuthService.registerUser() — sem duplicação aqui
+        // 🔥 ARCHITECTURAL DECISION: STRIPE CHECKOUT IS MANDATORY
+        // 
+        // DO NOT:
+        //   • Create subscription locally before payment
+        //   • Create Stripe customer without payment method
+        //   • Attempt to create subscription without payment
+        //   • Silently catch errors (billing CANNOT be optional)
+        //
+        // INSTEAD:
+        //   1. User registered with new tenant (DB only, no Stripe yet)
+        //   2. Return checkoutUrl for user to complete payment via Stripe Checkout
+        //   3. Webhook handles checkout.session.completed → provisioningService
+        //   4. Full provisioning happens via webhook (subscription + features + usage)
+        
+        log.info("✅ User registered, requiring billing setup via Stripe Checkout: {}", maskEmail(request.email()));
+        
+        // Create Stripe Checkout Session (MANDATORY)
+        String checkoutUrl;
         try {
-
-            // 🔥 CREATE DEFAULT SUBSCRIPTION (novo)
-            try {
-                subscriptionService.createDefaultSubscription(tenantId);
-                log.info("Default subscription created successfully for tenant: {}", tenantId);
-            } catch (Exception e) {
-                log.warn("Subscription creation failed: {}", e.getMessage());
-                // Nao interrompe o fluxo
-            }
-
-            // 🔥 INTEGRATE WITH STRIPE (novo - Phase 5)
-            try {
-                // Create Stripe customer
-                Customer stripeCustomer = stripeService.createCustomer(request.email());
-                log.info("✓ Stripe customer created: id={}", stripeCustomer.getId());
-                
-                // Create Stripe subscription
-                String stripeSubscriptionId = stripeService.createSubscription(
-                        stripeCustomer.getId(),
-                        null, // Use default price from StripeService
-                        tenantId
-                );
-                log.info("✓ Stripe subscription created: id={}", stripeSubscriptionId);
-                
-                // Update local subscription with Stripe IDs
-                Subscription localSubscription = subscriptionRepository.findByTenantId(tenantId)
-                        .orElseThrow(() -> new IllegalStateException("Subscription not found for tenant"));
-                localSubscription.setStripeCustomerId(stripeCustomer.getId());
-                localSubscription.setStripeSubscriptionId(stripeSubscriptionId);
-                subscriptionRepository.save(localSubscription);
-                log.info("✓ Local subscription updated with Stripe IDs: customer={}, subscription={}", 
-                        stripeCustomer.getId(), stripeSubscriptionId);
-            } catch (Exception e) {
-                log.warn("⚠️  Stripe integration failed (non-critical): {}", e.getMessage());
-                // Não interrompe o fluxo - local subscription foi criado OK
-            }
-
-            // ✅ Inicializar usage com plano padrão
-            try {
-                Plan defaultPlan = planRepository.findByActiveTrue()
-                        .stream()
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException("No active plan found"));
-                
-                // 🔥 CRÍTICO: vendor.id = tenantId (alinhamento de identidade)
-                // Use UUID directly without String conversion to avoid corruption
-                UUID vendorId = user.getTenantId();
-                usageService.initializeUsage(vendorId, defaultPlan);
-                log.info("✓ Usage initialized successfully for vendor: {}", vendorId);
-            } catch (Exception e) {
-                log.warn("⚠️  Usage initialization failed (non-critical): {}", e.getMessage());
-                // Não interrompe o fluxo - vendor foi criado OK
-            }
+            var checkoutSession = stripeService.createCheckoutSession(request.email(), tenantId);
+            checkoutUrl = checkoutSession.getUrl();
+            log.info("✅ Checkout session created: url={}, tenantId={}", checkoutUrl, tenantId);
         } catch (Exception e) {
-            log.error("❌ Vendor creation failed during registration: {}", e.getMessage(), e);
-            throw new IllegalStateException("Vendor initialization failed - registration incomplete", e);
+            log.error("❌ CRITICAL: Stripe checkout creation FAILED - vendor cannot proceed: {}", e.getMessage(), e);
+            throw new IllegalStateException("Billing setup failed - cannot complete registration without Stripe checkout", e);
         }
-
-        // ✅ CRITICAL FIX: Pass tenantId (UUID) directly to generateToken
-        // This ensures type safety and prevents String manipulation
+        
+        // ✅ Generate JWT tokens for the newly registered user
+        // User can authenticate and wait for payment completion
         JwtToken accessToken = jwtService.generateToken(user, tenantId);
 
         try {
             createSession(user.getId(), tenantId, accessToken, httpRequest);
-            log.info("✓ Session created successfully for new user (sanitized)");
+            log.info("✅ Session created for new user (awaiting payment)");
         } catch (Exception e) {
             log.error("❌ CRITICAL: Session creation failed during registration - {}", 
                 e.getMessage(), e);
@@ -219,7 +164,7 @@ public class AuthController {
 
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(new AuthResponse(accessToken.getToken(), refreshToken, tenantId.toString()));
+                .body(new AuthResponse(accessToken.getToken(), refreshToken, tenantId.toString(), checkoutUrl));
     }
 
     /* ======================================================
@@ -307,7 +252,7 @@ public class AuthController {
             log.info("User {} logged in successfully", user.getId());
 
             return ResponseEntity.ok(
-                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdFromUser.toString())
+                    new AuthResponse(accessToken.getToken(), refreshToken, tenantIdFromUser.toString(), null)
             );
         } catch (Exception e) {
             log.error("❌ Login failed for user {}: {}", maskEmail(request.email()), e.getMessage());
@@ -469,7 +414,7 @@ public class AuthController {
         }
 
         return ResponseEntity.ok(
-                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenantId.toString())
+                new AuthResponse(newAccessToken.getToken(), result.newRefreshToken(), tenantId.toString(), null)
         );
     }
 
@@ -588,7 +533,7 @@ public class AuthController {
         log.info("✅ ADMIN user registered successfully: {} (tenant={})", user.getEmail(), tenant);
 
         return ResponseEntity.status(HttpStatus.CREATED).body(
-                new AuthResponse(accessToken.getToken(), refreshToken, tenant)
+                new AuthResponse(accessToken.getToken(), refreshToken, tenant, null)
         );
     }
 

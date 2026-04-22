@@ -11,6 +11,7 @@ import com.leadflow.backend.repository.PaymentCheckoutRequestRepository;
 import com.leadflow.backend.repository.PaymentRepository;
 import com.leadflow.backend.repository.SubscriptionRepository;
 import com.leadflow.backend.repository.VendorRepository;
+import com.leadflow.backend.multitenancy.context.TenantContext;
 import com.leadflow.backend.service.PlanService;
 import com.leadflow.backend.service.user.UserService;
 import com.leadflow.backend.service.vendor.QuotaService;
@@ -20,6 +21,7 @@ import com.leadflow.backend.service.vendor.VendorFeatureService;
 import com.leadflow.backend.service.vendor.VendorService;
 import com.stripe.model.checkout.Session;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,8 +30,10 @@ import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 
 @Service
+@Slf4j
 public class BillingTenantProvisioningService {
 
     private final VendorService vendorService;
@@ -90,6 +94,7 @@ public class BillingTenantProvisioningService {
         String plan = extractPlan(session);
         String referenceId = extractReferenceId(session);
         String paymentStatus = resolvePaymentStatus(session);
+        UUID tenantId = extractTenantId(session);
 
         savePayment(eventId, email, paymentStatus, payload);
 
@@ -98,19 +103,22 @@ public class BillingTenantProvisioningService {
                 .orElseGet(() -> vendorService.createVendor(email));
 
         if (!isPaymentConfirmed(paymentStatus)) {
-            upsertSubscriptionRecord(session, vendor, email, plan, paymentStatus);
+            upsertSubscriptionRecord(session, vendor, email, plan, paymentStatus, tenantId);
             return vendor;
         }
 
         ensureSchema(vendor);
         userService.createAdminUser(vendor, email);
 
+        if (tenantId == null) {
+            throw new IllegalStateException("TenantId not found in Stripe session metadata for email: " + email);
+        }
         activateVendor(vendor, session, eventId);
-        applyPlan(vendor, plan);
+        applyPlan(vendor, tenantId, plan);
         registerLimits(vendor);
         initializeUsageLimits(vendor);
         completePendingCheckout(referenceId, plan);
-        upsertSubscriptionRecord(session, vendor, email, plan, paymentStatus);
+        upsertSubscriptionRecord(session, vendor, email, plan, paymentStatus, tenantId);
 
         return vendor;
     }
@@ -166,6 +174,24 @@ public class BillingTenantProvisioningService {
         return metadata == null ? null : metadata.get("referenceId");
     }
 
+    private UUID extractTenantId(Session session) {
+        if (session == null || session.getMetadata() == null) {
+            return null;
+        }
+
+        String tenantIdStr = session.getMetadata().get("tenantId");
+        if (tenantIdStr == null || tenantIdStr.isBlank()) {
+            return null;
+        }
+
+        try {
+            return UUID.fromString(tenantIdStr);
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid tenantId format in Stripe session metadata: {}", tenantIdStr);
+            return null;
+        }
+    }
+
     private String resolvePaymentStatus(Session session) {
         String paymentStatus = session.getPaymentStatus();
         if (paymentStatus != null && !paymentStatus.isBlank()) {
@@ -213,9 +239,19 @@ public class BillingTenantProvisioningService {
         vendorRepository.save(vendor);
     }
 
-    private void applyPlan(Vendor vendor, String plan) {
+    private void applyPlan(Vendor vendor, UUID tenantId, String plan) {
         // Plano "default" e "pro" habilitam IA no cenário atual.
-        vendorFeatureService.upsertFeature(vendor.getId(), VendorFeatureKey.AI_CHAT, true);
+        if (tenantId != null) {
+            // Set tenant context for feature service
+            TenantContext.setTenant(tenantId);
+            try {
+                vendorFeatureService.upsertFeature(vendor.getId(), VendorFeatureKey.AI_CHAT, true);
+            } finally {
+                TenantContext.clear();
+            }
+        } else {
+            log.warn("⚠️ tenantId not found in Stripe session metadata - skipping feature setup for vendor={}", vendor.getId());
+        }
     }
 
     private void registerLimits(Vendor vendor) {
@@ -234,12 +270,12 @@ public class BillingTenantProvisioningService {
 
         checkoutRepository.findTopByReferenceIdOrderByCreatedAtDesc(referenceId)
                 .ifPresent(checkout -> {
-                    checkout.setStatus("COMPLETED_" + plan.toUpperCase(Locale.ROOT));
+                    checkout.setStatus("COMPLETED");
                     checkoutRepository.save(checkout);
                 });
     }
 
-    private void upsertSubscriptionRecord(Session session, Vendor vendor, String email, String plan, String status) {
+    private void upsertSubscriptionRecord(Session session, Vendor vendor, String email, String plan, String status, UUID tenantId) {
 
         String stripeSubscriptionId = session.getSubscription();
         String stripeCustomerId = session.getCustomer();
@@ -259,11 +295,9 @@ public class BillingTenantProvisioningService {
             subscription = subscriptionRepository.findByEmailIgnoreCase(email).orElse(new Subscription());
         }
 
-        // Definir tenant_id (relacionamento com Vendor)
-        if (vendor != null && vendor.getId() != null) {
-            subscription.setTenantId(vendor.getId());
-        }
-
+        // Definir tenant_id (relacionamento com Tenant, não Vendor)
+        // CRÍTICO: usar o tenantId do webhook, não o vendorId
+        subscription.setTenantId(tenantId);
         subscription.setEmail(email);
         
         // Usar Plan entity ao invés de String
