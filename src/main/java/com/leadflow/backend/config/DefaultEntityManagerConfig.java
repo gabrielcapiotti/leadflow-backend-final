@@ -31,6 +31,15 @@ public class DefaultEntityManagerConfig {
 
     /* ======================================================
        ENTITY MANAGER FACTORY
+       
+       NOTE: Multi-tenancy é implementado em APPLICATION LEVEL
+       via TenantContext (ThreadLocal) + TenantFilter + Column-based filtering
+       
+       Não usamos Hibernate native multi-tenancy aqui porque:
+       - Projeto usa UUID-based (COLUMN-based) isolation
+       - Filtragem por tenant_id é feita explicitamente em queries
+       - TenantContext fornece o UUID do tenant para o código
+       
        ====================================================== */
 
     @Bean(name = "entityManagerFactory")
@@ -41,9 +50,11 @@ public class DefaultEntityManagerConfig {
 
         Map<String, Object> properties = new HashMap<>();
 
-        // 🔥 SEM MULTI-TENANCY POR SCHEMA
-        properties.put("hibernate.hbm2ddl.auto", "none");
-        // Hibernate 6+ auto-detects PostgreSQL dialect, no need to specify
+        // ✅ NO HIBERNATE MULTI-TENANCY - handled by application
+        properties.put("hibernate.hbm2ddl.auto", "validate");
+        properties.put("hibernate.format_sql", false);
+        properties.put("hibernate.use_sql_comments", false);
+        properties.put("hibernate.jdbc.time_zone", "UTC");
 
         return builder
                 .dataSource(dataSource)

@@ -9,16 +9,6 @@ spring:
         enabled: false
 
   datasource:
-    # PRODUCTION CONFIGURATION (Railroad/Railway)
-    # This profile is activated when SPRING_PROFILES_ACTIVE=prod
-    #
-    # Database credentials MUST be provided via environment variables:
-    #   DB_URL=jdbc:postgresql://postgres.railway.internal:5432/railway
-    #   DB_USERNAME=postgres
-    #   DB_PASSWORD=<railway-password>
-    #
-    # Set these in Railway Dashboard → Variables → [Service] → Add Variable
-    # Then click Redeploy
     url: ${DB_URL:jdbc:postgresql://localhost:2411/leadflowDB}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:venusia}
@@ -181,8 +171,8 @@ security:
 openai:
   api:
     key: ${OPENAI_API_KEY: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}
-  model: ${OPENAI_MODEL:gpt-4o-mini}
-  endpoint: https://api.openai.com/v1/chat/completions
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    endpoint: https://api.openai.com/v1/chat/completions
   retry:
     max-attempts: 3
     initial-backoff-ms: 1500
