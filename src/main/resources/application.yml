@@ -9,6 +9,19 @@ spring:
         enabled: false
 
   datasource:
+    # Configuration hierarchy (in order of precedence):
+    # 1. Environment variables (DB_URL, DB_USERNAME, DB_PASSWORD)
+    # 2. .env.local (local testing)
+    # 3. Defaults below (local development)
+    # 
+    # RAILWAY DEPLOYMENT:
+    # Override with variables in Railway Dashboard → Variables:
+    #   DB_URL=jdbc:postgresql://postgres.railway.internal:5432/railway
+    #   DB_USERNAME=postgres
+    #   DB_PASSWORD=<railway-password>
+    # 
+    # LOCAL DEVELOPMENT:
+    # Uses defaults below if env vars not set
     url: ${DB_URL:jdbc:postgresql://localhost:2411/leadflowDB}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:venusia}
