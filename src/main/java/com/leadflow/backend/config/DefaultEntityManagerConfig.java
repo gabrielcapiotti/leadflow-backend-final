@@ -51,7 +51,8 @@ public class DefaultEntityManagerConfig {
         Map<String, Object> properties = new HashMap<>();
 
         // ✅ NO HIBERNATE MULTI-TENANCY - handled by application
-        properties.put("hibernate.hbm2ddl.auto", "validate");
+        // Flyway manages schema creation/migration, Hibernate just validates entities
+        properties.put("hibernate.hbm2ddl.auto", "none");
         properties.put("hibernate.format_sql", false);
         properties.put("hibernate.use_sql_comments", false);
         properties.put("hibernate.jdbc.time_zone", "UTC");
